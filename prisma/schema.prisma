@@ -1,0 +1,104 @@
+// WASSILHA (وَصِّلها) — Local triporteur delivery platform for El Guerrara, Ghardaïa
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String
+  role      String   @default("customer") // customer | driver | admin
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders      Order[]      @relation("CustomerOrders")
+  drivenOrders Order[]     @relation("DriverOrders")
+  ratingsGiven Rating[]    @relation("Rater")
+  ratingsRecv  Rating[]    @relation("Ratee")
+  driver       Driver?
+}
+
+model Driver {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType   String   @default("Triporteur 125cc") // e.g. Triporteur 125cc, 150cc
+  vehicleColor  String   @default("أزرق")
+  plateNumber   String?
+  licenseNumber String?
+  isOnline      Boolean  @default(false)
+  isVerified    Boolean  @default(true)
+  rating        Float    @default(5.0)
+  totalTrips    Int      @default(0)
+  totalEarnings Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Vehicle {
+  id           String   @id @default(cuid())
+  driverId     String   @unique
+  type         String
+  color        String
+  plateNumber  String?
+  capacityKg   Int      @default(500)
+  registeredAt DateTime @default(now())
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  code        String   @unique // human-friendly WS-XXXXX
+  customerId  String
+  customer    User     @relation("CustomerOrders", fields: [customerId], references: [id])
+  driverId    String?
+  driver      User?    @relation("DriverOrders", fields: [driverId], references: [id])
+  cargoType   String   // parcel | goods | shop | furniture | appliance | construction | personal | other
+  pickup      String
+  dropoff     String
+  pickupLat   Float    @default(32.7833)
+  pickupLng   Float    @default(3.7667)
+  dropoffLat  Float    @default(32.7900)
+  dropoffLng  Float    @default(3.7800)
+  weight      Int      @default(20)
+  distance    Float    @default(3.0)
+  price       Int      @default(300)
+  status      String   @default("searching") // searching | accepted | picked | delivered | cancelled
+  notes       String?
+  rating      Int?
+  createdAt   DateTime @default(now())
+  acceptedAt  DateTime?
+  pickedAt    DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  ratings Rating[]
+}
+
+model Pricing {
+  id          String   @id @default("default")
+  basePrice   Int      @default(150)
+  perKm       Int      @default(60)
+  multipliers String   @default("{\"parcel\":1.0,\"goods\":1.1,\"shop\":1.0,\"furniture\":1.5,\"appliance\":1.4,\"construction\":1.8,\"personal\":1.0,\"other\":1.0}")
+  updatedAt   DateTime @updatedAt
+}
+
+model Rating {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromId    String
+  from      User     @relation("Rater", fields: [fromId], references: [id])
+  toId      String
+  to        User     @relation("Ratee", fields: [toId], references: [id])
+  score     Int      // 1..5
+  comment   String?
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,2002 @@
+     1→import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+     2→import {
+     3→  View,
+     4→  Text,
+     5→  StyleSheet,
+     6→  TouchableOpacity,
+     7→  TextInput,
+     8→  FlatList,
+     9→  ScrollView,
+    10→  Dimensions,
+    11→  Platform,
+    12→  Alert,
+    13→  KeyboardAvoidingView,
+    14→  ActivityIndicator,
+    15→  Switch,
+    16→  Modal,
+    17→} from 'react-native';
+    18→import { StatusBar } from 'expo-status-bar';
+    19→import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+    20→import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+    21→import { createNativeStackNavigator } from '@react-navigation/native-stack';
+    22→import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+    23→import { useFonts } from 'expo-font';
+    24→import { Ionicons } from '@expo/vector-icons';
+    25→import AsyncStorage from '@react-native-async-storage/async-storage';
+    26→
+    27→const { width, height } = Dimensions.get('window');
+    28→
+    29→// === THEME ===
+    30→const COLORS = {
+    31→  primary: '#0E6B5E',
+    32→  primaryDark: '#0A4A41',
+    33→  primaryLight: '#E6F4F1',
+    34→  accent: '#FF7A00',
+    35→  accentLight: '#FFF1E0',
+    36→  accentDark: '#E66A00',
+    37→  background: '#F8FAF9',
+    38→  surface: '#FFFFFF',
+    39→  text: '#0F172A',
+    40→  textMuted: '#64748B',
+    41→  textLight: '#94A3B8',
+    42→  border: '#E2E8F0',
+    43→  success: '#10B981',
+    44→  warning: '#F59E0B',
+    45→  error: '#EF4444',
+    46→  info: '#0EA5E9',
+    47→  darkBg: '#0F172A',
+    48→};
+    49→
+    50→// === TRANSLATIONS ===
+    51→const translations = {
+    52→  ar: {
+    53→    appName: 'وَصِّلها',
+    54→    appSub: 'WASSILHA',
+    55→    tagline: 'نقل بضائعك بثقة في القرارة',
+    56→    location: 'القرارة - غرداية',
+    57→    algeriaTime: 'UTC+1 • الجزائر',
+    58→    welcome: 'مرحبا بك في وصّلها',
+    59→    welcomeSub: 'منصة النقل المحلية بالدراجة ثلاثية العجلات لنقل كل أنواع البضائع بسرعة وأمان',
+    60→    startNow: 'ابدأ الآن',
+    61→    phoneLogin: 'تسجيل الدخول برقم الهاتف',
+    62→    phoneHint: 'رقم الهاتف',
+    63→    phonePlaceholder: '6XX XX XX XX',
+    64→    sendOTP: 'إرسال رمز التحقق',
+    65→    otpTitle: 'أدخل رمز التحقق',
+    66→    otpSub: 'أرسلنا رمز إلى',
+    67→    verify: 'تأكيد',
+    68→    resend: 'إعادة الإرسال',
+    69→    cargoTypes: 'نوع الحمولة',
+    70→    pickup: 'نقطة الاستلام',
+    71→    dropoff: 'نقطة التوصيل',
+    72→    currentLocation: 'موقعي الحالي',
+    73→    selectOnMap: 'حدد على الخريطة',
+    74→    weight: 'الوزن التقريبي',
+    75→    notes: 'ملاحظات للسائق',
+    76→    notesPlaceholder: 'مثال: الطابق الثاني، اتصل عند الوصول...',
+    77→    estimate: 'التكلفة التقديرية',
+    78→    requestTriporteur: 'اطلب Triporteur الآن',
+    79→    searchingDriver: 'جاري البحث عن سائق...',
+    80→    noDrivers: 'لا يوجد سائقون متاحون حاليا',
+    81→    orderDetails: 'تفاصيل الطلب',
+    82→    track: 'تتبع',
+    83→    history: 'طلباتي',
+    84→    profile: 'حسابي',
+    85→    home: 'الرئيسية',
+    86→    admin: 'الإدارة',
+    87→    driver: 'السائق',
+    88→    customer: 'الزبون',
+    89→    online: 'متصل',
+    90→    offline: 'غير متصل',
+    91→    incomingRequests: 'الطلبات الواردة',
+    92→    accept: 'قبول',
+    93→    reject: 'رفض',
+    94→    myTrips: 'رحلاتي',
+    95→    earnings: 'أرباحي',
+    96→    dashboard: 'لوحة التحكم',
+    97→    pricing: 'التسعير',
+    98→    drivers: 'السائقون',
+    99→    orders: 'الطلبات',
+   100→    totalOrders: 'إجمالي الطلبات',
+   101→    activeDrivers: 'السائقون النشطون',
+   102→    revenue: 'الإيرادات',
+   103→    avgDelivery: 'متوسط التوصيل',
+   104→    basePrice: 'السعر الأساسي',
+   105→    perKm: 'سعر الكيلومتر',
+   106→    cargoMultiplier: 'معامل الحمولة',
+   107→    save: 'حفظ',
+   108→    cancel: 'إلغاء',
+   109→    confirm: 'تأكيد',
+   110→    delivered: 'تم التوصيل',
+   111→    inTransit: 'في الطريق',
+   112→    pending: 'قيد الانتظار',
+   113→    accepted: 'تم القبول',
+   114→    pickedUp: 'تم الاستلام',
+   115→    dzd: 'دج',
+   116→    kg: 'كغ',
+   117→    km: 'كم',
+   118→    next: 'التالي',
+   119→    back: 'رجوع',
+   120→    language: 'اللغة',
+   121→    french: 'Français',
+   122→    arabic: 'العربية',
+   123→    logout: 'تسجيل الخروج',
+   124→    offlineMode: 'وضع عدم الاتصال',
+   125→    offlineDesc: 'سيتم حفظ طلباتك وإرسالها عند عودة الإنترنت',
+   126→    securedBy: 'محمي بواسطة تشفير OTP و Supabase',
+   127→    support24: 'دعم محلي 7/7 في القرارة',
+   128→    cargo: {
+   129→      parcel: 'طرود وكوليات',
+   130→      goods: 'بضائع وسلع',
+   131→      shop: 'طلبيات المحلات',
+   132→      furniture: 'أثاث',
+   133→      appliance: 'أجهزة كهرومنزلية',
+   134→      construction: 'مواد بناء',
+   135→      personal: 'أغراض شخصية',
+   136→      other: 'أخرى',
+   137→    },
+   138→    cargoDesc: {
+   139→      parcel: 'صناديق، كولييات',
+   140→      goods: 'سلع تجارية',
+   141→      shop: 'توصيل محلات',
+   142→      furniture: 'أثاث منزلي',
+   143→      appliance: 'ثلاجة، غسالة...',
+   144→      construction: 'إسمنت، حديد...',
+   145→      personal: 'أمتعة خاصة',
+   146→      other: 'حمولة متنوعة',
+   147→    },
+   148→    status: {
+   149→      searching: 'البحث عن سائق',
+   150→      accepted: 'السائق في الطريق للاستلام',
+   151→      picked: 'تم الاستلام - في الطريق للتوصيل',
+   152→      delivered: 'تم التوصيل بنجاح',
+   153→    },
+   154→    driverFound: 'تم العثور على سائق!',
+   155→    driverInfo: 'معلومات السائق',
+   156→    call: 'اتصال',
+   157→    chat: 'محادثة',
+   158→    rate: 'تقييم',
+   159→    priceConfig: 'إعدادات التسعير (قابلة للتعديل من الإدارة)',
+   160→    orderCreated: 'تم إنشاء الطلب بنجاح!',
+   161→    willNotify: 'سيتم إشعارك عند قبول سائق لطلبك',
+   162→  },
+   163→  fr: {
+   164→    appName: 'WASSILHA',
+   165→    appSub: 'وَصِّلها',
+   166→    tagline: 'Transport de marchandises à El Guerrara',
+   167→    location: 'El Guerrara - Ghardaïa',
+   168→    algeriaTime: 'UTC+1 • Algérie',
+   169→    welcome: 'Bienvenue sur WASSILHA',
+   170→    welcomeSub: 'Plateforme locale de transport triporteur pour toutes vos marchandises, rapide et sécurisée',
+   171→    startNow: 'Commencer',
+   172→    phoneLogin: 'Connexion par téléphone',
+   173→    phoneHint: 'Numéro de téléphone',
+   174→    phonePlaceholder: '6XX XX XX XX',
+   175→    sendOTP: 'Envoyer code OTP',
+   176→    otpTitle: 'Entrez le code',
+   177→    otpSub: 'Code envoyé au',
+   178→    verify: 'Vérifier',
+   179→    resend: 'Renvoyer',
+   180→    cargoTypes: 'Type de cargaison',
+   181→    pickup: 'Point de ramassage',
+   182→    dropoff: 'Point de livraison',
+   183→    currentLocation: 'Ma position',
+   184→    selectOnMap: 'Choisir sur carte',
+   185→    weight: 'Poids approximatif',
+   186→    notes: 'Notes pour le chauffeur',
+   187→    notesPlaceholder: 'Ex: 2ème étage, appeler à l\'arrivée...',
+   188→    estimate: 'Estimation',
+   189→    requestTriporteur: 'Commander un Triporteur',
+   190→    searchingDriver: 'Recherche de chauffeur...',
+   191→    noDrivers: 'Aucun chauffeur disponible',
+   192→    orderDetails: 'Détails commande',
+   193→    track: 'Suivi',
+   194→    history: 'Mes commandes',
+   195→    profile: 'Profil',
+   196→    home: 'Accueil',
+   197→    admin: 'Admin',
+   198→    driver: 'Chauffeur',
+   199→    customer: 'Client',
+   200→    online: 'En ligne',
+   201→    offline: 'Hors ligne',
+   202→    incomingRequests: 'Demandes entrantes',
+   203→    accept: 'Accepter',
+   204→    reject: 'Refuser',
+   205→    myTrips: 'Mes courses',
+   206→    earnings: 'Revenus',
+   207→    dashboard: 'Tableau de bord',
+   208→    pricing: 'Tarification',
+   209→    drivers: 'Chauffeurs',
+   210→    orders: 'Commandes',
+   211→    totalOrders: 'Total commandes',
+   212→    activeDrivers: 'Chauffeurs actifs',
+   213→    revenue: 'Revenu',
+   214→    avgDelivery: 'Livraison moy.',
+   215→    basePrice: 'Prix de base',
+   216→    perKm: 'Prix par km',
+   217→    cargoMultiplier: 'Coeff. cargaison',
+   218→    save: 'Enregistrer',
+   219→    cancel: 'Annuler',
+   220→    confirm: 'Confirmer',
+   221→    delivered: 'Livré',
+   222→    inTransit: 'En transit',
+   223→    pending: 'En attente',
+   224→    accepted: 'Accepté',
+   225→    pickedUp: 'Ramassé',
+   226→    dzd: 'DA',
+   227→    kg: 'kg',
+   228→    km: 'km',
+   229→    next: 'Suivant',
+   230→    back: 'Retour',
+   231→    language: 'Langue',
+   232→    french: 'Français',
+   233→    arabic: 'العربية',
+   234→    logout: 'Déconnexion',
+   235→    offlineMode: 'Mode hors ligne',
+   236→    offlineDesc: 'Vos commandes seront sauvegardées et envoyées à la reconnexion',
+   237→    securedBy: 'Sécurisé par chiffrement OTP & Supabase',
+   238→    support24: 'Support local 7/7 à Guerrara',
+   239→    cargo: {
+   240→      parcel: 'Colis',
+   241→      goods: 'Marchandises',
+   242→      shop: 'Commandes magasins',
+   243→      furniture: 'Meubles',
+   244→      appliance: 'Électroménager',
+   245→      construction: 'Matériaux',
+   246→      personal: 'Effets personnels',
+   247→      other: 'Autre',
+   248→    },
+   249→    cargoDesc: {
+   250→      parcel: 'Boîtes, colis',
+   251→      goods: 'Produits commerciaux',
+   252→      shop: 'Livraison boutiques',
+   253→      furniture: 'Mobilier',
+   254→      appliance: 'Frigo, machine...',
+   255→      construction: 'Ciment, fer...',
+   256→      personal: 'Bagages perso',
+   257→      other: 'Divers',
+   258→    },
+   259→    status: {
+   260→      searching: 'Recherche chauffeur',
+   261→      accepted: 'Chauffeur en route',
+   262→      picked: 'Ramassé - en livraison',
+   263→      delivered: 'Livré avec succès',
+   264→    },
+   265→    driverFound: 'Chauffeur trouvé !',
+   266→    driverInfo: 'Infos chauffeur',
+   267→    call: 'Appeler',
+   268→    chat: 'Message',
+   269→    rate: 'Noter',
+   270→    priceConfig: 'Configuration tarifs (modifiable par admin)',
+   271→    orderCreated: 'Commande créée !',
+   272→    willNotify: 'Vous serez notifié dès acceptation',
+   273→  },
+   274→};
+   275→
+   276→// === TYPES ===
+   277→type CargoKey = 'parcel' | 'goods' | 'shop' | 'furniture' | 'appliance' | 'construction' | 'personal' | 'other';
+   278→type OrderStatus = 'searching' | 'accepted' | 'picked' | 'delivered' | 'cancelled';
+   279→type Role = 'customer' | 'driver' | 'admin';
+   280→
+   281→interface PricingConfig {
+   282→  basePrice: number;
+   283→  perKm: number;
+   284→  multipliers: Record<CargoKey, number>;
+   285→}
+   286→
+   287→interface Order {
+   288→  id: string;
+   289→  cargoType: CargoKey;
+   290→  pickup: string;
+   291→  dropoff: string;
+   292→  weight: number;
+   293→  distance: number;
+   294→  price: number;
+   295→  status: OrderStatus;
+   296→  createdAt: string;
+   297→  driverName?: string;
+   298→  driverPhone?: string;
+   299→  driverRating?: number;
+   300→  notes?: string;
+   301→}
+   302→
+   303→// === CONTEXTS ===
+   304→const LanguageContext = createContext<{ lang: 'ar' | 'fr'; toggle: () => void; t: typeof translations.ar }>({
+   305→  lang: 'ar',
+   306→  toggle: () => {},
+   307→  t: translations.ar,
+   308→});
+   309→
+   310→// === MOCK DATA ===
+   311→const CARGO_TYPES: { key: CargoKey; icon: string; color: string }[] = [
+   312→  { key: 'parcel', icon: 'cube', color: '#0EA5E9' },
+   313→  { key: 'goods', icon: 'layers', color: '#8B5CF6' },
+   314→  { key: 'shop', icon: 'storefront', color: '#F59E0B' },
+   315→  { key: 'furniture', icon: 'bed', color: '#EF4444' },
+   316→  { key: 'appliance', icon: 'tv', color: '#10B981' },
+   317→  { key: 'construction', icon: 'construct', color: '#6B7280' },
+   318→  { key: 'personal', icon: 'bag-handle', color: '#EC4899' },
+   319→  { key: 'other', icon: 'ellipsis-horizontal-circle', color: '#64748B' },
+   320→];
+   321→
+   322→const GUERRARA_LOCATIONS = [
+   323→  'حي 05 جويلية - القرارة',
+   324→  'وسط المدينة - القرارة',
+   325→  'حي المستقبل - القرارة',
+   326→  'طريق غرداية - القرارة',
+   327→  'سوق القرارة المركزي',
+   328→  'حي النصر - القرارة',
+   329→  'المنطقة الصناعية - القرارة',
+   330→  'حي الواحة - القرارة',
+   331→];
+   332→
+   333→const MOCK_DRIVERS = [
+   334→  { name: 'أحمد بن سالم', phone: '0555123456', rating: 4.9, trips: 342, triporteur: 'Triporteur 125cc - أزرق' },
+   335→  { name: 'محمد لعروسي', phone: '0661234789', rating: 4.7, trips: 210, triporteur: 'Triporteur 150cc - أبيض' },
+   336→  { name: 'ياسين قاسمي', phone: '0770987654', rating: 4.8, trips: 189, triporteur: 'Triporteur 125cc - أحمر' },
+   337→];
+   338→
+   339→const Stack = createNativeStackNavigator();
+   340→const Tab = createBottomTabNavigator();
+   341→
+   342→// === COMPONENTS ===
+   343→
+   344→function MapPlaceholder({ lang, pickup, dropoff, showDriver }: any) {
+   345→  const isAr = lang === 'ar';
+   346→  return (
+   347→    <View style={styles.mapContainer}>
+   348→      {/* Map Grid Background */}
+   349→      <View style={styles.mapGrid}>
+   350→        {/* Roads */}
+   351→        <View style={[styles.roadH, { top: '30%' }]} />
+   352→        <View style={[styles.roadH, { top: '60%', opacity: 0.6 }]} />
+   353→        <View style={[styles.roadV, { left: '30%' }]} />
+   354→        <View style={[styles.roadV, { left: '70%', opacity: 0.6 }]} />
+   355→        {/* District blocks */}
+   356→        <View style={[styles.mapBlock, { top: '10%', left: '10%', backgroundColor: '#E6F4F1' }]} />
+   357→        <View style={[styles.mapBlock, { top: '10%', right: '10%', backgroundColor: '#FFF1E0' }]} />
+   358→        <View style={[styles.mapBlock, { bottom: '15%', left: '10%', backgroundColor: '#F1F5F9' }]} />
+   359→        <View style={[styles.mapBlock, { bottom: '15%', right: '10%', backgroundColor: '#E6F4F1' }]} />
+   360→
+   361→        {/* Pickup Pin */}
+   362→        <View style={[styles.mapPin, { top: '35%', left: '28%', backgroundColor: COLORS.primary }]}>
+   363→          <Ionicons name="location" size={16} color="#fff" />
+   364→        </View>
+   365→        {/* Dropoff Pin */}
+   366→        <View style={[styles.mapPin, { top: '58%', left: '68%', backgroundColor: COLORS.accent }]}>
+   367→          <Ionicons name="flag" size={14} color="#fff" />
+   368→        </View>
+   369→        {/* Driver moving */}
+   370→        {showDriver && (
+   371→          <View style={[styles.mapPin, { top: '45%', left: '45%', backgroundColor: COLORS.darkBg, width: 36, height: 36, borderRadius: 18, borderWidth: 3, borderColor: '#fff' }]}>
+   372→            <Ionicons name="bicycle" size={18} color="#fff" />
+   373→          </View>
+   374→        )}
+   375→        {/* Dashed path */}
+   376→        <View style={styles.dashedPath} />
+   377→        {/* Distance badge */}
+   378→        <View style={[styles.distanceBadge, { alignSelf: isAr ? 'flex-end' : 'flex-start' }]}>
+   379→          <Ionicons name="navigate" size={12} color={COLORS.primary} />
+   380→          <Text style={styles.distanceText}>3.8 كم • 12 دقيقة</Text>
+   381→        </View>
+   382→      </View>
+   383→
+   384→      {/* Map overlay top */}
+   385→      <View style={styles.mapTopOverlay}>
+   386→        <View style={styles.mapSearchBar}>
+   387→          <Ionicons name="search" size={16} color={COLORS.textMuted} />
+   388→          <Text style={styles.mapSearchText}>{isAr ? 'القرارة، غرداية' : 'El Guerrara, Ghardaïa'}</Text>
+   389→          <View style={styles.liveDot} />
+   390→          <Text style={styles.liveText}>LIVE</Text>
+   391→        </View>
+   392→        <TouchableOpacity style={styles.mapLocateBtn}>
+   393→          <Ionicons name="locate" size={20} color={COLORS.primary} />
+   394→        </TouchableOpacity>
+   395→      </View>
+   396→
+   397→      {/* Map attribution */}
+   398→      <View style={styles.mapAttribution}>
+   399→        <Text style={styles.mapAttrText}>Mapbox • Supabase Realtime • القرارة UTC+1</Text>
+   400→      </View>
+   401→    </View>
+   402→  );
+   403→}
+   404→
+   405→// === SCREENS ===
+   406→
+   407→function OnboardingScreen({ navigation }: any) {
+   408→  const { lang, t } = useContext(LanguageContext);
+   409→  const isAr = lang === 'ar';
+   410→  return (
+   411→    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.primary }]}>
+   412→      <StatusBar style="light" />
+   413→      {/* Decorative circles */}
+   414→      <View style={[styles.decoCircle, { width: 400, height: 400, top: -100, right: -100, opacity: 0.08 }]} />
+   415→      <View style={[styles.decoCircle, { width: 300, height: 300, bottom: 100, left: -80, opacity: 0.05 }]} />
+   416→
+   417→      <View style={styles.onboardingHeader}>
+   418→        <View style={styles.logoRow}>
+   419→          <View style={styles.logoBox}>
+   420→            <Ionicons name="cube" size={28} color={COLORS.primary} />
+   421→          </View>
+   422→          <View>
+   423→            <Text style={[styles.logoText, { textAlign: isAr ? 'right' : 'left' }]}>{t.appName}</Text>
+   424→            <Text style={styles.logoSub}>{t.appSub} • TRI PORTEUR</Text>
+   425→          </View>
+   426→          <View style={styles.badgeLive}>
+   427→            <View style={styles.liveDotSmall} />
+   428→            <Text style={styles.badgeLiveText}>القرارة</Text>
+   429→          </View>
+   430→        </View>
+   431→        {/* Language toggle top */}
+   432→        <View style={styles.langToggleTop}>
+   433→          <TouchableOpacity style={[styles.langBtn, lang === 'ar' && styles.langBtnActive]} onPress={() => {}}>
+   434→            <Text style={[styles.langBtnText, lang === 'ar' && styles.langBtnTextActive]}>AR</Text>
+   435→          </TouchableOpacity>
+   436→          <TouchableOpacity style={[styles.langBtn, lang === 'fr' && styles.langBtnActive]} onPress={() => {}}>
+   437→            <Text style={[styles.langBtnText, lang === 'fr' && styles.langBtnTextActive]}>FR</Text>
+   438→          </TouchableOpacity>
+   439→        </View>
+   440→      </View>
+   441→
+   442→      <View style={styles.onboardingCard}>
+   443→        <View style={styles.illustrationWrap}>
+   444→          <View style={styles.illustrationBg}>
+   445→            <Ionicons name="bicycle" size={80} color={COLORS.primary} />
+   446→            <View style={styles.boxOnBike}>
+   447→              <Ionicons name="cube" size={22} color="#fff" />
+   448→            </View>
+   449→          </View>
+   450→          {/* floating badges */}
+   451→          <View style={[styles.floatBadge, { top: 10, right: -10 }]}>
+   452→            <Ionicons name="shield-checkmark" size={14} color={COLORS.success} />
+   453→            <Text style={styles.floatBadgeText}>آمن</Text>
+   454→          </View>
+   455→          <View style={[styles.floatBadge, { bottom: 10, left: -10 }]}>
+   456→            <Ionicons name="time" size={14} color={COLORS.accent} />
+   457→            <Text style={styles.floatBadgeText}>سريع</Text>
+   458→          </View>
+   459→        </View>
+   460→
+   461→        <Text style={[styles.onboardingTitle, { textAlign: 'center' }]}>{t.welcome}</Text>
+   462→        <Text style={[styles.onboardingSub, { textAlign: 'center' }]}>{t.welcomeSub}</Text>
+   463→
+   464→        <View style={styles.featuresRow}>
+   465→          <View style={styles.featureItem}>
+   466→            <View style={[styles.featureIcon, { backgroundColor: '#E6F4F1' }]}>
+   467→              <Ionicons name="cube-outline" size={20} color={COLORS.primary} />
+   468→            </View>
+   469→            <Text style={styles.featureLabel}>{isAr ? 'كل الحمولات' : 'Tout cargaison'}</Text>
+   470→          </View>
+   471→          <View style={styles.featureItem}>
+   472→            <View style={[styles.featureIcon, { backgroundColor: '#FFF1E0' }]}>
+   473→              <Ionicons name="cash-outline" size={20} color={COLORS.accent} />
+   474→            </View>
+   475→            <Text style={styles.featureLabel}>{isAr ? 'دفع عند التسليم' : 'Paiement livraison'}</Text>
+   476→          </View>
+   477→          <View style={styles.featureItem}>
+   478→            <View style={[styles.featureIcon, { backgroundColor: '#EFF6FF' }]}>
+   479→              <Ionicons name="map-outline" size={20} color={COLORS.info} />
+   480→            </View>
+   481→            <Text style={styles.featureLabel}>{isAr ? 'تتبع مباشر' : 'Suivi live'}</Text>
+   482→          </View>
+   483→        </View>
+   484→
+   485→        <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.replace('Auth')}>
+   486→          <Text style={styles.primaryBtnText}>{t.startNow}</Text>
+   487→          <Ionicons name={isAr ? 'arrow-back' : 'arrow-forward'} size={20} color="#fff" />
+   488→        </TouchableOpacity>
+   489→
+   490→        <View style={styles.secureRow}>
+   491→          <Ionicons name="lock-closed" size={12} color={COLORS.textMuted} />
+   492→          <Text style={styles.secureText}>{t.securedBy}</Text>
+   493→          <Text style={styles.secureDot}>•</Text>
+   494→          <Ionicons name="headset" size={12} color={COLORS.textMuted} />
+   495→          <Text style={styles.secureText}>{t.support24}</Text>
+   496→        </View>
+   497→
+   498→        <Text style={styles.regionNote}>
+   499→          {isAr ? 'مخصص حاليا للتجربة داخل القرارة – غرداية فقط' : 'Phase pilote uniquement à El Guerrara - Ghardaïa'}
+   500→        </Text>
+   501→      </View>
+   502→
+   503→      <View style={styles.bottomTech}>
+   504→        <Text style={styles.techText}>Flutter • Supabase • Mapbox • DZD • OTP</Text>
+   505→      </View>
+   506→    </SafeAreaView>
+   507→  );
+   508→}
+   509→
+   510→function AuthScreen({ navigation }: any) {
+   511→  const { lang, t } = useContext(LanguageContext);
+   512→  const isAr = lang === 'ar';
+   513→  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+   514→  const [phone, setPhone] = useState('');
+   515→  const [otp, setOtp] = useState(['', '', '', '']);
+   516→  const otpRefs = [useRef<TextInput>(null), useRef<TextInput>(null), useRef<TextInput>(null), useRef<TextInput>(null)];
+   517→  const [loading, setLoading] = useState(false);
+   518→  const [role, setRole] = useState<Role>('customer');
+   519→
+   520→  const handleSendOTP = () => {
+   521→    if (phone.length < 9) {
+   522→      Alert.alert(isAr ? 'تنبيه' : 'Attention', isAr ? 'أدخل رقم هاتف صحيح' : 'Entrez un numéro valide');
+   523→      return;
+   524→    }
+   525→    setLoading(true);
+   526→    setTimeout(() => {
+   527→      setLoading(false);
+   528→      setStep('otp');
+   529→    }, 1200);
+   530→  };
+   531→
+   532→  const handleVerify = () => {
+   533→    const code = otp.join('');
+   534→    if (code.length !== 4) {
+   535→      Alert.alert(isAr ? 'خطأ' : 'Erreur', isAr ? 'أدخل الرمز المكون من 4 أرقام' : 'Entrez le code à 4 chiffres');
+   536→      return;
+   537→    }
+   538→    setLoading(true);
+   539→    setTimeout(async () => {
+   540→      await AsyncStorage.setItem('wassilha_role', role);
+   541→      await AsyncStorage.setItem('wassilha_phone', phone);
+   542→      setLoading(false);
+   543→      navigation.replace('Main', { role });
+   544→    }, 1000);
+   545→  };
+   546→
+   547→  const handleOtpChange = (val: string, idx: number) => {
+   548→    const newOtp = [...otp];
+   549→    newOtp[idx] = val;
+   550→    setOtp(newOtp);
+   551→    if (val && idx < 3) otpRefs[idx + 1].current?.focus();
+   552→    if (!val && idx > 0) otpRefs[idx - 1].current?.focus();
+   553→  };
+   554→
+   555→  return (
+   556→    <SafeAreaView style={styles.container}>
+   557→      <StatusBar style="dark" />
+   558→      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+   559→        <ScrollView contentContainerStyle={styles.authContainer} keyboardShouldPersistTaps="handled">
+   560→          <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backBtn, { alignSelf: isAr ? 'flex-end' : 'flex-start' }]}>
+   561→            <Ionicons name={isAr ? 'arrow-forward' : 'arrow-back'} size={22} color={COLORS.text} />
+   562→          </TouchableOpacity>
+   563→
+   564→          <View style={styles.authLogo}>
+   565→            <View style={[styles.logoBox, { width: 64, height: 64, borderRadius: 18 }]}>
+   566→              <Ionicons name="cube" size={32} color={COLORS.primary} />
+   567→            </View>
+   568→            <Text style={styles.authTitle}>{t.appName}</Text>
+   569→            <Text style={styles.authSub}>{t.tagline}</Text>
+   570→          </View>
+   571→
+   572→          {/* Role selector */}
+   573→          <View style={styles.roleSelector}>
+   574→            {(['customer', 'driver', 'admin'] as Role[]).map((r) => (
+   575→              <TouchableOpacity key={r} onPress={() => setRole(r)} style={[styles.roleChip, role === r && styles.roleChipActive]}>
+   576→                <Ionicons
+   577→                  name={r === 'customer' ? 'person' : r === 'driver' ? 'bicycle' : 'shield-checkmark'}
+   578→                  size={16}
+   579→                  color={role === r ? '#fff' : COLORS.textMuted}
+   580→                />
+   581→                <Text style={[styles.roleChipText, role === r && styles.roleChipTextActive]}>
+   582→                  {r === 'customer' ? t.customer : r === 'driver' ? t.driver : t.admin}
+   583→                </Text>
+   584→              </TouchableOpacity>
+   585→            ))}
+   586→          </View>
+   587→          <Text style={styles.roleHint}>{isAr ? 'اختر دورك للتجربة (يمكن التبديل لاحقا)' : 'Choisissez votre rôle pour la démo'}</Text>
+   588→
+   589→          {step === 'phone' ? (
+   590→            <View style={styles.authCard}>
+   591→              <Text style={[styles.authCardTitle, { textAlign: isAr ? 'right' : 'left' }]}>{t.phoneLogin}</Text>
+   592→              <Text style={[styles.authCardSub, { textAlign: isAr ? 'right' : 'left' }]}>
+   593→                {isAr ? 'سيصلك رمز تحقق عبر الرسائل القصيرة' : 'Vous recevrez un code par SMS'}
+   594→              </Text>
+   595→
+   596→              <View style={[styles.phoneInputRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   597→                <View style={styles.countryCode}>
+   598→                  <Text style={styles.countryFlag}>🇩🇿</Text>
+   599→                  <Text style={styles.countryCodeText}>+213</Text>
+   600→                  <Ionicons name="chevron-down" size={14} color={COLORS.textMuted} />
+   601→                </View>
+   602→                <TextInput
+   603→                  style={[styles.phoneInput, { textAlign: isAr ? 'right' : 'left' }]}
+   604→                  placeholder={t.phonePlaceholder}
+   605→                  placeholderTextColor={COLORS.textLight}
+   606→                  keyboardType="phone-pad"
+   607→                  value={phone}
+   608→                  onChangeText={setPhone}
+   609→                  maxLength={10}
+   610→                />
+   611→              </View>
+   612→
+   613→              <TouchableOpacity style={[styles.primaryBtn, { marginTop: 20 }]} onPress={handleSendOTP} disabled={loading}>
+   614→                {loading ? <ActivityIndicator color="#fff" /> : (
+   615→                  <>
+   616→                    <Text style={styles.primaryBtnText}>{t.sendOTP}</Text>
+   617→                    <Ionicons name={isAr ? 'arrow-back' : 'arrow-forward'} size={18} color="#fff" />
+   618→                  </>
+   619→                )}
+   620→              </TouchableOpacity>
+   621→
+   622→              <View style={styles.otpInfo}>
+   623→                <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
+   624→                <Text style={styles.otpInfoText}>{isAr ? 'الرمز التجريبي: 1234' : 'Code démo: 1234'}</Text>
+   625→              </View>
+   626→            </View>
+   627→          ) : (
+   628→            <View style={styles.authCard}>
+   629→              <Text style={[styles.authCardTitle, { textAlign: isAr ? 'right' : 'left' }]}>{t.otpTitle}</Text>
+   630→              <Text style={[styles.authCardSub, { textAlign: isAr ? 'right' : 'left' }]}>
+   631→                {t.otpSub} +213 {phone}
+   632→              </Text>
+   633→
+   634→              <View style={styles.otpRow}>
+   635→                {otp.map((digit, idx) => (
+   636→                  <TextInput
+   637→                    key={idx}
+   638→                    ref={otpRefs[idx]}
+   639→                    style={[styles.otpInput, digit && styles.otpInputFilled]}
+   640→                    value={digit}
+   641→                    onChangeText={(v) => handleOtpChange(v.slice(-1), idx)}
+   642→                    keyboardType="number-pad"
+   643→                    maxLength={1}
+   644→                    textAlign="center"
+   645→                  />
+   646→                ))}
+   647→              </View>
+   648→
+   649→              <TouchableOpacity style={[styles.primaryBtn, { marginTop: 20 }]} onPress={handleVerify} disabled={loading}>
+   650→                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{t.verify}</Text>}
+   651→              </TouchableOpacity>
+   652→
+   653→              <TouchableOpacity style={styles.resendBtn} onPress={() => setStep('phone')}>
+   654→                <Text style={styles.resendText}>{t.resend} • {isAr ? 'تغيير الرقم' : 'Changer numéro'}</Text>
+   655→              </TouchableOpacity>
+   656→            </View>
+   657→          )}
+   658→
+   659→          <View style={styles.secureRow}>
+   660→            <Ionicons name="shield-checkmark" size={14} color={COLORS.success} />
+   661→            <Text style={styles.secureText}>{t.securedBy}</Text>
+   662→          </View>
+   663→        </ScrollView>
+   664→      </KeyboardAvoidingView>
+   665→    </SafeAreaView>
+   666→  );
+   667→}
+   668→
+   669→// === CUSTOMER HOME ===
+   670→function CustomerHomeScreen({ navigation }: any) {
+   671→  const { lang, t, toggle } = useContext(LanguageContext);
+   672→  const isAr = lang === 'ar';
+   673→  const [selectedCargo, setSelectedCargo] = useState<CargoKey>('parcel');
+   674→  const [weight, setWeight] = useState(50);
+   675→  const [pickup, setPickup] = useState(GUERRARA_LOCATIONS[0]);
+   676→  const [dropoff, setDropoff] = useState(GUERRARA_LOCATIONS[1]);
+   677→  const [notes, setNotes] = useState('');
+   678→  const [showPricing, setShowPricing] = useState(false);
+   679→  const [isOffline, setIsOffline] = useState(false);
+   680→  const [pricing, setPricing] = useState<PricingConfig>({
+   681→    basePrice: 300,
+   682→    perKm: 45,
+   683→    multipliers: { parcel: 1, goods: 1.2, shop: 1.1, furniture: 1.6, appliance: 1.5, construction: 1.8, personal: 1, other: 1.1 },
+   684→  });
+   685→
+   686→  const distance = 3.8;
+   687→  const estimatedPrice = Math.round((pricing.basePrice + distance * pricing.perKm) * (pricing.multipliers[selectedCargo] || 1) + weight * 0.5);
+   688→
+   689→  const handleRequest = async () => {
+   690→    const newOrder: Order = {
+   691→      id: 'WS-' + Date.now().toString().slice(-6),
+   692→      cargoType: selectedCargo,
+   693→      pickup,
+   694→      dropoff,
+   695→      weight,
+   696→      distance,
+   697→      price: estimatedPrice,
+   698→      status: 'searching',
+   699→      createdAt: new Date().toISOString(),
+   700→      notes,
+   701→    };
+   702→    // Save to storage for offline resilience
+   703→    try {
+   704→      const existing = await AsyncStorage.getItem('wassilha_orders');
+   705→      const orders = existing ? JSON.parse(existing) : [];
+   706→      orders.unshift(newOrder);
+   707→      await AsyncStorage.setItem('wassilha_orders', JSON.stringify(orders));
+   708→      // also queue if offline
+   709→      if (isOffline) {
+   710→        const queue = await AsyncStorage.getItem('wassilha_queue');
+   711→        const q = queue ? JSON.parse(queue) : [];
+   712→        q.push(newOrder);
+   713→        await AsyncStorage.setItem('wassilha_queue', JSON.stringify(q));
+   714→      }
+   715→    } catch {}
+   716→    navigation.navigate('Tracking', { order: newOrder });
+   717→  };
+   718→
+   719→  const togglePickupDropoff = () => {
+   720→    const tmp = pickup;
+   721→    setPickup(dropoff);
+   722→    setDropoff(tmp);
+   723→  };
+   724→
+   725→  return (
+   726→    <SafeAreaView style={styles.container} edges={['top']}>
+   727→      <StatusBar style="dark" />
+   728→      {/* Header */}
+   729→      <View style={[styles.customerHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   730→        <View style={[styles.headerLeft, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   731→          <View style={styles.logoBoxSmall}>
+   732→            <Ionicons name="cube" size={20} color={COLORS.primary} />
+   733→          </View>
+   734→          <View style={{ alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+   735→            <Text style={styles.headerTitle}>WASSILHA</Text>
+   736→            <View style={[styles.locationRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   737→              <Ionicons name="location" size={12} color={COLORS.accent} />
+   738→              <Text style={styles.headerLocation}>{t.location}</Text>
+   739→              <View style={styles.onlineDot} />
+   740→            </View>
+   741→          </View>
+   742→        </View>
+   743→        <View style={[styles.headerActions, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   744→          <TouchableOpacity onPress={toggle} style={styles.headerIconBtn}>
+   745→            <Text style={styles.headerLang}>{lang === 'ar' ? 'FR' : 'AR'}</Text>
+   746→          </TouchableOpacity>
+   747→          <TouchableOpacity style={styles.headerIconBtn} onPress={() => setIsOffline(!isOffline)}>
+   748→            <Ionicons name={isOffline ? 'cloud-offline' : 'cloud-done'} size={18} color={isOffline ? COLORS.error : COLORS.success} />
+   749→          </TouchableOpacity>
+   750→          <TouchableOpacity style={styles.avatarBtn}>
+   751→            <Text style={styles.avatarText}>م</Text>
+   752→          </TouchableOpacity>
+   753→        </View>
+   754→      </View>
+   755→
+   756→      {isOffline && (
+   757→        <View style={[styles.offlineBanner, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   758→          <Ionicons name="cloud-offline" size={16} color="#fff" />
+   759→          <Text style={styles.offlineText}>{isAr ? 'وضع عدم الاتصال - سيتم حفظ الطلب محليا' : 'Mode hors ligne - commande sauvegardée localement'}</Text>
+   760→        </View>
+   761→      )}
+   762→
+   763→      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+   764→        {/* Map */}
+   765→        <MapPlaceholder lang={lang} pickup={pickup} dropoff={dropoff} />
+   766→
+   767→        {/* Pickup / Dropoff Card */}
+   768→        <View style={styles.locationsCard}>
+   769→          <View style={styles.locationsTimeline}>
+   770→            <View style={styles.timelineDotWrap}>
+   771→              <View style={[styles.timelineDot, { backgroundColor: COLORS.primary }]} />
+   772→              <View style={styles.timelineLine} />
+   773→              <View style={[styles.timelineDot, { backgroundColor: COLORS.accent }]} />
+   774→            </View>
+   775→            <View style={{ flex: 1, gap: 12 }}>
+   776→              <TouchableOpacity style={[styles.locationInput, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   777→                <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+   778→                  <Text style={styles.locationLabel}>{t.pickup}</Text>
+   779→                  <Text style={styles.locationValue} numberOfLines={1}>{pickup}</Text>
+   780→                </View>
+   781→                <View style={[styles.locationIcon, { backgroundColor: COLORS.primaryLight }]}>
+   782→                  <Ionicons name="navigate" size={16} color={COLORS.primary} />
+   783→                </View>
+   784→              </TouchableOpacity>
+   785→
+   786→              <TouchableOpacity style={[styles.locationInput, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   787→                <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+   788→                  <Text style={styles.locationLabel}>{t.dropoff}</Text>
+   789→                  <Text style={styles.locationValue} numberOfLines={1}>{dropoff}</Text>
+   790→                </View>
+   791→                <View style={[styles.locationIcon, { backgroundColor: COLORS.accentLight }]}>
+   792→                  <Ionicons name="flag" size={16} color={COLORS.accent} />
+   793→                </View>
+   794→              </TouchableOpacity>
+   795→            </View>
+   796→            <TouchableOpacity style={styles.swapBtn} onPress={togglePickupDropoff}>
+   797→              <Ionicons name="swap-vertical" size={18} color={COLORS.primary} />
+   798→            </TouchableOpacity>
+   799→          </View>
+   800→
+   801→          <View style={[styles.locationActions, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   802→            <TouchableOpacity style={[styles.locActionBtn, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   803→              <Ionicons name="locate" size={14} color={COLORS.primary} />
+   804→              <Text style={styles.locActionText}>{t.currentLocation}</Text>
+   805→            </TouchableOpacity>
+   806→            <TouchableOpacity style={[styles.locActionBtn, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   807→              <Ionicons name="map" size={14} color={COLORS.primary} />
+   808→              <Text style={styles.locActionText}>{t.selectOnMap}</Text>
+   809→            </TouchableOpacity>
+   810→          </View>
+   811→        </View>
+   812→
+   813→        {/* Cargo Types */}
+   814→        <View style={styles.section}>
+   815→          <View style={[styles.sectionHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   816→            <Text style={styles.sectionTitle}>{t.cargoTypes}</Text>
+   817→            <Text style={styles.sectionSub}>{isAr ? 'اختر ما تريد نقله' : 'Choisissez le type'}</Text>
+   818→          </View>
+   819→
+   820→          <View style={styles.cargoGrid}>
+   821→            {CARGO_TYPES.map((cargo) => {
+   822→              const isSelected = selectedCargo === cargo.key;
+   823→              return (
+   824→                <TouchableOpacity
+   825→                  key={cargo.key}
+   826→                  onPress={() => setSelectedCargo(cargo.key)}
+   827→                  style={[styles.cargoCard, isSelected && styles.cargoCardSelected, { borderColor: isSelected ? COLORS.primary : COLORS.border }]}
+   828→                >
+   829→                  {isSelected && (
+   830→                    <View style={styles.cargoCheck}>
+   831→                      <Ionicons name="checkmark" size={10} color="#fff" />
+   832→                    </View>
+   833→                  )}
+   834→                  <View style={[styles.cargoIcon, { backgroundColor: isSelected ? COLORS.primary : cargo.color + '15' }]}>
+   835→                    <Ionicons name={cargo.icon as any} size={22} color={isSelected ? '#fff' : cargo.color} />
+   836→                  </View>
+   837→                  <Text style={[styles.cargoLabel, isSelected && { color: COLORS.primary }]} numberOfLines={1}>
+   838→                    {t.cargo[cargo.key]}
+   839→                  </Text>
+   840→                  <Text style={styles.cargoDesc} numberOfLines={1}>
+   841→                    {t.cargoDesc[cargo.key]}
+   842→                  </Text>
+   843→                </TouchableOpacity>
+   844→              );
+   845→            })}
+   846→          </View>
+   847→        </View>
+   848→
+   849→        {/* Weight */}
+   850→        <View style={styles.section}>
+   851→          <View style={[styles.sectionHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   852→            <Text style={styles.sectionTitle}>{t.weight}</Text>
+   853→            <View style={[styles.weightBadge, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   854→              <Text style={styles.weightBadgeText}>{weight} {t.kg}</Text>
+   855→              <Ionicons name="scale" size={12} color={COLORS.primary} />
+   856→            </View>
+   857→          </View>
+   858→          <View style={styles.weightRow}>
+   859→            <TouchableOpacity style={styles.weightBtn} onPress={() => setWeight(Math.max(5, weight - 10))}>
+   860→              <Ionicons name="remove" size={20} color={COLORS.primary} />
+   861→            </TouchableOpacity>
+   862→            <View style={styles.weightSliderWrap}>
+   863→              <View style={styles.weightTrack}>
+   864→                <View style={[styles.weightFill, { width: `${(weight / 500) * 100}%` }]} />
+   865→                <View style={[styles.weightThumb, { left: `${(weight / 500) * 100}%` }]} />
+   866→              </View>
+   867→              <View style={[styles.weightLabels, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   868→                <Text style={styles.weightLabel}>5 {t.kg}</Text>
+   869→                <Text style={styles.weightLabel}>500 {t.kg}</Text>
+   870→              </View>
+   871→            </View>
+   872→            <TouchableOpacity style={styles.weightBtn} onPress={() => setWeight(Math.min(500, weight + 10))}>
+   873→              <Ionicons name="add" size={20} color={COLORS.primary} />
+   874→            </TouchableOpacity>
+   875→          </View>
+   876→          <View style={[styles.weightPresets, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   877→            {[20, 50, 100, 200].map((w) => (
+   878→              <TouchableOpacity key={w} onPress={() => setWeight(w)} style={[styles.weightPreset, weight === w && styles.weightPresetActive]}>
+   879→                <Text style={[styles.weightPresetText, weight === w && styles.weightPresetTextActive]}>{w} {t.kg}</Text>
+   880→              </TouchableOpacity>
+   881→            ))}
+   882→          </View>
+   883→        </View>
+   884→
+   885→        {/* Notes */}
+   886→        <View style={styles.section}>
+   887→          <Text style={[styles.sectionTitle, { textAlign: isAr ? 'right' : 'left', marginBottom: 8 }]}>{t.notes}</Text>
+   888→          <View style={styles.notesInputWrap}>
+   889→            <TextInput
+   890→              style={[styles.notesInput, { textAlign: isAr ? 'right' : 'left' }]}
+   891→              placeholder={t.notesPlaceholder}
+   892→              placeholderTextColor={COLORS.textLight}
+   893→              value={notes}
+   894→              onChangeText={setNotes}
+   895→              multiline
+   896→            />
+   897→            <Ionicons name="chatbubble-ellipses-outline" size={18} color={COLORS.textLight} style={{ position: 'absolute', top: 12, right: isAr ? undefined : 12, left: isAr ? 12 : undefined }} />
+   898→          </View>
+   899→        </View>
+   900→
+   901→        {/* Price Estimate */}
+   902→        <View style={styles.priceCard}>
+   903→          <View style={[styles.priceHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   904→            <View style={[styles.priceIcon, { backgroundColor: COLORS.primary }]}>
+   905→              <Ionicons name="calculator" size={18} color="#fff" />
+   906→            </View>
+   907→            <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+   908→              <Text style={styles.priceTitle}>{t.estimate}</Text>
+   909→              <Text style={styles.priceSub}>
+   910→                {distance} {t.km} • {t.cargo[selectedCargo]} • {pricing.basePrice} {t.dzd} + {pricing.perKm}/{t.km}
+   911→              </Text>
+   912→            </View>
+   913→            <TouchableOpacity onPress={() => setShowPricing(true)}>
+   914→              <Ionicons name="settings-outline" size={18} color={COLORS.textMuted} />
+   915→            </TouchableOpacity>
+   916→          </View>
+   917→
+   918→          <View style={[styles.priceRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   919→            <View style={{ alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+   920→              <Text style={styles.priceValue}>{estimatedPrice.toLocaleString('fr-DZ')} {t.dzd}</Text>
+   921→              <Text style={styles.priceVat}>{isAr ? 'شامل كل الرسوم • دفع عند التسليم' : 'TTC • Paiement à la livraison'}</Text>
+   922→            </View>
+   923→            <View style={[styles.priceBreakdown, { alignItems: isAr ? 'flex-end' : 'flex-start' }]}>
+   924→              <Text style={styles.priceBreakText}>
+   925→                {isAr ? `أساسي ${pricing.basePrice} + مسافة ${Math.round(distance * pricing.perKm)} + حمولة ×${pricing.multipliers[selectedCargo]}` : `Base ${pricing.basePrice} + distance ${Math.round(distance * pricing.perKm)} ×${pricing.multipliers[selectedCargo]}`}
+   926→              </Text>
+   927→            </View>
+   928→          </View>
+   929→
+   930→          <View style={[styles.priceFeatures, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   931→            <View style={[styles.priceFeature, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   932→              <Ionicons name="shield-checkmark" size={12} color={COLORS.success} />
+   933→              <Text style={styles.priceFeatureText}>{isAr ? 'تأمين الحمولة' : 'Assurance incluse'}</Text>
+   934→            </View>
+   935→            <View style={[styles.priceFeature, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   936→              <Ionicons name="time" size={12} color={COLORS.accent} />
+   937→              <Text style={styles.priceFeatureText}>12-18 {isAr ? 'دقيقة' : 'min'}</Text>
+   938→            </View>
+   939→          </View>
+   940→        </View>
+   941→
+   942→        <TouchableOpacity style={styles.primaryBtnLarge} onPress={handleRequest}>
+   943→          <Ionicons name="bicycle" size={22} color="#fff" />
+   944→          <Text style={styles.primaryBtnLargeText}>{t.requestTriporteur}</Text>
+   945→          <View style={styles.pricePill}>
+   946→            <Text style={styles.pricePillText}>{estimatedPrice} {t.dzd}</Text>
+   947→          </View>
+   948→        </TouchableOpacity>
+   949→
+   950→        <Text style={styles.offlineNote}>
+   951→          <Ionicons name="cloud-offline-outline" size={12} color={COLORS.textMuted} /> {t.offlineDesc}
+   952→        </Text>
+   953→      </ScrollView>
+   954→
+   955→      {/* Pricing modal (admin configurable) */}
+   956→      <Modal visible={showPricing} transparent animationType="slide">
+   957→        <View style={styles.modalOverlay}>
+   958→          <View style={styles.modalCard}>
+   959→            <View style={[styles.modalHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+   960→              <Text style={styles.modalTitle}>{t.priceConfig}</Text>
+   961→              <TouchableOpacity onPress={() => setShowPricing(false)}>
+   962→                <Ionicons name="close" size={24} color={COLORS.text} />
+   963→              </TouchableOpacity>
+   964→            </View>
+   965→            <Text style={[styles.modalSub, { textAlign: isAr ? 'right' : 'left' }]}>
+   966→              {isAr ? 'يمكن للإدارة تعديل التسعير في الوقت الحقيقي عبر لوحة التحكم' : 'Modifiable en temps réel par l\'administration'}
+   967→            </Text>
+   968→            <View style={styles.pricingEditRow}>
+   969→              <Text style={styles.pricingLabel}>{t.basePrice}</Text>
+   970→              <TextInput style={styles.pricingInput} value={String(pricing.basePrice)} keyboardType="numeric" onChangeText={(v) => setPricing({ ...pricing, basePrice: parseInt(v) || 0 })} />
+   971→              <Text style={styles.pricingUnit}>{t.dzd}</Text>
+   972→            </View>
+   973→            <View style={styles.pricingEditRow}>
+   974→              <Text style={styles.pricingLabel}>{t.perKm}</Text>
+   975→              <TextInput style={styles.pricingInput} value={String(pricing.perKm)} keyboardType="numeric" onChangeText={(v) => setPricing({ ...pricing, perKm: parseInt(v) || 0 })} />
+   976→              <Text style={styles.pricingUnit}>{t.dzd}</Text>
+   977→            </View>
+   978→            <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowPricing(false)}>
+   979→              <Text style={styles.primaryBtnText}>{t.save}</Text>
+   980→            </TouchableOpacity>
+   981→          </View>
+   982→        </View>
+   983→      </Modal>
+   984→    </SafeAreaView>
+   985→  );
+   986→}
+   987→
+   988→function TrackingScreen({ route, navigation }: any) {
+   989→  const { lang, t } = useContext(LanguageContext);
+   990→  const isAr = lang === 'ar';
+   991→  const order: Order = route?.params?.order || {
+   992→    id: 'WS-48291',
+   993→    cargoType: 'furniture',
+   994→    pickup: GUERRARA_LOCATIONS[0],
+   995→    dropoff: GUERRARA_LOCATIONS[1],
+   996→    weight: 80,
+   997→    distance: 3.8,
+   998→    price: 890,
+   999→    status: 'searching',
+  1000→    createdAt: new Date().toISOString(),
+  1001→  };
+  1002→  const [status, setStatus] = useState<OrderStatus>(order.status);
+  1003→  const [driver] = useState(MOCK_DRIVERS[0]);
+  1004→
+  1005→  useEffect(() => {
+  1006→    const timers = [
+  1007→      setTimeout(() => setStatus('accepted'), 3000),
+  1008→      setTimeout(() => setStatus('picked'), 8000),
+  1009→      setTimeout(() => setStatus('delivered'), 15000),
+  1010→    ];
+  1011→    return () => timers.forEach(clearTimeout);
+  1012→  }, []);
+  1013→
+  1014→  const steps: { key: OrderStatus; label: string; icon: string }[] = [
+  1015→    { key: 'searching', label: t.status.searching, icon: 'search' },
+  1016→    { key: 'accepted', label: t.status.accepted, icon: 'bicycle' },
+  1017→    { key: 'picked', label: t.status.picked, icon: 'cube' },
+  1018→    { key: 'delivered', label: t.status.delivered, icon: 'checkmark-done' },
+  1019→  ];
+  1020→  const currentIndex = steps.findIndex((s) => s.key === status);
+  1021→
+  1022→  return (
+  1023→    <SafeAreaView style={styles.container} edges={['top']}>
+  1024→      <View style={[styles.trackHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1025→        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backCircle}>
+  1026→          <Ionicons name={isAr ? 'arrow-forward' : 'arrow-back'} size={20} color={COLORS.text} />
+  1027→        </TouchableOpacity>
+  1028→        <View style={{ alignItems: isAr ? 'flex-end' : 'flex-start', flex: 1 }}>
+  1029→          <Text style={styles.trackTitle}>{isAr ? 'تتبع الطلب' : 'Suivi commande'}</Text>
+  1030→          <Text style={styles.trackId}>{order.id} • {new Date(order.createdAt).toLocaleTimeString('fr-DZ', { hour: '2-digit', minute: '2-digit' })} UTC+1</Text>
+  1031→        </View>
+  1032→        <View style={[styles.statusBadge, { backgroundColor: status === 'delivered' ? COLORS.success : status === 'searching' ? COLORS.warning : COLORS.info }]}>
+  1033→          <Text style={styles.statusBadgeText}>
+  1034→            {status === 'searching' ? t.pending : status === 'accepted' ? t.accepted : status === 'picked' ? t.inTransit : t.delivered}
+  1035→          </Text>
+  1036→        </View>
+  1037→      </View>
+  1038→
+  1039→      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }}>
+  1040→        <MapPlaceholder lang={lang} showDriver={status !== 'searching'} />
+  1041→
+  1042→        {/* Status Card */}
+  1043→        <View style={styles.trackCard}>
+  1044→          {status === 'searching' ? (
+  1045→            <View style={[styles.searchingBox, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1046→              <ActivityIndicator color={COLORS.primary} />
+  1047→              <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1048→                <Text style={styles.searchingTitle}>{t.searchingDriver}</Text>
+  1049→                <Text style={styles.searchingSub}>{isAr ? 'نبحث عن أقرب Triporteur متاح في القرارة...' : 'Recherche du triporteur le plus proche...'}</Text>
+  1050→              </View>
+  1051→            </View>
+  1052→          ) : (
+  1053→            <View style={[styles.driverFoundBox, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1054→              <View style={styles.driverAvatar}>
+  1055→                <Text style={styles.driverAvatarText}>{driver.name.charAt(0)}</Text>
+  1056→                <View style={styles.driverOnlineDot} />
+  1057→              </View>
+  1058→              <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1059→                <Text style={styles.driverFoundTitle}>{t.driverFound}</Text>
+  1060→                <Text style={styles.driverName}>{driver.name} • ⭐ {driver.rating}</Text>
+  1061→                <Text style={styles.driverTri}>{driver.triporteur}</Text>
+  1062→              </View>
+  1063→              <View style={[styles.driverActions, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1064→                <TouchableOpacity style={[styles.driverActionBtn, { backgroundColor: COLORS.success }]}>
+  1065→                  <Ionicons name="call" size={18} color="#fff" />
+  1066→                </TouchableOpacity>
+  1067→                <TouchableOpacity style={[styles.driverActionBtn, { backgroundColor: COLORS.primary }]}>
+  1068→                  <Ionicons name="chatbubble" size={18} color="#fff" />
+  1069→                </TouchableOpacity>
+  1070→              </View>
+  1071→            </View>
+  1072→          )}
+  1073→
+  1074→          {/* Timeline */}
+  1075→          <View style={[styles.timeline, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1076→            {steps.map((step, idx) => {
+  1077→              const isDone = idx <= currentIndex;
+  1078→              const isCurrent = idx === currentIndex;
+  1079→              return (
+  1080→                <View key={step.key} style={styles.timelineStep}>
+  1081→                  <View style={[styles.timelineCircle, isDone && styles.timelineCircleDone, isCurrent && styles.timelineCircleCurrent]}>
+  1082→                    <Ionicons name={step.icon as any} size={14} color={isDone ? '#fff' : COLORS.textLight} />
+  1083→                  </View>
+  1084→                  <Text style={[styles.timelineLabel, isDone && styles.timelineLabelDone]}>{step.label}</Text>
+  1085→                  {idx < steps.length - 1 && <View style={[styles.timelineConnector, isDone && { backgroundColor: COLORS.primary }]} />}
+  1086→                </View>
+  1087→              );
+  1088→            })}
+  1089→          </View>
+  1090→
+  1091→          {/* Order details */}
+  1092→          <View style={styles.orderDetailBox}>
+  1093→            <View style={[styles.orderDetailRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1094→              <Text style={styles.orderDetailLabel}>{isAr ? 'الحمولة' : 'Cargaison'}</Text>
+  1095→              <Text style={styles.orderDetailValue}>{t.cargo[order.cargoType]} • {order.weight} {t.kg}</Text>
+  1096→            </View>
+  1097→            <View style={[styles.orderDetailRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1098→              <Text style={styles.orderDetailLabel}>{isAr ? 'المسافة' : 'Distance'}</Text>
+  1099→              <Text style={styles.orderDetailValue}>{order.distance} {t.km}</Text>
+  1100→            </View>
+  1101→            <View style={[styles.orderDetailRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1102→              <Text style={styles.orderDetailLabel}>{isAr ? 'السعر' : 'Prix'}</Text>
+  1103→              <Text style={[styles.orderDetailValue, { color: COLORS.primary, fontWeight: '800' }]}>{order.price} {t.dzd}</Text>
+  1104→            </View>
+  1105→            <View style={[styles.orderDetailRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1106→              <Text style={styles.orderDetailLabel}>{t.pickup}</Text>
+  1107→              <Text style={styles.orderDetailValue} numberOfLines={1}>{order.pickup}</Text>
+  1108→            </View>
+  1109→            <View style={[styles.orderDetailRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1110→              <Text style={styles.orderDetailLabel}>{t.dropoff}</Text>
+  1111→              <Text style={styles.orderDetailValue} numberOfLines={1}>{order.dropoff}</Text>
+  1112→            </View>
+  1113→          </View>
+  1114→
+  1115→          {status === 'delivered' && (
+  1116→            <View style={styles.deliveredCelebrate}>
+  1117→              <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
+  1118→              <Text style={styles.deliveredTitle}>{isAr ? 'تم التوصيل بنجاح! 🎉' : 'Livraison réussie ! 🎉'}</Text>
+  1119→              <Text style={styles.deliveredSub}>{isAr ? 'شكرا لاستخدامك وصّلها' : 'Merci d\'avoir utilisé WASSILHA'}</Text>
+  1120→              <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.navigate('CustomerHome')}>
+  1121→                <Text style={styles.primaryBtnText}>{isAr ? 'طلب جديد' : 'Nouvelle commande'}</Text>
+  1122→              </TouchableOpacity>
+  1123→            </View>
+  1124→          )}
+  1125→
+  1126→          {status !== 'delivered' && status !== 'searching' && (
+  1127→            <View style={[styles.etaBox, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1128→              <Ionicons name="time-outline" size={18} color={COLORS.primary} />
+  1129→              <Text style={styles.etaText}>{isAr ? 'الوصول المتوقع: 12 دقيقة' : 'Arrivée estimée: 12 min'}</Text>
+  1130→              <Text style={styles.etaLive}>LIVE</Text>
+  1131→            </View>
+  1132→          )}
+  1133→        </View>
+  1134→      </ScrollView>
+  1135→    </SafeAreaView>
+  1136→  );
+  1137→}
+  1138→
+  1139→function OrdersHistoryScreen() {
+  1140→  const { lang, t } = useContext(LanguageContext);
+  1141→  const isAr = lang === 'ar';
+  1142→  const [orders, setOrders] = useState<Order[]>([]);
+  1143→  const [refreshing, setRefreshing] = useState(false);
+  1144→
+  1145→  const loadOrders = async () => {
+  1146→    try {
+  1147→      const stored = await AsyncStorage.getItem('wassilha_orders');
+  1148→      if (stored) setOrders(JSON.parse(stored));
+  1149→      else {
+  1150→        // mock history
+  1151→        const mock: Order[] = [
+  1152→          { id: 'WS-38921', cargoType: 'parcel', pickup: GUERRARA_LOCATIONS[2], dropoff: GUERRARA_LOCATIONS[4], weight: 15, distance: 2.1, price: 420, status: 'delivered', createdAt: new Date(Date.now() - 86400000).toISOString(), driverName: 'أحمد بن سالم' },
+  1153→          { id: 'WS-38902', cargoType: 'furniture', pickup: GUERRARA_LOCATIONS[0], dropoff: GUERRARA_LOCATIONS[5], weight: 120, distance: 4.5, price: 1120, status: 'delivered', createdAt: new Date(Date.now() - 172800000).toISOString(), driverName: 'ياسين قاسمي' },
+  1154→          { id: 'WS-38871', cargoType: 'appliance', pickup: 'سوق القرارة', dropoff: GUERRARA_LOCATIONS[3], weight: 60, distance: 3.2, price: 780, status: 'cancelled', createdAt: new Date(Date.now() - 259200000).toISOString() },
+  1155→        ];
+  1156→        setOrders(mock);
+  1157→      }
+  1158→    } catch {}
+  1159→  };
+  1160→
+  1161→  useEffect(() => { loadOrders(); }, []);
+  1162→
+  1163→  const onRefresh = () => {
+  1164→    setRefreshing(true);
+  1165→    setTimeout(() => { loadOrders(); setRefreshing(false); }, 800);
+  1166→  };
+  1167→
+  1168→  return (
+  1169→    <SafeAreaView style={styles.container} edges={['top']}>
+  1170→      <View style={[styles.pageHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1171→        <Text style={styles.pageTitle}>{t.history}</Text>
+  1172→        <View style={[styles.pageBadge, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1173→          <Text style={styles.pageBadgeText}>{orders.length} {isAr ? 'طلب' : 'commandes'}</Text>
+  1174→        </View>
+  1175→      </View>
+  1176→
+  1177→      <FlatList
+  1178→        data={orders}
+  1179→        keyExtractor={(item) => item.id}
+  1180→        refreshing={refreshing}
+  1181→        onRefresh={onRefresh}
+  1182→        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }}
+  1183→        ListEmptyComponent={
+  1184→          <View style={styles.emptyState}>
+  1185→            <Ionicons name="receipt-outline" size={48} color={COLORS.textLight} />
+  1186→            <Text style={styles.emptyTitle}>{isAr ? 'لا توجد طلبات بعد' : 'Aucune commande'}</Text>
+  1187→            <Text style={styles.emptySub}>{isAr ? 'طلباتك ستظهر هنا' : 'Vos commandes apparaîtront ici'}</Text>
+  1188→          </View>
+  1189→        }
+  1190→        renderItem={({ item }) => (
+  1191→          <View style={styles.orderCard}>
+  1192→            <View style={[styles.orderCardHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1193→              <Text style={styles.orderId}>{item.id}</Text>
+  1194→              <View style={[styles.orderStatus, { backgroundColor: item.status === 'delivered' ? '#DCFCE7' : item.status === 'cancelled' ? '#FEE2E2' : '#FEF3C7' }]}>
+  1195→                <Text style={[styles.orderStatusText, { color: item.status === 'delivered' ? COLORS.success : item.status === 'cancelled' ? COLORS.error : COLORS.warning }]}>
+  1196→                  {item.status === 'delivered' ? t.delivered : item.status === 'cancelled' ? (isAr ? 'ملغى' : 'Annulé') : t.pending}
+  1197→                </Text>
+  1198→              </View>
+  1199→            </View>
+  1200→            <View style={[styles.orderCardRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1201→              <View style={[styles.orderCargoIcon, { backgroundColor: CARGO_TYPES.find(c=>c.key===item.cargoType)?.color + '15' }]}>
+  1202→                <Ionicons name={CARGO_TYPES.find(c=>c.key===item.cargoType)?.icon as any} size={16} color={CARGO_TYPES.find(c=>c.key===item.cargoType)?.color} />
+  1203→              </View>
+  1204→              <Text style={styles.orderCargoText}>{t.cargo[item.cargoType]} • {item.weight} {t.kg} • {item.distance} {t.km}</Text>
+  1205→              <Text style={styles.orderPrice}>{item.price} {t.dzd}</Text>
+  1206→            </View>
+  1207→            <View style={[styles.orderRoute, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1208→              <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
+  1209→              <Text style={styles.orderRouteText} numberOfLines={1}>{item.pickup} → {item.dropoff}</Text>
+  1210→            </View>
+  1211→            <Text style={[styles.orderDate, { textAlign: isAr ? 'right' : 'left' }]}>
+  1212→              {new Date(item.createdAt).toLocaleDateString(isAr ? 'ar-DZ' : 'fr-DZ')} • {new Date(item.createdAt).toLocaleTimeString('fr-DZ', { hour: '2-digit', minute: '2-digit' })} UTC+1
+  1213→            </Text>
+  1214→          </View>
+  1215→        )}
+  1216→      />
+  1217→    </SafeAreaView>
+  1218→  );
+  1219→}
+  1220→
+  1221→function DriverHomeScreen() {
+  1222→  const { lang, t } = useContext(LanguageContext);
+  1223→  const isAr = lang === 'ar';
+  1224→  const [isOnline, setIsOnline] = useState(true);
+  1225→  const [incoming, setIncoming] = useState<Order[]>([
+  1226→    { id: 'WS-49201', cargoType: 'construction', pickup: 'محل مواد البناء - القرارة', dropoff: GUERRARA_LOCATIONS[6], weight: 300, distance: 2.8, price: 1450, status: 'searching', createdAt: new Date().toISOString(), notes: 'إسمنت 10 أكياس' },
+  1227→    { id: 'WS-49202', cargoType: 'shop', pickup: 'متجر الأقمشة وسط المدينة', dropoff: GUERRARA_LOCATIONS[2], weight: 25, distance: 1.9, price: 520, status: 'searching', createdAt: new Date().toISOString() },
+  1228→    { id: 'WS-49203', cargoType: 'furniture', pickup: GUERRARA_LOCATIONS[0], dropoff: GUERRARA_LOCATIONS[3], weight: 90, distance: 3.5, price: 980, status: 'searching', createdAt: new Date().toISOString(), notes: 'طاولة + 4 كراسي' },
+  1229→  ]);
+  1230→  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  1231→
+  1232→  const handleAccept = (order: Order) => {
+  1233→    setActiveOrder({ ...order, status: 'accepted' });
+  1234→    setIncoming(incoming.filter((o) => o.id !== order.id));
+  1235→    Alert.alert(isAr ? 'تم القبول' : 'Accepté', isAr ? `تم قبول الطلب ${order.id}` : `Commande ${order.id} acceptée`);
+  1236→  };
+  1237→
+  1238→  return (
+  1239→    <SafeAreaView style={styles.container} edges={['top']}>
+  1240→      <View style={[styles.driverHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1241→        <View style={{ alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1242→          <Text style={styles.driverHeaderTitle}>{isAr ? 'مرحبا، أحمد 👋' : 'Salut, Ahmed 👋'}</Text>
+  1243→          <Text style={styles.driverHeaderSub}>Triporteur 125cc • ⭐ 4.9 • 342 {isAr ? 'رحلة' : 'courses'}</Text>
+  1244→        </View>
+  1245→        <View style={[styles.onlineToggle, { flexDirection: isAr ? 'row-reverse' : 'row', backgroundColor: isOnline ? '#DCFCE7' : '#F1F5F9' }]}>
+  1246→          <Text style={[styles.onlineText, { color: isOnline ? COLORS.success : COLORS.textMuted }]}>{isOnline ? t.online : t.offline}</Text>
+  1247→          <Switch value={isOnline} onValueChange={setIsOnline} trackColor={{ true: COLORS.success, false: '#CBD5E1' }} thumbColor="#fff" />
+  1248→        </View>
+  1249→      </View>
+  1250→
+  1251→      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
+  1252→        {/* Stats */}
+  1253→        <View style={[styles.driverStats, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1254→          <View style={styles.driverStatCard}>
+  1255→            <Text style={styles.driverStatValue}>8</Text>
+  1256→            <Text style={styles.driverStatLabel}>{isAr ? 'طلبات اليوم' : 'Courses du jour'}</Text>
+  1257→          </View>
+  1258→          <View style={styles.driverStatCard}>
+  1259→            <Text style={styles.driverStatValue}>6,840 {t.dzd}</Text>
+  1260→            <Text style={styles.driverStatLabel}>{isAr ? 'أرباح اليوم' : 'Gains du jour'}</Text>
+  1261→          </View>
+  1262→          <View style={styles.driverStatCard}>
+  1263→            <Text style={styles.driverStatValue}>4.9 ⭐</Text>
+  1264→            <Text style={styles.driverStatLabel}>{isAr ? 'التقييم' : 'Note'}</Text>
+  1265→          </View>
+  1266→        </View>
+  1267→
+  1268→        {activeOrder && (
+  1269→          <View style={[styles.activeOrderCard, { borderColor: COLORS.primary }]}>
+  1270→            <View style={[styles.activeHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1271→              <Text style={styles.activeTitle}>{isAr ? 'الطلب النشط' : 'Course active'}</Text>
+  1272→              <View style={styles.activeBadge}>
+  1273→                <Text style={styles.activeBadgeText}>{activeOrder.id}</Text>
+  1274→              </View>
+  1275→            </View>
+  1276→            <Text style={[styles.activeRoute, { textAlign: isAr ? 'right' : 'left' }]}>{activeOrder.pickup} → {activeOrder.dropoff}</Text>
+  1277→            <View style={[styles.activeActions, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1278→              <TouchableOpacity style={[styles.activeBtn, { backgroundColor: COLORS.primary }]} onPress={() => setActiveOrder({ ...activeOrder, status: activeOrder.status === 'accepted' ? 'picked' : 'delivered' })}>
+  1279→                <Text style={styles.activeBtnText}>{activeOrder.status === 'accepted' ? (isAr ? 'تم الاستلام' : 'Ramassé') : (isAr ? 'تم التوصيل' : 'Livré')}</Text>
+  1280→              </TouchableOpacity>
+  1281→              <TouchableOpacity style={styles.activeBtnOutline}>
+  1282→                <Ionicons name="navigate" size={16} color={COLORS.primary} />
+  1283→                <Text style={styles.activeBtnOutlineText}>{isAr ? 'توجيه' : 'Naviguer'}</Text>
+  1284→              </TouchableOpacity>
+  1285→            </View>
+  1286→            {activeOrder.status === 'delivered' && (
+  1287→              <TouchableOpacity style={{ marginTop: 12, alignItems: 'center' }} onPress={() => setActiveOrder(null)}>
+  1288→                <Text style={{ color: COLORS.success, fontWeight: '700' }}>{isAr ? 'إنهاء وإغلاق ✓' : 'Terminer ✓'}</Text>
+  1289→              </TouchableOpacity>
+  1290→            )}
+  1291→          </View>
+  1292→        )}
+  1293→
+  1294→        <View style={[styles.sectionHeader, { flexDirection: isAr ? 'row-reverse' : 'row', marginTop: 8 }]}>
+  1295→          <Text style={styles.sectionTitle}>{t.incomingRequests}</Text>
+  1296→          <View style={styles.incomingBadge}>
+  1297→            <Text style={styles.incomingBadgeText}>{incoming.length}</Text>
+  1298→          </View>
+  1299→        </View>
+  1300→
+  1301→        {!isOnline ? (
+  1302→          <View style={styles.offlineDriverCard}>
+  1303→            <Ionicons name="power" size={32} color={COLORS.textLight} />
+  1304→            <Text style={styles.offlineDriverTitle}>{isAr ? 'أنت غير متصل' : 'Vous êtes hors ligne'}</Text>
+  1305→            <Text style={styles.offlineDriverSub}>{isAr ? 'قم بتفعيل الاتصال لاستقبال الطلبات' : 'Passez en ligne pour recevoir des commandes'}</Text>
+  1306→          </View>
+  1307→        ) : (
+  1308→          incoming.map((order) => (
+  1309→            <View key={order.id} style={styles.incomingCard}>
+  1310→              <View style={[styles.incomingHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1311→                <Text style={styles.incomingId}>{order.id}</Text>
+  1312→                <Text style={styles.incomingPrice}>{order.price} {t.dzd}</Text>
+  1313→              </View>
+  1314→              <View style={[styles.incomingRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1315→                <View style={[styles.incomingCargoIcon, { backgroundColor: CARGO_TYPES.find(c=>c.key===order.cargoType)?.color + '18' }]}>
+  1316→                  <Ionicons name={CARGO_TYPES.find(c=>c.key===order.cargoType)?.icon as any} size={18} color={CARGO_TYPES.find(c=>c.key===order.cargoType)?.color} />
+  1317→                </View>
+  1318→                <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1319→                  <Text style={styles.incomingCargo}>{t.cargo[order.cargoType]} • {order.weight} {t.kg}</Text>
+  1320→                  <Text style={styles.incomingDistance}>{order.distance} {t.km} • {order.notes || (isAr ? 'بدون ملاحظات' : 'Sans notes')}</Text>
+  1321→                </View>
+  1322→                <View style={styles.incomingTime}>
+  1323→                  <Text style={styles.incomingTimeText}>2 {isAr ? 'د' : 'min'}</Text>
+  1324→                </View>
+  1325→              </View>
+  1326→              <View style={[styles.incomingRouteBox, { alignItems: isAr ? 'flex-end' : 'flex-start' }]}>
+  1327→                <View style={[styles.incomingRouteRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1328→                  <View style={[styles.dotSmall, { backgroundColor: COLORS.primary }]} />
+  1329→                  <Text style={styles.incomingRouteText} numberOfLines={1}>{order.pickup}</Text>
+  1330→                </View>
+  1331→                <View style={[styles.incomingRouteRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1332→                  <View style={[styles.dotSmall, { backgroundColor: COLORS.accent }]} />
+  1333→                  <Text style={styles.incomingRouteText} numberOfLines={1}>{order.dropoff}</Text>
+  1334→                </View>
+  1335→              </View>
+  1336→              <View style={[styles.incomingActions, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1337→                <TouchableOpacity style={[styles.rejectBtn, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1338→                  <Ionicons name="close" size={16} color={COLORS.textMuted} />
+  1339→                  <Text style={styles.rejectText}>{t.reject}</Text>
+  1340→                </TouchableOpacity>
+  1341→                <TouchableOpacity style={[styles.acceptBtn, { flexDirection: isAr ? 'row-reverse' : 'row' }]} onPress={() => handleAccept(order)}>
+  1342→                  <Ionicons name="checkmark" size={16} color="#fff" />
+  1343→                  <Text style={styles.acceptText}>{t.accept}</Text>
+  1344→                </TouchableOpacity>
+  1345→              </View>
+  1346→            </View>
+  1347→          ))
+  1348→        )}
+  1349→      </ScrollView>
+  1350→    </SafeAreaView>
+  1351→  );
+  1352→}
+  1353→
+  1354→function AdminDashboardScreen() {
+  1355→  const { lang, t } = useContext(LanguageContext);
+  1356→  const isAr = lang === 'ar';
+  1357→  const [pricing, setPricing] = useState<PricingConfig>({
+  1358→    basePrice: 300,
+  1359→    perKm: 45,
+  1360→    multipliers: { parcel: 1, goods: 1.2, shop: 1.1, furniture: 1.6, appliance: 1.5, construction: 1.8, personal: 1, other: 1.1 },
+  1361→  });
+  1362→  const [editMode, setEditMode] = useState(false);
+  1363→
+  1364→  return (
+  1365→    <SafeAreaView style={styles.container} edges={['top']}>
+  1366→      <View style={[styles.adminHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1367→        <View style={{ alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1368→          <Text style={styles.adminTitle}>{t.dashboard}</Text>
+  1369→          <Text style={styles.adminSub}>{isAr ? 'القرارة - غرداية • الإدارة' : 'El Guerrara - Admin'}</Text>
+  1370→        </View>
+  1371→        <View style={styles.adminBadge}>
+  1372→          <Ionicons name="shield-checkmark" size={14} color="#fff" />
+  1373→          <Text style={styles.adminBadgeText}>ADMIN</Text>
+  1374→        </View>
+  1375→      </View>
+  1376→
+  1377→      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
+  1378→        {/* Stats Grid */}
+  1379→        <View style={styles.statsGrid}>
+  1380→          <View style={[styles.statCard, { backgroundColor: COLORS.primary }]}>
+  1381→            <Ionicons name="receipt" size={22} color="#fff" />
+  1382→            <Text style={styles.statValueWhite}>1,248</Text>
+  1383→            <Text style={styles.statLabelWhite}>{t.totalOrders}</Text>
+  1384→            <Text style={styles.statTrend}>↑ 12% {isAr ? 'هذا الأسبوع' : 'cette semaine'}</Text>
+  1385→          </View>
+  1386→          <View style={styles.statCard}>
+  1387→            <Ionicons name="bicycle" size={22} color={COLORS.primary} />
+  1388→            <Text style={styles.statValue}>14</Text>
+  1389→            <Text style={styles.statLabel}>{t.activeDrivers}</Text>
+  1390→            <Text style={styles.statTrendGreen}>● {isAr ? 'متصلون الآن' : 'en ligne'}</Text>
+  1391→          </View>
+  1392→          <View style={styles.statCard}>
+  1393→            <Ionicons name="cash" size={22} color={COLORS.accent} />
+  1394→            <Text style={styles.statValue}>482,500 {t.dzd}</Text>
+  1395→            <Text style={styles.statLabel}>{t.revenue}</Text>
+  1396→            <Text style={styles.statTrendGreen}>↑ 8%</Text>
+  1397→          </View>
+  1398→          <View style={styles.statCard}>
+  1399→            <Ionicons name="time" size={22} color={COLORS.info} />
+  1400→            <Text style={styles.statValue}>18 {isAr ? 'د' : 'min'}</Text>
+  1401→            <Text style={styles.statLabel}>{t.avgDelivery}</Text>
+  1402→            <Text style={styles.statTrend}>— {isAr ? 'مستقر' : 'stable'}</Text>
+  1403→          </View>
+  1404→        </View>
+  1405→
+  1406→        {/* Pricing Config */}
+  1407→        <View style={styles.adminCard}>
+  1408→          <View style={[styles.adminCardHeader, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1409→            <View style={[styles.adminCardIcon, { backgroundColor: COLORS.primaryLight }]}>
+  1410→              <Ionicons name="pricetag" size={18} color={COLORS.primary} />
+  1411→            </View>
+  1412→            <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1413→              <Text style={styles.adminCardTitle}>{t.pricing}</Text>
+  1414→              <Text style={styles.adminCardSub}>{isAr ? 'قابل للتعديل فورا - يطبق على كل الطلبات الجديدة' : 'Modifiable instantanément'}</Text>
+  1415→            </View>
+  1416→            <TouchableOpacity style={[styles.editBtn, editMode && { backgroundColor: COLORS.primary }]} onPress={() => setEditMode(!editMode)}>
+  1417→              <Ionicons name={editMode ? 'checkmark' : 'create-outline'} size={16} color={editMode ? '#fff' : COLORS.primary} />
+  1418→              <Text style={[styles.editBtnText, editMode && { color: '#fff' }]}>{editMode ? t.save : (isAr ? 'تعديل' : 'Modifier')}</Text>
+  1419→            </TouchableOpacity>
+  1420→          </View>
+  1421→
+  1422→          <View style={[styles.pricingGrid, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1423→            <View style={styles.pricingBox}>
+  1424→              <Text style={styles.pricingBoxLabel}>{t.basePrice}</Text>
+  1425→              {editMode ? (
+  1426→                <TextInput style={styles.pricingBoxInput} value={String(pricing.basePrice)} onChangeText={(v) => setPricing({ ...pricing, basePrice: parseInt(v) || 0 })} keyboardType="numeric" />
+  1427→              ) : (
+  1428→                <Text style={styles.pricingBoxValue}>{pricing.basePrice} {t.dzd}</Text>
+  1429→              )}
+  1430→            </View>
+  1431→            <View style={styles.pricingBox}>
+  1432→              <Text style={styles.pricingBoxLabel}>{t.perKm}</Text>
+  1433→              {editMode ? (
+  1434→                <TextInput style={styles.pricingBoxInput} value={String(pricing.perKm)} onChangeText={(v) => setPricing({ ...pricing, perKm: parseInt(v) || 0 })} keyboardType="numeric" />
+  1435→              ) : (
+  1436→                <Text style={styles.pricingBoxValue}>{pricing.perKm} {t.dzd}</Text>
+  1437→              )}
+  1438→            </View>
+  1439→          </View>
+  1440→
+  1441→          <Text style={[styles.multiplierTitle, { textAlign: isAr ? 'right' : 'left' }]}>{t.cargoMultiplier}</Text>
+  1442→          <View style={styles.multiplierGrid}>
+  1443→            {CARGO_TYPES.map((c) => (
+  1444→              <View key={c.key} style={[styles.multiplierChip, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1445→                <Ionicons name={c.icon as any} size={12} color={c.color} />
+  1446→                <Text style={styles.multiplierLabel}>{t.cargo[c.key]}</Text>
+  1447→                {editMode ? (
+  1448→                  <TextInput
+  1449→                    style={styles.multiplierInput}
+  1450→                    value={String(pricing.multipliers[c.key])}
+  1451→                    onChangeText={(v) => setPricing({ ...pricing, multipliers: { ...pricing.multipliers, [c.key]: parseFloat(v) || 1 } })}
+  1452→                    keyboardType="decimal-pad"
+  1453→                  />
+  1454→                ) : (
+  1455→                  <Text style={styles.multiplierValue}>×{pricing.multipliers[c.key]}</Text>
+  1456→                )}
+  1457→              </View>
+  1458→            ))}
+  1459→          </View>
+  1460→        </View>
+  1461→
+  1462→        {/* Recent Orders Admin */}
+  1463→        <View style={styles.adminCard}>
+  1464→          <Text style={[styles.adminCardTitle, { textAlign: isAr ? 'right' : 'left', marginBottom: 12 }]}>{isAr ? 'الطلبات الأخيرة' : 'Dernières commandes'}</Text>
+  1465→          {[
+  1466→            { id: 'WS-49201', cargo: 'مواد بناء', price: 1450, status: 'searching' },
+  1467→            { id: 'WS-49199', cargo: 'أثاث', price: 980, status: 'delivered' },
+  1468→            { id: 'WS-49198', cargo: 'طرود', price: 420, status: 'picked' },
+  1469→          ].map((o) => (
+  1470→            <View key={o.id} style={[styles.adminOrderRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1471→              <Text style={styles.adminOrderId}>{o.id}</Text>
+  1472→              <Text style={styles.adminOrderCargo}>{o.cargo}</Text>
+  1473→              <Text style={styles.adminOrderPrice}>{o.price} {t.dzd}</Text>
+  1474→              <View style={[styles.adminStatusDot, { backgroundColor: o.status === 'delivered' ? COLORS.success : o.status === 'searching' ? COLORS.warning : COLORS.info }]} />
+  1475→            </View>
+  1476→          ))}
+  1477→        </View>
+  1478→
+  1479→        {/* Drivers Management */}
+  1480→        <View style={styles.adminCard}>
+  1481→          <Text style={[styles.adminCardTitle, { textAlign: isAr ? 'right' : 'left', marginBottom: 12 }]}>{t.drivers}</Text>
+  1482→          {MOCK_DRIVERS.map((d, idx) => (
+  1483→            <View key={idx} style={[styles.driverRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1484→              <View style={styles.driverAvatarSmall}>
+  1485→                <Text style={styles.driverAvatarSmallText}>{d.name.charAt(0)}</Text>
+  1486→              </View>
+  1487→              <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1488→                <Text style={styles.driverRowName}>{d.name}</Text>
+  1489→                <Text style={styles.driverRowSub}>{d.phone} • {d.triporteur}</Text>
+  1490→              </View>
+  1491→              <View style={{ alignItems: isAr ? 'flex-start' : 'flex-end' }}>
+  1492→                <Text style={styles.driverRowRating}>⭐ {d.rating}</Text>
+  1493→                <Text style={styles.driverRowTrips}>{d.trips} {isAr ? 'رحلة' : 'courses'}</Text>
+  1494→              </View>
+  1495→              <View style={[styles.verifyBadge, { backgroundColor: idx === 1 ? '#FEF3C7' : '#DCFCE7' }]}>
+  1496→                <Text style={[styles.verifyText, { color: idx === 1 ? '#92400E' : COLORS.success }]}>{idx === 1 ? (isAr ? 'قيد المراجعة' : 'En vérif.') : (isAr ? 'موثق' : 'Vérifié')}</Text>
+  1497→              </View>
+  1498→            </View>
+  1499→          ))}
+  1500→        </View>
+  1501→
+  1502→        <View style={[styles.offlineCard, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1503→          <Ionicons name="cloud-offline" size={20} color={COLORS.primary} />
+  1504→          <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1505→            <Text style={styles.offlineCardTitle}>{isAr ? 'تحمل انقطاع الإنترنت' : 'Résilience hors ligne'}</Text>
+  1506→            <Text style={styles.offlineCardSub}>{isAr ? 'جميع الطلبات محفوظة محليا عبر AsyncStorage وتتم مزامنتها عند عودة الاتصال - Supabase offline queue' : 'Toutes les commandes sauvegardées localement et synchronisées à la reconnexion'}</Text>
+  1507→          </View>
+  1508→        </View>
+  1509→      </ScrollView>
+  1510→    </SafeAreaView>
+  1511→  );
+  1512→}
+  1513→
+  1514→function ProfileScreen() {
+  1515→  const { lang, t, toggle } = useContext(LanguageContext);
+  1516→  const isAr = lang === 'ar';
+  1517→  const [isOffline, setIsOffline] = useState(false);
+  1518→  const [role, setRole] = useState<Role>('customer');
+  1519→
+  1520→  useEffect(() => {
+  1521→    AsyncStorage.getItem('wassilha_role').then((r) => r && setRole(r as Role));
+  1522→  }, []);
+  1523→
+  1524→  return (
+  1525→    <SafeAreaView style={styles.container} edges={['top']}>
+  1526→      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
+  1527→        <View style={styles.profileHeader}>
+  1528→          <View style={styles.profileAvatar}>
+  1529→            <Text style={styles.profileAvatarText}>م</Text>
+  1530→            <View style={styles.profileVerified}>
+  1531→              <Ionicons name="checkmark" size={12} color="#fff" />
+  1532→            </View>
+  1533→          </View>
+  1534→          <Text style={styles.profileName}>{isAr ? 'محمد الزبون' : 'Mohamed Client'}</Text>
+  1535→          <Text style={styles.profilePhone}>+213 5XX XX XX XX • {isAr ? 'القرارة' : 'El Guerrara'}</Text>
+  1536→          <View style={[styles.profileRoles, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1537→            {(['customer', 'driver', 'admin'] as Role[]).map((r) => (
+  1538→              <TouchableOpacity key={r} onPress={async () => { setRole(r); await AsyncStorage.setItem('wassilha_role', r); }} style={[styles.profileRoleChip, role === r && styles.profileRoleChipActive]}>
+  1539→                <Text style={[styles.profileRoleText, role === r && styles.profileRoleTextActive]}>{r === 'customer' ? t.customer : r === 'driver' ? t.driver : t.admin}</Text>
+  1540→              </TouchableOpacity>
+  1541→            ))}
+  1542→          </View>
+  1543→        </View>
+  1544→
+  1545→        <View style={styles.profileCard}>
+  1546→          <Text style={[styles.profileCardTitle, { textAlign: isAr ? 'right' : 'left' }]}>{t.language}</Text>
+  1547→          <View style={[styles.langRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1548→            <TouchableOpacity style={[styles.langOption, lang === 'ar' && styles.langOptionActive, { flexDirection: isAr ? 'row-reverse' : 'row' }]} onPress={() => lang !== 'ar' && toggle()}>
+  1549→              <Text style={styles.langFlag}>🇩🇿</Text>
+  1550→              <Text style={[styles.langOptionText, lang === 'ar' && styles.langOptionTextActive]}>{t.arabic} (RTL)</Text>
+  1551→              {lang === 'ar' && <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />}
+  1552→            </TouchableOpacity>
+  1553→            <TouchableOpacity style={[styles.langOption, lang === 'fr' && styles.langOptionActive, { flexDirection: isAr ? 'row-reverse' : 'row' }]} onPress={() => lang !== 'fr' && toggle()}>
+  1554→              <Text style={styles.langFlag}>🇫🇷</Text>
+  1555→              <Text style={[styles.langOptionText, lang === 'fr' && styles.langOptionTextActive]}>{t.french}</Text>
+  1556→              {lang === 'fr' && <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />}
+  1557→            </TouchableOpacity>
+  1558→          </View>
+  1559→        </View>
+  1560→
+  1561→        <View style={styles.profileCard}>
+  1562→          <View style={[styles.profileRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1563→            <View style={[styles.profileIcon, { backgroundColor: '#E6F4F1' }]}>
+  1564→              <Ionicons name="cloud-offline-outline" size={18} color={COLORS.primary} />
+  1565→            </View>
+  1566→            <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1567→              <Text style={styles.profileRowTitle}>{t.offlineMode}</Text>
+  1568→              <Text style={styles.profileRowSub}>{t.offlineDesc}</Text>
+  1569→            </View>
+  1570→            <Switch value={isOffline} onValueChange={setIsOffline} trackColor={{ true: COLORS.primary, false: '#E2E8F0' }} />
+  1571→          </View>
+  1572→          <View style={styles.divider} />
+  1573→          <View style={[styles.profileRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1574→            <View style={[styles.profileIcon, { backgroundColor: '#FFF1E0' }]}>
+  1575→              <Ionicons name="cash-outline" size={18} color={COLORS.accent} />
+  1576→            </View>
+  1577→            <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1578→              <Text style={styles.profileRowTitle}>{isAr ? 'العملة' : 'Devise'}</Text>
+  1579→              <Text style={styles.profileRowSub}>DZD • {isAr ? 'الدينار الجزائري' : 'Dinar Algérien'}</Text>
+  1580→            </View>
+  1581→            <Text style={styles.profileValue}>دج</Text>
+  1582→          </View>
+  1583→          <View style={styles.divider} />
+  1584→          <View style={[styles.profileRow, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1585→            <View style={[styles.profileIcon, { backgroundColor: '#EFF6FF' }]}>
+  1586→              <Ionicons name="time-outline" size={18} color={COLORS.info} />
+  1587→            </View>
+  1588→            <View style={{ flex: 1, alignItems: isAr ? 'flex-end' : 'flex-start' }}>
+  1589→              <Text style={styles.profileRowTitle}>{isAr ? 'التوقيت المحلي' : 'Fuseau horaire'}</Text>
+  1590→              <Text style={styles.profileRowSub}>Africa/Algiers • UTC+1</Text>
+  1591→            </View>
+  1592→            <Text style={styles.profileValue}>UTC+1</Text>
+  1593→          </View>
+  1594→        </View>
+  1595→
+  1596→        <View style={styles.profileCard}>
+  1597→          <View style={[styles.techStack, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1598→            <View style={styles.techBadge}><Text style={styles.techBadgeText}>Flutter</Text></View>
+  1599→            <View style={styles.techBadge}><Text style={styles.techBadgeText}>Supabase</Text></View>
+  1600→            <View style={styles.techBadge}><Text style={styles.techBadgeText}>Mapbox</Text></View>
+  1601→            <View style={styles.techBadge}><Text style={styles.techBadgeText}>Dart</Text></View>
+  1602→            <View style={styles.techBadge}><Text style={styles.techBadgeText}>Material 3</Text></View>
+  1603→          </View>
+  1604→          <Text style={[styles.techDesc, { textAlign: isAr ? 'right' : 'left' }]}>
+  1605→            {isAr ? 'التطبيق مبني وفق معايير Material 3 مع تشفير بيانات، مصادقة OTP، خرائط حية، وقائمة انتظار للعمل دون إنترنت.' : 'App construite en Material 3 avec chiffrement, auth OTP, cartes live et file d\'attente offline.'}
+  1606→          </Text>
+  1607→        </View>
+  1608→
+  1609→        <TouchableOpacity style={[styles.logoutBtn, { flexDirection: isAr ? 'row-reverse' : 'row' }]}>
+  1610→          <Ionicons name="log-out-outline" size={18} color={COLORS.error} />
+  1611→          <Text style={styles.logoutText}>{t.logout}</Text>
+  1612→        </TouchableOpacity>
+  1613→
+  1614→        <Text style={styles.versionText}>WASSILHA v1.0.0 • {isAr ? 'القرارة - غرداية - الجزائر' : 'El Guerrara - Ghardaïa - Algérie'} • © 2026</Text>
+  1615→      </ScrollView>
+  1616→    </SafeAreaView>
+  1617→  );
+  1618→}
+  1619→
+  1620→// === TAB NAVIGATORS ===
+  1621→function CustomerTabs() {
+  1622→  const { t, lang } = useContext(LanguageContext);
+  1623→  const isAr = lang === 'ar';
+  1624→  return (
+  1625→    <Tab.Navigator
+  1626→      screenOptions={{
+  1627→        headerShown: false,
+  1628→        tabBarActiveTintColor: COLORS.primary,
+  1629→        tabBarInactiveTintColor: COLORS.textLight,
+  1630→        tabBarStyle: { height: 64, paddingBottom: 8, paddingTop: 8, backgroundColor: '#fff', borderTopColor: COLORS.border },
+  1631→        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+  1632→      }}
+  1633→    >
+  1634→      <Tab.Screen
+  1635→        name="CustomerHome"
+  1636→        component={CustomerHomeScreen}
+  1637→        options={{
+  1638→          title: t.home,
+  1639→          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+  1640→        }}
+  1641→      />
+  1642→      <Tab.Screen
+  1643→        name="History"
+  1644→        component={OrdersHistoryScreen}
+  1645→        options={{
+  1646→          title: t.history,
+  1647→          tabBarIcon: ({ color, size }) => <Ionicons name="receipt" size={size} color={color} />,
+  1648→          tabBarBadge: 3,
+  1649→        }}
+  1650→      />
+  1651→      <Tab.Screen
+  1652→        name="TrackTab"
+  1653→        component={TrackingScreen}
+  1654→        options={{
+  1655→          title: t.track,
+  1656→          tabBarIcon: ({ color, size }) => <Ionicons name="navigate-circle" size={size} color={color} />,
+  1657→        }}
+  1658→      />
+  1659→      <Tab.Screen
+  1660→        name="Profile"
+  1661→        component={ProfileScreen}
+  1662→        options={{
+  1663→          title: t.profile,
+  1664→          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+  1665→        }}
+  1666→      />
+  1667→    </Tab.Navigator>
+  1668→  );
+  1669→}
+  1670→
+  1671→function DriverTabs() {
+  1672→  const { t } = useContext(LanguageContext);
+  1673→  return (
+  1674→    <Tab.Navigator
+  1675→      screenOptions={{
+  1676→        headerShown: false,
+  1677→        tabBarActiveTintColor: COLORS.primary,
+  1678→        tabBarInactiveTintColor: COLORS.textLight,
+  1679→        tabBarStyle: { height: 64, paddingBottom: 8, paddingTop: 8, backgroundColor: '#fff', borderTopColor: COLORS.border },
+  1680→      }}
+  1681→    >
+  1682→      <Tab.Screen name="DriverHome" component={DriverHomeScreen} options={{ title: t.home, tabBarIcon: ({ color, size }) => <Ionicons name="bicycle" size={size} color={color} /> }} />
+  1683→      <Tab.Screen name="DriverOrders" component={OrdersHistoryScreen} options={{ title: t.myTrips, tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} /> }} />
+  1684→      <Tab.Screen name="DriverEarnings" component={AdminDashboardScreen} options={{ title: t.earnings, tabBarIcon: ({ color, size }) => <Ionicons name="wallet" size={size} color={color} /> }} />
+  1685→      <Tab.Screen name="DriverProfile" component={ProfileScreen} options={{ title: t.profile, tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} /> }} />
+  1686→    </Tab.Navigator>
+  1687→  );
+  1688→}
+  1689→
+  1690→function AdminTabs() {
+  1691→  const { t } = useContext(LanguageContext);
+  1692→  return (
+  1693→    <Tab.Navigator
+  1694→      screenOptions={{
+  1695→        headerShown: false,
+  1696→        tabBarActiveTintColor: COLORS.primary,
+  1697→        tabBarInactiveTintColor: COLORS.textLight,
+  1698→        tabBarStyle: { height: 64, paddingBottom: 8, paddingTop: 8, backgroundColor: '#0F172A', borderTopColor: '#1E293B' },
+  1699→        tabBarActiveBackgroundColor: '#1E293B',
+  1700→        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+  1701→      }}
+  1702→    >
+  1703→      <Tab.Screen name="AdminDash" component={AdminDashboardScreen} options={{ title: t.dashboard, tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} /> }} />
+  1704→      <Tab.Screen name="AdminPricing" component={AdminDashboardScreen} options={{ title: t.pricing, tabBarIcon: ({ color, size }) => <Ionicons name="pricetag" size={size} color={color} /> }} />
+  1705→      <Tab.Screen name="AdminOrders" component={OrdersHistoryScreen} options={{ title: t.orders, tabBarIcon: ({ color, size }) => <Ionicons name="receipt" size={size} color={color} /> }} />
+  1706→      <Tab.Screen name="AdminProfile" component={ProfileScreen} options={{ title: t.admin, tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark" size={size} color={color} /> }} />
+  1707→    </Tab.Navigator>
+  1708→  );
+  1709→}
+  1710→
+  1711→function MainNavigator({ route }: any) {
+  1712→  const [role, setRole] = useState<Role>(route?.params?.role || 'customer');
+  1713→  const { lang } = useContext(LanguageContext);
+  1714→
+  1715→  useEffect(() => {
+  1716→    const check = async () => {
+  1717→      const r = await AsyncStorage.getItem('wassilha_role');
+  1718→      if (r) setRole(r as Role);
+  1719→    };
+  1720→    check();
+  1721→    const interval = setInterval(check, 1000);
+  1722→    return () => clearInterval(interval);
+  1723→  }, []);
+  1724→
+  1725→  // Role switcher bar
+  1726→  const RoleSwitcher = () => (
+  1727→    <View style={[styles.roleSwitcherBar, { flexDirection: lang === 'ar' ? 'row-reverse' : 'row' }]}>
+  1728→      <Text style={styles.roleSwitcherLabel}>{lang === 'ar' ? 'تجربة الأدوار:' : 'Rôles:'}</Text>
+  1729→      {(['customer', 'driver', 'admin'] as Role[]).map((r) => (
+  1730→        <TouchableOpacity
+  1731→          key={r}
+  1732→          onPress={async () => {
+  1733→            setRole(r);
+  1734→            await AsyncStorage.setItem('wassilha_role', r);
+  1735→          }}
+  1736→          style={[styles.roleSwitcherBtn, role === r && styles.roleSwitcherBtnActive]}
+  1737→        >
+  1738→          <Text style={[styles.roleSwitcherText, role === r && styles.roleSwitcherTextActive]}>
+  1739→            {r === 'customer' ? (lang === 'ar' ? 'زبون' : 'Client') : r === 'driver' ? (lang === 'ar' ? 'سائق' : 'Chauffeur') : 'Admin'}
+  1740→          </Text>
+  1741→        </TouchableOpacity>
+  1742→      ))}
+  1743→    </View>
+  1744→  );
+  1745→
+  1746→  return (
+  1747→    <View style={{ flex: 1 }}>
+  1748→      <RoleSwitcher />
+  1749→      {role === 'customer' && <CustomerTabs />}
+  1750→      {role === 'driver' && <DriverTabs />}
+  1751→      {role === 'admin' && <AdminTabs />}
+  1752→    </View>
+  1753→  );
+  1754→}
+  1755→
+  1756→// === APP ROOT ===
+  1757→export default function App() {
+  1758→  const [fontsLoaded] = useFonts({ ...Ionicons.font });
+  1759→  const [lang, setLang] = useState<'ar' | 'fr'>('ar');
+  1760→
+  1761→  const toggle = () => setLang((p) => (p === 'ar' ? 'fr' : 'ar'));
+  1762→  const t = translations[lang];
+  1763→
+  1764→  if (!fontsLoaded) return null;
+  1765→
+  1766→  const navTheme = {
+  1767→    ...DefaultTheme,
+  1768→    colors: { ...DefaultTheme.colors, background: COLORS.background, primary: COLORS.primary },
+  1769→  };
+  1770→
+  1771→  return (
+  1772→    <SafeAreaProvider>
+  1773→      <LanguageContext.Provider value={{ lang, toggle, t }}>
+  1774→        <NavigationContainer theme={navTheme}>
+  1775→          <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+  1776→            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+  1777→            <Stack.Screen name="Auth" component={AuthScreen} />
+  1778→            <Stack.Screen name="Main" component={MainNavigator} />
+  1779→            <Stack.Screen name="Tracking" component={TrackingScreen} />
+  1780→          </Stack.Navigator>
+  1781→        </NavigationContainer>
+  1782→      </LanguageContext.Provider>
+  1783→    </SafeAreaProvider>
+  1784→  );
+  1785→}
+  1786→
+  1787→// === STYLES ===
+  1788→const styles = StyleSheet.create({
+  1789→  container: { flex: 1, backgroundColor: COLORS.background },
+  1790→  // Onboarding
+  1791→  decoCircle: { position: 'absolute', backgroundColor: '#fff', borderRadius: 200 },
+  1792→  onboardingHeader: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  1793→  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  1794→  logoBox: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, elevation: 4 },
+  1795→  logoText: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  1796→  logoSub: { fontSize: 10, color: 'rgba(255,255,255,0.85)', fontWeight: '700', letterSpacing: 1 },
+  1797→  badgeLive: { marginLeft: 8, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  1798→  liveDotSmall: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
+  1799→  badgeLiveText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  1800→  langToggleTop: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 20, padding: 3, gap: 2 },
+  1801→  langBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  1802→  langBtnActive: { backgroundColor: '#fff' },
+  1803→  langBtnText: { fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.9)' },
+  1804→  langBtnTextActive: { color: COLORS.primary },
+  1805→  onboardingCard: { margin: 16, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, elevation: 8 },
+  1806→  illustrationWrap: { alignItems: 'center', marginBottom: 16 },
+  1807→  illustrationBg: { width: 160, height: 120, backgroundColor: COLORS.primaryLight, borderRadius: 20, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  1808→  boxOnBike: { position: 'absolute', top: 24, backgroundColor: COLORS.accent, width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
+  1809→  floatBadge: { position: 'absolute', backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3, borderWidth: 1, borderColor: COLORS.border },
+  1810→  floatBadgeText: { fontSize: 11, fontWeight: '700', color: COLORS.text },
+  1811→  onboardingTitle: { fontSize: 22, fontWeight: '900', color: COLORS.text, marginBottom: 8 },
+  1812→  onboardingSub: { fontSize: 13, color: COLORS.textMuted, lineHeight: 20, marginBottom: 16 },
+  1813→  featuresRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20, gap: 8 },
+  1814→  featureItem: { alignItems: 'center', gap: 6, flex: 1 },
+  1815→  featureIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  1816→  featureLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textMuted, textAlign: 'center' },
+  1817→  primaryBtn: { backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, shadowColor: COLORS.primary, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
+  1818→  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  1819→  secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, flexWrap: 'wrap' },
+  1820→  secureText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '500' },
+  1821→  secureDot: { color: COLORS.textLight },
+  1822→  regionNote: { textAlign: 'center', fontSize: 11, color: COLORS.textLight, marginTop: 10, fontStyle: 'italic' },
+  1823→  bottomTech: { alignItems: 'center', paddingBottom: 12, paddingTop: 4 },
+  1824→  techText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: 1, fontWeight: '600' },
+  1825→  // Auth
+  1826→  authContainer: { padding: 20, gap: 16 },
+  1827→  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  1828→  authLogo: { alignItems: 'center', gap: 6, marginTop: 8 },
+  1829→  authTitle: { fontSize: 28, fontWeight: '900', color: COLORS.primary, marginTop: 8 },
+  1830→  authSub: { fontSize: 13, color: COLORS.textMuted, textAlign: 'center' },
+  1831→  roleSelector: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 14, padding: 4, gap: 4, borderWidth: 1, borderColor: COLORS.border },
+  1832→  roleChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10 },
+  1833→  roleChipActive: { backgroundColor: COLORS.primary },
+  1834→  roleChipText: { fontSize: 12, fontWeight: '700', color: COLORS.textMuted },
+  1835→  roleChipTextActive: { color: '#fff' },
+  1836→  roleHint: { textAlign: 'center', fontSize: 11, color: COLORS.textLight },
+  1837→  authCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
+  1838→  authCardTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  1839→  authCardSub: { fontSize: 13, color: COLORS.textMuted, marginTop: 4, marginBottom: 16 },
+  1840→  phoneInputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  1841→  countryCode: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.background, paddingHorizontal: 12, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
+  1842→  countryFlag: { fontSize: 16 },
+  1843→  countryCodeText: { fontWeight: '700', color: COLORS.text },
+  1844→  phoneInput: { flex: 1, backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, fontWeight: '600', color: COLORS.text },
+  1845→  otpInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, backgroundColor: '#EFF6FF', padding: 8, borderRadius: 10 },
+  1846→  otpInfoText: { fontSize: 12, color: COLORS.info, fontWeight: '600' },
+  1847→  otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 8 },
+  1848→  otpInput: { width: 56, height: 56, borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.background, fontSize: 20, fontWeight: '800', color: COLORS.text },
+  1849→  otpInputFilled: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  1850→  resendBtn: { alignItems: 'center', marginTop: 16 },
+  1851→  resendText: { color: COLORS.primary, fontWeight: '700', fontSize: 13 },
+  1852→  // Customer header
+  1853→  customerHeader: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  1854→  headerLeft: { alignItems: 'center', gap: 10 },
+  1855→  logoBoxSmall: { width: 40, height: 40, borderRadius: 10, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  1856→  headerTitle: { fontSize: 16, fontWeight: '900', color: COLORS.text, letterSpacing: 0.5 },
+  1857→  locationRow: { alignItems: 'center', gap: 4, marginTop: 2 },
+  1858→  headerLocation: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600' },
+  1859→  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.success, marginLeft: 4 },
+  1860→  headerActions: { alignItems: 'center', gap: 8 },
+  1861→  headerIconBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  1862→  headerLang: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  1863→  avatarBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  1864→  avatarText: { color: '#fff', fontWeight: '800' },
+  1865→  offlineBanner: { backgroundColor: COLORS.error, paddingHorizontal: 16, paddingVertical: 8, alignItems: 'center', gap: 8, justifyContent: 'center' },
+  1866→  offlineText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  1867→  // Map
+  1868→  mapContainer: { height: 200, margin: 16, borderRadius: 16, overflow: 'hidden', backgroundColor: '#E2E8F0', borderWidth: 1, borderColor: COLORS.border, position: 'relative' },
+  1869→  mapGrid: { flex: 1, backgroundColor: '#F8FAF9', position: 'relative' },
+  1870→  roadH: { position: 'absolute', left: 0, right: 0, height: 14, backgroundColor: '#CBD5E1', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#94A3B8' },
+  1871→  roadV: { position: 'absolute', top: 0, bottom: 0, width: 14, backgroundColor: '#CBD5E1', borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#94A3B8' },
+  1872→  mapBlock: { position: 'absolute', width: '32%', height: '22%', borderRadius: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  1873→  mapPin: { position: 'absolute', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, elevation: 4, borderWidth: 2, borderColor: '#fff' },
+  1874→  dashedPath: { position: 'absolute', top: '42%', left: '30%', width: '40%', height: 2, backgroundColor: COLORS.primary, opacity: 0.5, borderStyle: 'dashed' },
+  1875→  distanceBadge: { position: 'absolute', bottom: 8, left: 8, backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  1876→  distanceText: { fontSize: 11, fontWeight: '700', color: COLORS.text },
+  1877→  mapTopOverlay: { position: 'absolute', top: 10, left: 10, right: 10, flexDirection: 'row', gap: 8 },
+  1878→  mapSearchBar: { flex: 1, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
+  1879→  mapSearchText: { flex: 1, fontSize: 12, fontWeight: '600', color: COLORS.text },
+  1880→  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.error },
+  1881→  liveText: { fontSize: 10, fontWeight: '900', color: COLORS.error, letterSpacing: 0.5 },
+  1882→  mapLocateBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
+  1883→  mapAttribution: { position: 'absolute', bottom: 6, right: 8, backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  1884→  mapAttrText: { fontSize: 9, color: COLORS.textMuted },
+  1885→  // Locations card
+  1886→  locationsCard: { marginHorizontal: 16, backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, elevation: 2, gap: 12 },
+  1887→  locationsTimeline: { flexDirection: 'row', gap: 12 },
+  1888→  timelineDotWrap: { alignItems: 'center', paddingTop: 6, gap: 4 },
+  1889→  timelineDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, elevation: 2 },
+  1890→  timelineLine: { width: 2, flex: 1, backgroundColor: COLORS.border, borderRadius: 1, minHeight: 40 },
+  1891→  locationInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: COLORS.border, gap: 10 },
+  1892→  locationLabel: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+  1893→  locationValue: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginTop: 2 },
+  1894→  locationIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  1895→  swapBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  1896→  locationActions: { flexDirection: 'row', gap: 8 },
+  1897→  locActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: COLORS.primaryLight, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: COLORS.primary + '20' },
+  1898→  locActionText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  1899→  // Cargo
+  1900→  section: { paddingHorizontal: 16, paddingTop: 16 },
+  1901→  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  1902→  sectionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text },
+  1903→  sectionSub: { fontSize: 12, color: COLORS.textMuted },
+  1904→  cargoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  1905→  cargoCard: { width: (width - 16 * 2 - 10 * 3) / 4, backgroundColor: '#fff', borderRadius: 14, padding: 10, alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: COLORS.border, position: 'relative' },
+  1906→  cargoCardSelected: { backgroundColor: COLORS.primaryLight, shadowColor: COLORS.primary, shadowOpacity: 0.15, shadowRadius: 8, elevation: 3 },
+  1907→  cargoCheck: { position: 'absolute', top: 6, right: 6, width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  1908→  cargoIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  1909→  cargoLabel: { fontSize: 11, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
+  1910→  cargoDesc: { fontSize: 9, color: COLORS.textMuted, textAlign: 'center' },
+  1911→  // Weight
+  1912→  weightBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  1913→  weightBadgeText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  1914→  weightRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  1915→  weightBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
+  1916→  weightSliderWrap: { flex: 1, gap: 6 },
+  1917→  weightTrack: { height: 8, backgroundColor: COLORS.border, borderRadius: 4, position: 'relative' },
+  1918→  weightFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 4 },
+  1919→  weightThumb: { position: 'absolute', top: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.primary, borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3, marginLeft: -10 },
+  1920→  weightLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  1921→  weightLabel: { fontSize: 11, color: COLORS.textMuted },
+  1922→  weightPresets: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  1923→  weightPreset: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
+  1924→  weightPresetActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  1925→  weightPresetText: { fontSize: 12, fontWeight: '700', color: COLORS.textMuted },
+  1926→  weightPresetTextActive: { color: '#fff' },
+  1927→  notesInputWrap: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 12, paddingTop: 12, minHeight: 70 },
+  1928→  notesInput: { fontSize: 13, color: COLORS.text, minHeight: 40, paddingRight: 30 },
+  1929→  priceCard: { margin: 16, backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2, gap: 12 },
+  1930→  priceHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  1931→  priceIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  1932→  priceTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
+  1933→  priceSub: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+  1934→  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', backgroundColor: COLORS.background, padding: 12, borderRadius: 12 },
+  1935→  priceValue: { fontSize: 22, fontWeight: '900', color: COLORS.primary },
+  1936→  priceVat: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+  1937→  priceBreakdown: { alignItems: 'flex-end' },
+  1938→  priceBreakText: { fontSize: 10, color: COLORS.textMuted, maxWidth: 140, textAlign: 'right' },
+  1939→  priceFeatures: { flexDirection: 'row', gap: 16 },
+  1940→  priceFeature: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  1941→  priceFeatureText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+  1942→  primaryBtnLarge: { marginHorizontal: 16, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, borderRadius: 14, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 12, elevation: 4 },
+  1943→  primaryBtnLargeText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  1944→  pricePill: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  1945→  pricePillText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  1946→  offlineNote: { textAlign: 'center', fontSize: 11, color: COLORS.textMuted, marginTop: 10, paddingHorizontal: 16 },
+  1947→  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  1948→  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, gap: 16 },
+  1949→  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  1950→  modalTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  1951→  modalSub: { fontSize: 12, color: COLORS.textMuted },
+  1952→  pricingEditRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.background, padding: 12, borderRadius: 12 },
+  1953→  pricingLabel: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
+  1954→  pricingInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, minWidth: 80, textAlign: 'center', fontWeight: '700' },
+  1955→  pricingUnit: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  1956→  // Tracking
+  1957→  trackHeader: { backgroundColor: '#fff', padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  1958→  backCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  1959→  trackTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  1960→  trackId: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+  1961→  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  1962→  statusBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  1963→  trackCard: { margin: 16, backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, gap: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, elevation: 2 },
+  1964→  searchingBox: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFFBEB', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#FDE68A' },
+  1965→  searchingTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
+  1966→  searchingSub: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  1967→  driverFoundBox: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.primaryLight, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.primary + '30' },
+  1968→  driverAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  1969→  driverAvatarText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  1970→  driverOnlineDot: { position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.success, borderWidth: 2, borderColor: '#fff' },
+  1971→  driverFoundTitle: { fontSize: 12, color: COLORS.success, fontWeight: '800' },
+  1972→  driverName: { fontSize: 14, fontWeight: '800', color: COLORS.text, marginTop: 2 },
+  1973→  driverTri: { fontSize: 11, color: COLORS.textMuted },
+  1974→  driverActions: { flexDirection: 'row', gap: 8 },
+  1975→  driverActionBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  1976→  timeline: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
+  1977→  timelineStep: { flex: 1, alignItems: 'center', gap: 6, position: 'relative' },
+  1978→  timelineCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
+  1979→  timelineCircleDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  1980→  timelineCircleCurrent: { borderWidth: 3, borderColor: COLORS.primary, borderStyle: 'solid' },
+  1981→  timelineLabel: { fontSize: 9, color: COLORS.textMuted, textAlign: 'center', fontWeight: '600' },
+  1982→  timelineLabelDone: { color: COLORS.primary, fontWeight: '700' },
+  1983→  timelineConnector: { position: 'absolute', top: 14, left: '60%', right: '-40%', height: 2, backgroundColor: COLORS.border },
+  1984→  orderDetailBox: { backgroundColor: COLORS.background, borderRadius: 12, padding: 12, gap: 8 },
+  1985→  orderDetailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  1986→  orderDetailLabel: { fontSize: 12, color: COLORS.textMuted },
+  1987→  orderDetailValue: { fontSize: 12, fontWeight: '700', color: COLORS.text, maxWidth: '60%', textAlign: 'right' },
+  1988→  deliveredCelebrate: { alignItems: 'center', gap: 8, paddingVertical: 12 },
+  1989→  deliveredTitle: { fontSize: 18, fontWeight: '900', color: COLORS.success },
+  1990→  deliveredSub: { fontSize: 13, color: COLORS.textMuted },
+  1991→  etaBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#EFF6FF', padding: 10, borderRadius: 10, justifyContent: 'center' },
+  1992→  etaText: { fontSize: 12, fontWeight: '700', color: COLORS.info, flex: 1, textAlign: 'center' },
+  1993→  etaLive: { backgroundColor: COLORS.error, color: '#fff', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  1994→  // History
+  1995→  pageHeader: { backgroundColor: '#fff', padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  1996→  pageTitle: { fontSize: 18, fontWeight: '900', color: COLORS.text },
+  1997→  pageBadge: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
+  1998→  pageBadgeText: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  1999→  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
+  2000→  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textMuted },
+
+[showing lines 1-2000 of 2148; use offset=2001 with limit to continue reading]

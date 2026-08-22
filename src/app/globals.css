@@ -1,0 +1,202 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-light: var(--brand-light);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-gold-dark: var(--gold-dark);
+  --color-gold-foreground: var(--gold-foreground);
+}
+
+:root {
+  --radius: 0.75rem;
+  /* WASSILHA brand: teal-green primary + warm orange accent */
+  --brand: #0E6B5E;
+  --brand-dark: #0A4A41;
+  --brand-light: #E6F4F1;
+  --brand-foreground: #ffffff;
+  --gold: #FF7A00;
+  --gold-light: #FFF1E0;
+  --gold-dark: #E66A00;
+  --gold-foreground: #ffffff;
+
+  --background: #F8FAF9;
+  --foreground: #0F172A;
+  --card: #ffffff;
+  --card-foreground: #0F172A;
+  --popover: #ffffff;
+  --popover-foreground: #0F172A;
+  --primary: #0E6B5E;
+  --primary-foreground: #ffffff;
+  --secondary: #E6F4F1;
+  --secondary-foreground: #0A4A41;
+  --muted: #F1F5F4;
+  --muted-foreground: #64748B;
+  --accent: #FFF1E0;
+  --accent-foreground: #E66A00;
+  --destructive: #EF4444;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #0E6B5E;
+  --chart-1: #0E6B5E;
+  --chart-2: #FF7A00;
+  --chart-3: #0EA5E9;
+  --chart-4: #8B5CF6;
+  --chart-5: #10B981;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #0E6B5E;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #E6F4F1;
+  --sidebar-accent-foreground: #0A4A41;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #0E6B5E;
+}
+
+.dark {
+  --brand: #14B8A6;
+  --brand-dark: #0E6B5E;
+  --brand-light: #0A2E2A;
+  --brand-foreground: #ffffff;
+  --gold: #FF9A3C;
+  --gold-light: #3A2A14;
+  --gold-dark: #FF7A00;
+  --gold-foreground: #ffffff;
+
+  --background: #0B1220;
+  --foreground: #F8FAFC;
+  --card: #111A2E;
+  --card-foreground: #F8FAFC;
+  --popover: #111A2E;
+  --popover-foreground: #F8FAFC;
+  --primary: #14B8A6;
+  --primary-foreground: #06231F;
+  --secondary: #0A2E2A;
+  --secondary-foreground: #9FE7DA;
+  --muted: #1B2740;
+  --muted-foreground: #94A3B8;
+  --accent: #3A2A14;
+  --accent-foreground: #FFB778;
+  --destructive: #F87171;
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #14B8A6;
+  --chart-1: #14B8A6;
+  --chart-2: #FF9A3C;
+  --chart-3: #38BDF8;
+  --chart-4: #A78BFA;
+  --chart-5: #34D399;
+  --sidebar: #0F1626;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-primary: #14B8A6;
+  --sidebar-primary-foreground: #06231F;
+  --sidebar-accent: #0A2E2A;
+  --sidebar-accent-foreground: #9FE7DA;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #14B8A6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* RTL helpers */
+[dir="rtl"] {
+  text-align: right;
+}
+
+/* Custom scrollbar */
+.wassilha-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.wassilha-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wassilha-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.wassilha-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Animated gradient for onboarding */
+@keyframes wassilha-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(3deg); }
+}
+.animate-float {
+  animation: wassilha-float 6s ease-in-out infinite;
+}
+
+@keyframes wassilha-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.pulse-ring {
+  animation: wassilha-pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes wassilha-dash {
+  to { stroke-dashoffset: -20; }
+}
+.animate-dash {
+  animation: wassilha-dash 1s linear infinite;
+}
+
+/* Map grid background */
+.map-grid-bg {
+  background-image:
+    linear-gradient(rgba(14, 107, 94, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 107, 94, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}

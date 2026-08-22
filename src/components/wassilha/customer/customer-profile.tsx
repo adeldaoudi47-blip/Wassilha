@@ -1,0 +1,123 @@
+'use client';
+
+import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers } from 'lucide-react';
+import { useT } from '../use-t';
+import { useAppStore } from '@/lib/store';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { BrandLogo } from '../brand-logo';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
+import type { Order } from '@/lib/types';
+import { formatDzd } from '@/lib/wassilha-data';
+
+export function CustomerProfile() {
+  const { t, isAr } = useT();
+  const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
+  const [orders, setOrders] = useState<Order[]>([]);
+
+  useEffect(() => {
+    api.listOrders({ role: 'customer' }).then(setOrders).catch(() => {});
+  }, []);
+
+  const stats = {
+    total: orders.length,
+    delivered: orders.filter((o) => o.status === 'delivered').length,
+    spent: orders.filter((o) => o.status === 'delivered').reduce((s, o) => s + o.price, 0),
+  };
+
+  const handleLogout = async () => {
+    try { await api.logout(); } catch { /* ignore */ }
+    setUser(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Profile header */}
+      <Card className="overflow-hidden p-0">
+        <div className="bg-gradient-to-br from-primary to-brand-dark p-5 text-primary-foreground">
+          <div className="flex items-center gap-3">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-2xl font-black backdrop-blur">
+              {user?.name.charAt(0)}
+            </div>
+            <div>
+              <p className="text-lg font-bold">{user?.name}</p>
+              <p className="flex items-center gap-1.5 text-sm text-primary-foreground/80" dir="ltr">
+                <Phone size={12} /> +213 {user?.phone}
+              </p>
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold backdrop-blur">
+                <ShieldCheck size={10} /> {t.customer}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-border">
+          <Stat label={t.totalOrders} value={String(stats.total)} />
+          <Stat label={t.deliveredOrders} value={String(stats.delivered)} />
+          <Stat label={t.revenue} value={`${formatDzd(stats.spent)}`} suffix={t.dzd} />
+        </div>
+      </Card>
+
+      {/* Info rows */}
+      <Card className="divide-y divide-border p-0">
+        <InfoRow icon={<MapPin size={16} className="text-primary" />} label={t.location} value={t.location} />
+        <InfoRow icon={<Clock size={16} className="text-sky-500" />} label={t.algeriaTime} value="UTC+1" />
+        <InfoRow icon={<Headphones size={16} className="text-emerald-500" />} label={t.support24} value="7/7" />
+      </Card>
+
+      {/* Tech / about */}
+      <Card className="p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <BrandLogo size={28} />
+          <div>
+            <p className="text-sm font-bold text-foreground">{t.appName} · {t.appSub}</p>
+            <p className="text-[11px] text-muted-foreground">{t.tagline}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {['Next.js 16', 'Prisma', 'Socket.IO', 'TypeScript', 'Tailwind'].map((tech) => (
+            <span key={tech} className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {tech}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {isAr
+            ? 'منصة النقل المحلية بالدراجة ثلاثية العجلات لنقل كل أنواع البضائع في القرارة - غرداية. مبنية بمعمارية إنتاج حقيقية مع قاعدة بيانات وزمن حقيقي.'
+            : 'Plateforme locale de transport triporteur pour toutes vos marchandises à El Guerrara. Architecture de production avec base de données et temps réel.'}
+        </p>
+      </Card>
+
+      <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">
+        {t.logout}
+      </Button>
+
+      <p className="text-center text-[10px] text-muted-foreground">
+        {t.appName} v1.0.0 · {t.location} · © 2026
+      </p>
+    </div>
+  );
+}
+
+function Stat({ label, value, suffix }: { label: string; value: string; suffix?: string }) {
+  return (
+    <div className="p-3 text-center">
+      <p className="text-lg font-black text-primary">{value}</p>
+      <p className="text-[10px] font-semibold text-muted-foreground">
+        {label}{suffix ? ` (${suffix})` : ''}
+      </p>
+    </div>
+  );
+}
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 p-3.5">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">{icon}</div>
+      <span className="text-sm font-semibold text-muted-foreground">{label}</span>
+      <span className="ms-auto text-sm font-bold text-foreground">{value}</span>
+    </div>
+  );
+}
