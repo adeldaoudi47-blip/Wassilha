@@ -3,15 +3,15 @@
   "version": "0.2.1",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
-    "start": "set NODE_ENV=production&& bun .next/standalone/server.js",
-    "lint": "eslint .",
-    "db:push": "prisma db push --accept-data-loss",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
-  },
+  "dev": "next dev -p 3000",
+  "build": "next build && node -e \"const fs=require('fs'); fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true}); fs.cpSync('public','.next/standalone/public',{recursive:true});\"",
+  "start": "set NODE_ENV=production&& bun .next/standalone/server.js",
+  "lint": "eslint .",
+  "db:push": "prisma db push --accept-data-loss",
+  "db:generate": "prisma generate",
+  "db:migrate": "prisma migrate dev",
+  "db:reset": "prisma migrate reset"
+},
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
