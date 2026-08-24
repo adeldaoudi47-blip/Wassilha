@@ -52,3 +52,27 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Environment
+.env
+.env.*
+
+# Database local files
+db/*.db
+prisma/db/
+
+# Next
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Capacitor generated
+android/.gradle/
+android/build/
+tool-results/
+upload/
+workspace-*
