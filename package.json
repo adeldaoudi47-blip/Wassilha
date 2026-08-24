@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build && powershell -Command \"Copy-Item -Path '.next/static' -Destination '.next/standalone/.next/static' -Recurse -Force; Copy-Item -Path 'public' -Destination '.next/standalone/public' -Recurse -Force\"",
-    "start": "NODE_ENV=production bun .next/standalone/server.js",
+    "start": "set NODE_ENV=production&& bun .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
