@@ -2,8 +2,7 @@
 import { db } from '@/lib/db';
 import { sendSms } from '@/lib/sms';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
-
-const PHONE_RE = /^0[567]\d{8}$/;
+import { normalizeAlgerianPhone } from '@/lib/phone';
 
 // Matches the 30s resend timer already enforced by the frontend UI.
 const RESEND_COOLDOWN_MS = 30 * 1000;
@@ -14,9 +13,13 @@ return Math.floor(100000 + Math.random() * 900000).toString();
 
 export async function POST(req: NextRequest) {
 try {
-const { phone } = await req.json();
+const { phone: rawPhone } = await req.json();
 
-if (typeof phone !== 'string' || !PHONE_RE.test(phone)) {
+// SECURITY + UX: accept every local/international Algerian representation
+// (+213 / 00213 / spaces / dashes / invisible keyboard marks) and normalize
+// to the exact canonical form shared with the frontend before any DB work.
+const phone = normalizeAlgerianPhone(rawPhone);
+if (!phone) {
   return NextResponse.json(
     { error: 'invalidPhone' },
     { status: 400 }

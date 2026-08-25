@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/input-otp';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
+import { normalizeAlgerianPhone } from '@/lib/phone';
 
 type Step = 'onboarding' | 'phone' | 'otp' | 'signup' | 'login';
 
@@ -77,13 +78,12 @@ export function AuthFlow() {
     return () => clearTimeout(id);
   }, [resendTimer]);
 
-  const validatePhone = (value: string) =>
-    /^0[567]\d{8}$/.test(value.replace(/\s/g, ''));
-
   const handleSendOtp = async () => {
-    const clean = phone.replace(/\s/g, '');
+    // SECURITY + UX: single normalizer shared with the API — accepts local,
+    // international (+213), 00213 forms, spaces/dashes/invisible marks.
+    const clean = normalizeAlgerianPhone(phone);
 
-    if (!validatePhone(clean)) {
+    if (!clean) {
       toast.error(
         isAr
           ? 'أدخل رقم هاتف جزائري صحيح'

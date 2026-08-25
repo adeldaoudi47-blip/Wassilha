@@ -2,15 +2,18 @@
 import { db } from '@/lib/db';
 import { setPhoneVerification, setSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { normalizeAlgerianPhone } from '@/lib/phone';
 import type { AuthUser, Role } from '@/lib/types';
-
-const PHONE_RE = /^0[567]\d{8}$/;
 
 export async function POST(req: NextRequest) {
   try {
-    const { phone, code, name } = await req.json();
+    const { phone: rawPhone, code, name } = await req.json();
 
-    if (typeof phone !== 'string' || !PHONE_RE.test(phone)) {
+    // SECURITY + UX: identical normalization to send-otp / frontend, so both
+    // sides always agree and the stored code always maps to one canonical
+    // phone per user.
+    const phone = normalizeAlgerianPhone(rawPhone);
+    if (!phone) {
       return NextResponse.json(
         { error: 'invalidPhone' },
         { status: 400 }
