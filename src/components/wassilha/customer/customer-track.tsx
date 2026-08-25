@@ -176,7 +176,7 @@ export function CustomerTrack() {
             <p className="text-xs font-semibold text-muted-foreground">{t.orderCode}</p>
             <p className="font-mono text-sm font-bold text-foreground">{order.code}</p>
           </div>
-          <StatusBadge status={order.status} label={(t as Record<string, string>)[order.status === 'searching' ? 'pending' : order.status === 'accepted' ? 'accepted' : order.status === 'picked' ? 'inTransit' : order.status === 'delivered' ? 'delivered' : 'cancelled']} />
+          <StatusBadge status={order.status} label={(t as unknown as Record<string, string>)[order.status === 'searching' ? 'pending' : order.status === 'accepted' ? 'accepted' : order.status === 'picked' ? 'inTransit' : order.status === 'delivered' ? 'delivered' : 'cancelled']} />
         </div>
 
         {/* Map */}

@@ -58,7 +58,7 @@ export function BottomNav({ role }: { role: Role }) {
         {items.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.key;
-          const label = (t as Record<string, string>)[item.label] ?? item.label;
+          const label = (t as unknown as Record<string, string>)[item.label] ?? item.label;
           return (
             <button
               key={item.key}

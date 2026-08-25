@@ -13,6 +13,10 @@ model User {
   id        String   @id @default(cuid())
   phone     String   @unique
   name      String
+  email     String?  @unique
+  passwordHash String?
+  phoneVerified Boolean @default(false)
+  accountStatus String  @default("incomplete") // incomplete | active
   role      String   @default("customer") // customer | driver | admin
   avatar    String?
   createdAt DateTime @default(now())
@@ -100,4 +104,14 @@ model Rating {
   score     Int      // 1..5
   comment   String?
   createdAt DateTime @default(now())
+}
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
 }

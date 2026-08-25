@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
           phone: demo.phone,
           name: demo.name,
           role: role as Role,
+          accountStatus: 'active',
+          phoneVerified: true,
         },
       });
 
@@ -44,6 +46,11 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+    } else if (user.accountStatus !== 'active') {
+      user = await db.user.update({
+        where: { id: user.id },
+        data: { accountStatus: 'active', phoneVerified: true },
+      });
     }
 
     await setSession(user.id);

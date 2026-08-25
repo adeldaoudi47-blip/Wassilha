@@ -130,6 +130,7 @@ export const translations = {
     noOrders: 'لا توجد طلبات بعد',
     noTrips: 'لا توجد رحلات بعد',
     orderCode: 'رقم الطلب',
+    priceConfig: 'إعدادات الأسعار',
     cargoLabel: 'الحمولة',
     distance: 'المسافة',
     date: 'التاريخ',
@@ -172,7 +173,6 @@ export const translations = {
     thankYou: 'شكراً لتقييمك!',
     newOrder: 'طلب جديد',
     newOrderSub: 'لديك طلب نقل جديد في القرارة',
-    cargoLabel: 'الحمولة',
     payout: 'الدفع عند التسليم',
     cargoInsurance: 'تأمين الحمولة',
     estTime: 'الوقت المتوقع',
@@ -324,7 +324,6 @@ export const translations = {
     noOrders: 'Aucune commande',
     noTrips: 'Aucune course',
     orderCode: 'N° commande',
-    cargoLabel: 'Cargaison',
     distance: 'Distance',
     date: 'Date',
     name: 'Nom',
@@ -366,6 +365,7 @@ export const translations = {
     thankYou: 'Merci pour votre note !',
     newOrder: 'Nouvelle commande',
     newOrderSub: 'Vous avez une nouvelle demande à El Guerrara',
+    priceConfig: 'Configuration des prix',
     cargoLabel: 'Cargaison',
     payout: 'Paiement à la livraison',
     cargoInsurance: 'Assurance incluse',
@@ -391,7 +391,8 @@ export const translations = {
   },
 };
 
-export type Translation = (typeof translations)['ar'];
+export type Translation =
+  (typeof translations)[keyof typeof translations];
 
 export function getT(lang: Lang): Translation {
   return translations[lang];

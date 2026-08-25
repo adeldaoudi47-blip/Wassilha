@@ -40,7 +40,7 @@ export function DriverTrips() {
   const past = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled');
 
   const statusLabel = (s: OrderStatus) =>
-    (t as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
+    (t as unknown as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
 
   const refresh = async (id: string) => {
     try {

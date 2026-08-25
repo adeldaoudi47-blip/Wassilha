@@ -24,7 +24,7 @@ export function AdminOrders() {
 
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
   const statusLabel = (s: OrderStatus) =>
-    (t as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
+    (t as unknown as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
 
   const filters: ('all' | OrderStatus)[] = ['all', 'searching', 'accepted', 'picked', 'delivered', 'cancelled'];
 

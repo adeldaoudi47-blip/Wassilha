@@ -41,9 +41,19 @@ export const api = {
       body: JSON.stringify({ phone }),
     }),
   verifyOtp: (phone: string, code: string, name?: string) =>
-    req<{ user: AuthUser }>('/api/auth/verify-otp', {
+    req<{ user?: AuthUser; requiresSignup?: boolean; phone?: string }>('/api/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ phone, code, name }),
+    }),
+  completeSignup: (data: { name: string; email: string; password: string; confirmPassword: string }) =>
+    req<{ user: AuthUser }>('/api/auth/complete-signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  login: (email: string, password: string) =>
+    req<{ user: AuthUser }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
     }),
   loginAs: (role: 'customer' | 'driver' | 'admin') =>
     req<{ user: AuthUser }>('/api/auth/login-as', {
@@ -51,6 +61,8 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
   me: () => req<{ user: AuthUser | null }>('/api/auth/me'),
+  pendingSignup: () =>
+    req<{ pendingSignup: boolean; phone: string | null }>('/api/auth/pending-signup'),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
 
   // Pricing

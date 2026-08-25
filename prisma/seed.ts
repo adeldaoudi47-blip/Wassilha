@@ -36,7 +36,19 @@ async function main() {
     { name: 'ياسين قاسمي', phone: '0770987654', vehicleType: 'Triporteur 125cc', vehicleColor: 'أحمر', rating: 4.8, trips: 189, earnings: 98300 },
     { name: 'عبد الرحمن حمداوي', phone: '0555778899', vehicleType: 'Triporteur 150cc', vehicleColor: 'أخضر', rating: 4.6, trips: 156, earnings: 84200 },
   ];
-  const drivers = [];
+ const drivers: {
+  user: {
+    id: string;
+    role: string;
+    name: string;
+    phone: string;
+    avatar: string | null;
+  };
+  driver: {
+    id: string;
+    userId: string;
+  };
+}[] = [];
   for (const d of driverData) {
     const u = await db.user.create({ data: { phone: d.phone, name: d.name, role: 'driver' } });
     const drv = await db.driver.create({
@@ -64,7 +76,13 @@ async function main() {
     { name: 'كريمة زيدان', phone: '0770445566' },
     { name: 'نبيل مرابط', phone: '0555889900' },
   ];
-  const customers = [];
+const customers: {
+  id: string;
+  role: string;
+  name: string;
+  phone: string;
+  avatar: string | null;
+}[] = [];
   for (const c of custNames) {
     const u = await db.user.create({ data: { phone: c.phone, name: c.name, role: 'customer' } });
     customers.push(u);

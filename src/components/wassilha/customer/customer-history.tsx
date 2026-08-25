@@ -30,7 +30,7 @@ export function CustomerHistory() {
   const Chevron = isAr ? ChevronLeft : ChevronRight;
 
   const statusLabel = (s: OrderStatus) =>
-    (t as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
+    (t as unknown as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
 
   const openOrder = (o: Order) => {
     setActiveOrderId(o.id);
