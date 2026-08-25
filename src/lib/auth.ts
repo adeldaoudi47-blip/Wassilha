@@ -1,5 +1,5 @@
 ﻿import { cookies } from 'next/headers';
-import { createHmac, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { db } from './db';
 import type { AuthUser, Role } from './types';
@@ -8,8 +8,16 @@ export const SESSION_COOKIE = 'wassilha_session';
 export const PHONE_VERIFICATION_COOKIE = 'wassilha_phone_verified';
 const scrypt = promisify(nodeScrypt);
 
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 function authSecret() {
   return process.env.AUTH_SECRET || process.env.SESSION_SECRET || 'wassilha-local-auth-secret';
+}
+
+// Sessions are stored as SHA-256 hashes server-side; the raw 256-bit random
+// token exists only inside the user's httpOnly cookie and is never persisted.
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 export async function hashPassword(password: string) {
@@ -79,18 +87,58 @@ export const DEMO_ACCOUNTS: Record<
   },
 };
 
-export async function getSession(): Promise<AuthUser | null> {
-  const store = await cookies();
-  const userId = store.get(SESSION_COOKIE)?.value;
+/**
+ * Creates a cryptographically random session token (256-bit), persists ONLY
+ * its SHA-256 hash with an absolute expiry, and sets the raw token in an
+ * httpOnly cookie. User IDs are never used as session credentials.
+ */
+export async function setSession(userId: string) {
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
-  if (!userId) return null;
+  // Opportunistic cleanup of this user's expired sessions.
+  await db.session
+    .deleteMany({ where: { userId, expiresAt: { lt: new Date() } } })
+    .catch(() => undefined);
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
+  await db.session.create({
+    data: { tokenHash: hashToken(token), userId, expiresAt },
   });
 
-  if (!user) return null;
-  if (user.accountStatus !== 'active') return null;
+  const store = await cookies();
+  store.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: Math.floor(SESSION_TTL_MS / 1000),
+  });
+}
+
+/**
+ * Resolves the current session from the opaque cookie token. Revocation is
+ * immediate: the token must match a live, unexpired row in the Session table.
+ */
+export async function getSession(): Promise<AuthUser | null> {
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+
+  const session = await db.session.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: true },
+  });
+
+  if (!session) return null;
+
+  if (session.expiresAt.getTime() <= Date.now()) {
+    // Expired — revoke lazily.
+    await db.session.delete({ where: { id: session.id } }).catch(() => undefined);
+    return null;
+  }
+
+  const user = session.user;
+  if (!user || user.accountStatus !== 'active') return null;
 
   return {
     id: user.id,
@@ -101,18 +149,14 @@ export async function getSession(): Promise<AuthUser | null> {
   };
 }
 
-export async function setSession(userId: string) {
-  const store = await cookies();
-
-  store.set(SESSION_COOKIE, userId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
-  });
-}
-
+/** Logout / revocation: deletes the server-side session row, then the cookie. */
 export async function clearSession() {
   const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) {
+    await db.session
+      .deleteMany({ where: { tokenHash: hashToken(token) } })
+      .catch(() => undefined);
+  }
   store.delete(SESSION_COOKIE);
 }

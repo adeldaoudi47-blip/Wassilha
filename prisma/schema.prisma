@@ -27,6 +27,27 @@ model User {
   ratingsGiven Rating[]    @relation("Rater")
   ratingsRecv  Rating[]    @relation("Ratee")
   driver       Driver?
+  sessions     Session[]
+}
+
+/// Server-side session store. Only the SHA-256 hash of the session token is
+/// persisted — the raw token lives exclusively in the user's httpOnly cookie.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Generic fixed-window rate-limit buckets (e.g. "otpsend:ip:1.2.3.4").
+model RateLimit {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
 }
 
 model Driver {

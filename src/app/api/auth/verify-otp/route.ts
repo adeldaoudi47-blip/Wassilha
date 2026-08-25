@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { setPhoneVerification, setSession } from '@/lib/auth';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 import type { AuthUser, Role } from '@/lib/types';
 
 const PHONE_RE = /^0[567]\d{8}$/;
@@ -16,41 +17,60 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const demoMode = process.env.OTP_DEMO_MODE === 'true';
-    const demoOtp = process.env.DEMO_OTP || '0000';
+    // SECURITY: demo mode is force-disabled in production regardless of env.
+    const demoMode =
+      process.env.OTP_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production';
 
-    // Demo mode uses the 4-digit code shown by the local app.
-    if (demoMode) {
-      if (typeof code !== 'string' || code !== demoOtp) {
-        return NextResponse.json(
-          { error: 'invalidOtp' },
-          { status: 400 }
-        );
-      }
-    } else {
-      // Production SMS OTP uses 6 digits.
-      if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
-        return NextResponse.json(
-          { error: 'invalidOtp' },
-          { status: 400 }
-        );
-      }
+    // Plausibility check only — exact matching happens against the stored row
+    // below, so every failed attempt can be counted for brute-force defense.
+    const plausible = demoMode
+      ? typeof code === 'string' && code.length >= 4 && code.length <= 8
+      : typeof code === 'string' && /^\d{6}$/.test(code);
+    if (!plausible) {
+      return NextResponse.json(
+        { error: 'invalidOtp' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: per-IP verification cap (brute-force budget per attacker).
+    const ipCheck = await rateLimit(`otpverify:${clientIp(req)}`, 30, 15 * 60 * 1000);
+    if (!ipCheck.ok) {
+      return NextResponse.json(
+        { error: 'tooManyAttempts', retryAfterSec: ipCheck.retryAfterSec },
+        { status: 429 }
+      );
     }
 
     const otp = await db.otpCode.findFirst({
-      where: {
-        phone,
-        code,
-        expiresAt: {
-          gt: new Date(),
-        },
-      },
+      where: { phone },
       orderBy: {
         expiresAt: 'desc',
       },
     });
 
-    if (!otp) {
+    // No live code for this phone (never sent / expired).
+    if (!otp || new Date(otp.expiresAt).getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'invalidOtp' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: max 5 attempts per code — after that the code is dead even
+    // if the correct digits are finally supplied.
+    if (otp.attempts >= 5) {
+      return NextResponse.json(
+        { error: 'tooManyAttempts' },
+        { status: 429 }
+      );
+    }
+
+    if (otp.code !== code) {
+      await db.otpCode.update({
+        where: { id: otp.id },
+        data: { attempts: { increment: 1 } },
+      });
       return NextResponse.json(
         { error: 'invalidOtp' },
         { status: 400 }

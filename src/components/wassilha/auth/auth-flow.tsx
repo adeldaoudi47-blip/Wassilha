@@ -34,6 +34,11 @@ const OTP_DEMO_MODE =
 
 const OTP_LENGTH = OTP_DEMO_MODE ? 4 : 6;
 
+// SECURITY: demo quick-login UI is rendered only when explicitly enabled
+// for local development. Production builds never render it.
+const ENABLE_DEMO_LOGIN =
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
+
 export function AuthFlow() {
   const { t, isAr } = useT();
   const setUser = useAppStore((s) => s.setUser);
@@ -317,40 +322,42 @@ export function AuthFlow() {
             {t.startNow}
           </Button>
 
-          <div className="pt-2">
-            <p className="mb-2 text-center text-xs font-medium text-white/60">
-              {t.pickRole}
-            </p>
+          {ENABLE_DEMO_LOGIN && (
+            <div className="pt-2">
+              <p className="mb-2 text-center text-xs font-medium text-white/60">
+                {t.pickRole}
+              </p>
 
-            <div className="grid grid-cols-3 gap-2">
-              <DemoBtn
-                icon={Package}
-                label={t.customer}
-                onClick={() =>
-                  handleQuickLogin('customer')
-                }
-                loading={loading}
-              />
+              <div className="grid grid-cols-3 gap-2">
+                <DemoBtn
+                  icon={Package}
+                  label={t.customer}
+                  onClick={() =>
+                    handleQuickLogin('customer')
+                  }
+                  loading={loading}
+                />
 
-              <DemoBtn
-                icon={Bike}
-                label={t.driver}
-                onClick={() =>
-                  handleQuickLogin('driver')
-                }
-                loading={loading}
-              />
+                <DemoBtn
+                  icon={Bike}
+                  label={t.driver}
+                  onClick={() =>
+                    handleQuickLogin('driver')
+                  }
+                  loading={loading}
+                />
 
-              <DemoBtn
-                icon={ShieldCheck}
-                label={t.admin}
-                onClick={() =>
-                  handleQuickLogin('admin')
-                }
-                loading={loading}
-              />
+                <DemoBtn
+                  icon={ShieldCheck}
+                  label={t.admin}
+                  onClick={() =>
+                    handleQuickLogin('admin')
+                  }
+                  loading={loading}
+                />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );

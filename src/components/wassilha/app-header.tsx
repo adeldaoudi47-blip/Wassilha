@@ -17,6 +17,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 
+// SECURITY: the role-switch menu talks to /api/auth/login-as, which is hard-
+// disabled outside local development — so only render it in that mode.
+const ENABLE_DEMO_LOGIN =
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
+
 interface AppHeaderProps {
   title: string;
   subtitle?: string;
@@ -75,21 +80,25 @@ export function AppHeader({ title, subtitle, rightSlot }: AppHeaderProps) {
                   {user.role === 'customer' ? t.customer : user.role === 'driver' ? t.driver : t.admin}
                 </span>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-muted-foreground">{t.switchRole}</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => switchRole('customer')}>
-                <User className="text-sky-500" size={15} />
-                <span>{t.switchToCustomer}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => switchRole('driver')}>
-                <Bike className="text-emerald-500" size={15} />
-                <span>{t.switchToDriver}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => switchRole('admin')}>
-                <UserCog className="text-orange-500" size={15} />
-                <span>{t.switchToAdmin}</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {ENABLE_DEMO_LOGIN && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">{t.switchRole}</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => switchRole('customer')}>
+                    <User className="text-sky-500" size={15} />
+                    <span>{t.switchToCustomer}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => switchRole('driver')}>
+                    <Bike className="text-emerald-500" size={15} />
+                    <span>{t.switchToDriver}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => switchRole('admin')}>
+                    <UserCog className="text-orange-500" size={15} />
+                    <span>{t.switchToAdmin}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                 <LogOut size={15} />
                 <span>{t.logout}</span>

@@ -1,8 +1,12 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sendSms } from '@/lib/sms';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 const PHONE_RE = /^0[567]\d{8}$/;
+
+// Matches the 30s resend timer already enforced by the frontend UI.
+const RESEND_COOLDOWN_MS = 30 * 1000;
 
 function generateOtp() {
 return Math.floor(100000 + Math.random() * 900000).toString();
@@ -19,8 +23,35 @@ if (typeof phone !== 'string' || !PHONE_RE.test(phone)) {
   );
 }
 
-const demoMode = process.env.OTP_DEMO_MODE === 'true';
+// SECURITY: demo mode can never activate in a production build, even if
+// OTP_DEMO_MODE is mistakenly configured on the hosting provider.
+const demoMode = process.env.OTP_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production';
 const demoOtp = process.env.DEMO_OTP || '0000';
+
+// SECURITY: per-phone resend cooldown — the newest stored code must be
+// older than the cooldown window before another SMS can be triggered.
+const latestCode = await db.otpCode.findFirst({
+  where: { phone },
+  orderBy: { createdAt: 'desc' },
+});
+if (
+  latestCode &&
+  Date.now() - new Date(latestCode.createdAt).getTime() < RESEND_COOLDOWN_MS
+) {
+  return NextResponse.json(
+    { error: 'resendCooldown', retryAfterSec: Math.ceil(RESEND_COOLDOWN_MS / 1000) },
+    { status: 429 }
+  );
+}
+
+// SECURITY: per-IP hourly cap — protects the SMS budget from pumping abuse.
+const ipCheck = await rateLimit(`otpsend:${clientIp(req)}`, 10, 60 * 60 * 1000);
+if (!ipCheck.ok) {
+  return NextResponse.json(
+    { error: 'tooManyRequests', retryAfterSec: ipCheck.retryAfterSec },
+    { status: 429 }
+  );
+}
 
 const code = demoMode ? demoOtp : generateOtp();
 

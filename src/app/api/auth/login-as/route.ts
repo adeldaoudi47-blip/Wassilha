@@ -4,8 +4,20 @@ import { DEMO_ACCOUNTS, setSession } from '@/lib/auth';
 import type { AuthUser, Role } from '@/lib/types';
 
 // POST /api/auth/login-as  { role }
+//
+// SECURITY: demo quick-login is disabled unless explicitly enabled for local
+// development via ENABLE_DEMO_LOGIN=true, and is ALWAYS blocked in production
+// builds regardless of configuration. Responds with 404 so the endpoint's
+// existence is not revealed to probing clients.
 export async function POST(req: NextRequest) {
   try {
+    if (
+      process.env.NODE_ENV === 'production' ||
+      process.env.ENABLE_DEMO_LOGIN !== 'true'
+    ) {
+      return NextResponse.json({ error: 'notFound' }, { status: 404 });
+    }
+
     const { role } = await req.json();
     if (
       role !== 'customer' &&

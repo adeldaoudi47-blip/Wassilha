@@ -30,14 +30,16 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
+    // SECURITY: the role is ALWAYS derived from the authenticated session.
+    // Client-supplied ?role= is ignored entirely so a customer can never
+    // widen their query to another role's data scope.
     const url = new URL(req.url);
-    const role = url.searchParams.get('role') || session.role;
     const status = url.searchParams.get('status') || undefined;
 
     const where: any = {};
-    if (role === 'customer') {
+    if (session.role === 'customer') {
       where.customerId = session.id;
-    } else if (role === 'driver') {
+    } else if (session.role === 'driver') {
       where.driverId = session.id;
     }
     // admin -> no customer/driver filter (returns all)
