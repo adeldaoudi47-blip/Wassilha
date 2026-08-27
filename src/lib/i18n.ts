@@ -194,6 +194,17 @@ export const translations = {
     poweredBy: 'مبني بـ Next.js • Prisma • Socket.IO',
     realtimeActive: 'الزمن الحقيقي مفعّل',
     enterAs: 'دخول كـ',
+    // Driver self-registration + admin approval
+    driverApplications: 'طلبات السائقين',
+    noApplications: 'لا توجد طلبات قيد المراجعة',
+    applicationPending: 'طلب قيد المراجعة',
+    applicationRejected: 'تم رفض الطلب',
+    approve: 'موافقة',
+    applicationSubmitted: 'تم إرسال الطلب. سيتم مراجعته من طرف المدير.',
+    applicationUnderReview: 'طلبك قيد المراجعة من طرف المدير',
+    applicationResubmit: 'يمكنك إعادة التقديم بعد تصحيح المعلومات',
+    becomeDriver: 'أريد التسجيل كسائق',
+    becomeDriverSub: 'سجّل كسائق، سيقوم المدير بالتحقق من طلبك قبل التفعيل.',
   },
   fr: {
     dir: 'ltr' as const,
@@ -388,6 +399,17 @@ export const translations = {
     poweredBy: 'Next.js • Prisma • Socket.IO',
     realtimeActive: 'Temps réel actif',
     enterAs: 'Entrer en tant que',
+    // Driver self-registration + admin approval
+    driverApplications: 'Demandes chauffeurs',
+    noApplications: 'Aucune demande en attente',
+    applicationPending: 'Demande en attente',
+    applicationRejected: 'Demande refusée',
+    approve: 'Approuver',
+    applicationSubmitted: 'Demande envoyée. L\u2019administrateur va la passer en revue.',
+    applicationUnderReview: 'Votre demande est en cours de revue',
+    applicationResubmit: 'Vous pouvez resoumettre après avoir corrigé les informations',
+    becomeDriver: 'Devenir chauffeur',
+    becomeDriverSub: 'Inscrivez-vous comme chauffeur, l\u2019administrateur validera votre demande.',
   },
 };
 

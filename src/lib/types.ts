@@ -33,6 +33,13 @@ export interface DriverProfile {
   rating: number;
   totalTrips: number;
   totalEarnings: number;
+  // Driver self-registration workflow: the driver can be in one of three
+  // application states. "active" means approved and on the platform; "pending"
+  // means a self-registered driver waiting for admin review; "rejected" means
+  // an admin refused the application (the user can re-apply).
+  applicationStatus?: 'active' | 'pending' | 'rejected';
+  appliedAt?: string | null;
+  reviewedAt?: string | null;
   user: AuthUser;
 }
 

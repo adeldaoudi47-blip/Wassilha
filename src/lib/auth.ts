@@ -118,6 +118,10 @@ export async function setSession(userId: string) {
 /**
  * Resolves the current session from the opaque cookie token. Revocation is
  * immediate: the token must match a live, unexpired row in the Session table.
+ *
+ * SECURITY: a user with accountStatus !== "active" (e.g. a "pending" or
+ * "rejected" driver) cannot hold a session — even if a stale cookie exists
+ * (e.g. set by verify-otp before the admin approval workflow existed).
  */
 export async function getSession(): Promise<AuthUser | null> {
   const store = await cookies();

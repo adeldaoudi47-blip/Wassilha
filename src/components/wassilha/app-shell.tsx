@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -26,6 +26,7 @@ const DRIVER_NAV: NavItem[] = [
 ];
 const ADMIN_NAV: NavItem[] = [
   { key: 'dashboard', label: 'dashboard', icon: LayoutDashboard },
+  { key: 'applications', label: 'driverApplications', icon: ShieldCheck },
   { key: 'drivers', label: 'drivers', icon: Users },
   { key: 'orders', label: 'orders', icon: ClipboardList },
   { key: 'pricing', label: 'pricing', icon: Tags },

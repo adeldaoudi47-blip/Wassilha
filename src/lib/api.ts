@@ -41,7 +41,17 @@ export const api = {
       body: JSON.stringify({ phone }),
     }),
   verifyOtp: (phone: string, code: string, name?: string) =>
-    req<{ user?: AuthUser; requiresSignup?: boolean; phone?: string }>('/api/auth/verify-otp', {
+    req<{
+      user?: AuthUser;
+      requiresSignup?: boolean;
+      phone?: string;
+      // Set by /api/auth/verify-otp when the phone belongs to a driver whose
+      // application has not yet been approved. The frontend uses these flags
+      // to display the "pending" or "rejected" screen instead of issuing a
+      // session. SECURITY: the server still refuses to set a session.
+      driverApplicationPending?: boolean;
+      driverApplicationRejected?: boolean;
+    }>('/api/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ phone, code, name }),
     }),
@@ -64,6 +74,16 @@ export const api = {
   pendingSignup: () =>
     req<{ pendingSignup: boolean; phone: string | null }>('/api/auth/pending-signup'),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  requestPasswordReset: (phone: string) =>
+    req<{ ok: boolean; devOtp?: string }>(
+      '/api/auth/forgot-password/request',
+      { method: 'POST', body: JSON.stringify({ phone }) }
+    ),
+  resetPassword: (data: { code: string; password: string; confirmPassword: string }) =>
+    req<{ user: AuthUser }>('/api/auth/forgot-password/reset', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Pricing
   getPricing: () => req<PricingConfig>('/api/pricing'),
@@ -150,5 +170,43 @@ export const api = {
     req<DriverProfile>(`/api/admin/drivers/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ isVerified: verified }),
+    }),
+
+  // Driver self-registration (admin approval required before activation)
+  applyDriver: (data: {
+    name: string;
+    vehicleType: string;
+    vehicleColor: string;
+    plateNumber?: string;
+    licenseNumber?: string;
+  }) =>
+    req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  driverApplications: () =>
+    req<
+      {
+        id: string;
+        userId: string;
+        name: string;
+        phone: string;
+        vehicleType: string;
+        vehicleColor: string;
+        plateNumber: string | null;
+        licenseNumber: string | null;
+        applicationStatus: 'pending' | 'rejected';
+        appliedAt: string | null;
+        reviewedAt: string | null;
+        createdAt: string;
+      }[]
+    >('/api/admin/driver-applications'),
+  approveDriver: (id: string) =>
+    req<DriverProfile>(`/api/admin/drivers/${id}/approve`, {
+      method: 'PATCH',
+    }),
+  rejectDriver: (id: string) =>
+    req<DriverProfile>(`/api/admin/drivers/${id}/reject`, {
+      method: 'PATCH',
     }),
 };

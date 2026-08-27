@@ -27,7 +27,7 @@ export const useAppStore = create<AppState>()(
 // Non-persisted navigation state (in-memory, resets on refresh — desired for a single-page app)
 type CustomerScreen = 'home' | 'track' | 'history' | 'profile';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile';
-type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing';
+type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications';
 
 interface NavState {
   customerTab: CustomerScreen;

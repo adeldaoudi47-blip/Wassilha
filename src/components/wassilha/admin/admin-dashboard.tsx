@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Package, Bike, DollarSign, Clock, TrendingUp, Users, CheckCircle2, Activity,
+  ShieldCheck,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -13,6 +14,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { useNavStore } from '@/lib/store';
 import type { AdminStats } from '@/lib/types';
 
 const PIE_COLORS = ['#0E6B5E', '#FF7A00', '#0EA5E9', '#8B5CF6', '#10B981', '#EC4899', '#F59E0B', '#64748B'];
@@ -23,11 +25,24 @@ const STATUS_COLORS: Record<string, string> = {
 export function AdminDashboard() {
   const { t, isAr } = useT();
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [pendingAppCount, setPendingAppCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const setAdminTab = useNavStore((s) => s.setAdminTab);
 
   useEffect(() => {
     api.adminStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
     const id = setInterval(() => api.adminStats().then(setStats).catch(() => {}), 8000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Driver application badge (pending only)
+  useEffect(() => {
+    const load = () =>
+      api.driverApplications()
+        .then((apps) => setPendingAppCount(apps.filter((a) => a.applicationStatus === 'pending').length))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 10000);
     return () => clearInterval(id);
   }, []);
 
@@ -178,6 +193,27 @@ export function AdminDashboard() {
           ))}
         </div>
       </Card>
+
+      {/* Driver applications quick-access (only visible when there are pending applications) */}
+      {pendingAppCount > 0 ? (
+        <button
+          onClick={() => setAdminTab('applications')}
+          className="flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-start transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-200 dark:bg-amber-900">
+            <ShieldCheck size={20} className="text-amber-700 dark:text-amber-300" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-foreground">{t.driverApplications}</p>
+            <p className="text-xs text-muted-foreground">
+              {pendingAppCount} {t.applicationPending}
+            </p>
+          </div>
+          <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-amber-500 px-2 text-xs font-black text-white">
+            {pendingAppCount}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -9,23 +9,29 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-model User {
-  id        String   @id @default(cuid())
-  phone     String   @unique
-  name      String
-  email     String?  @unique
-  passwordHash String?
-  phoneVerified Boolean @default(false)
-  accountStatus String  @default("incomplete") // incomplete | active
-  role      String   @default("customer") // customer | driver | admin
-  avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  orders      Order[]      @relation("CustomerOrders")
-  drivenOrders Order[]     @relation("DriverOrders")
-  ratingsGiven Rating[]    @relation("Rater")
-  ratingsRecv  Rating[]    @relation("Ratee")
+model User {
+  id            String   @id @default(cuid())
+  phone         String   @unique
+  name          String
+  email         String?  @unique
+  passwordHash  String?
+  phoneVerified Boolean  @default(false)
+  // accountStatus values:
+  //   "incomplete" — phone verified, signup form not yet completed (customer path)
+  //   "pending"    — driver self-registration submitted, awaiting admin approval
+  //   "active"     — fully usable account (customer, approved driver, admin)
+  //   "rejected"   — driver application was rejected by admin
+  accountStatus String   @default("incomplete")
+  role          String   @default("customer") // customer | driver | admin
+  avatar        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders       Order[]   @relation("CustomerOrders")
+  drivenOrders Order[]   @relation("DriverOrders")
+  ratingsGiven Rating[]  @relation("Rater")
+  ratingsRecv  Rating[]  @relation("Ratee")
   driver       Driver?
   sessions     Session[]
 }
@@ -60,6 +66,14 @@ model Driver {
   licenseNumber String?
   isOnline      Boolean  @default(false)
   isVerified    Boolean  @default(true)
+  // applicationStatus reflects the self-registration workflow:
+  //   "pending"  — driver submitted an application, awaiting admin approval
+  //   "active"   — admin approved the driver; full driver privileges
+  //   "rejected" — admin rejected the application
+  // Admin-created drivers continue to default to "active" (existing rows preserved).
+  applicationStatus String @default("active")
+  appliedAt         DateTime?
+  reviewedAt        DateTime?
   rating        Float    @default(5.0)
   totalTrips    Int      @default(0)
   totalEarnings Int      @default(0)
@@ -78,26 +92,26 @@ model Vehicle {
 }
 
 model Order {
-  id          String   @id @default(cuid())
-  code        String   @unique // human-friendly WS-XXXXX
+  id          String    @id @default(cuid())
+  code        String    @unique // human-friendly WS-XXXXX
   customerId  String
-  customer    User     @relation("CustomerOrders", fields: [customerId], references: [id])
+  customer    User      @relation("CustomerOrders", fields: [customerId], references: [id])
   driverId    String?
-  driver      User?    @relation("DriverOrders", fields: [driverId], references: [id])
-  cargoType   String   // parcel | goods | shop | furniture | appliance | construction | personal | other
+  driver      User?     @relation("DriverOrders", fields: [driverId], references: [id])
+  cargoType   String // parcel | goods | shop | furniture | appliance | construction | personal | other
   pickup      String
   dropoff     String
-  pickupLat   Float    @default(32.7833)
-  pickupLng   Float    @default(3.7667)
-  dropoffLat  Float    @default(32.7900)
-  dropoffLng  Float    @default(3.7800)
-  weight      Int      @default(20)
-  distance    Float    @default(3.0)
-  price       Int      @default(300)
-  status      String   @default("searching") // searching | accepted | picked | delivered | cancelled
+  pickupLat   Float     @default(32.7833)
+  pickupLng   Float     @default(3.7667)
+  dropoffLat  Float     @default(32.7900)
+  dropoffLng  Float     @default(3.7800)
+  weight      Int       @default(20)
+  distance    Float     @default(3.0)
+  price       Int       @default(300)
+  status      String    @default("searching") // searching | accepted | picked | delivered | cancelled
   notes       String?
   rating      Int?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   acceptedAt  DateTime?
   pickedAt    DateTime?
   deliveredAt DateTime?
@@ -122,10 +136,11 @@ model Rating {
   from      User     @relation("Rater", fields: [fromId], references: [id])
   toId      String
   to        User     @relation("Ratee", fields: [toId], references: [id])
-  score     Int      // 1..5
+  score     Int // 1..5
   comment   String?
   createdAt DateTime @default(now())
 }
+
 model OtpCode {
   id        String   @id @default(cuid())
   phone     String

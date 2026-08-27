@@ -86,9 +86,23 @@ export async function POST(req: NextRequest) {
 
     const user = await db.user.findUnique({
       where: { phone },
+      include: { driver: true },
     });
 
     if (!user || user.accountStatus !== 'active') {
+      // SECURITY: a pending/rejected driver cannot receive a session.
+      // If they are an existing driver (pending or rejected), surface that
+      // specific state so the frontend can show a useful message.
+      if (user && user.role === 'driver' && user.driver) {
+        await setPhoneVerification(phone);
+        return NextResponse.json({
+          requiresSignup: false,
+          driverApplicationPending: user.driver.applicationStatus === 'pending',
+          driverApplicationRejected: user.driver.applicationStatus === 'rejected',
+          phone,
+        });
+      }
+      // New user (or pre-signup incomplete customer) — go to signup.
       await setPhoneVerification(phone);
       return NextResponse.json({
         requiresSignup: true,

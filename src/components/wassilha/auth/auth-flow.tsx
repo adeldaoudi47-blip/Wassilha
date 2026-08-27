@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import {
@@ -10,6 +10,8 @@ import {
   Bike,
   Package,
   Sparkles,
+  Key,
+  Lock,
 } from 'lucide-react';
 import { BrandLogo } from '../brand-logo';
 import { LangToggle } from '../lang-toggle';
@@ -28,7 +30,7 @@ import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
-type Step = 'onboarding' | 'phone' | 'otp' | 'signup' | 'login';
+type Step = 'onboarding' | 'phone' | 'otp' | 'signup' | 'login' | 'forgot-phone' | 'forgot-otp' | 'forgot-reset' | 'driver-form' | 'driver-pending' | 'driver-rejected';
 
 const OTP_DEMO_MODE =
   process.env.NEXT_PUBLIC_OTP_DEMO_MODE === 'true';
@@ -50,9 +52,18 @@ export function AuthFlow() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotPhone, setForgotPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+  // When true, the user came from "Devenir chauffeur" and should be
+  // routed to the driver form on a fresh account instead of customer signup.
+  const [intendsDriver, setIntendsDriver] = useState(false);
+  // Driver self-registration form fields (filled after OTP verification).
+  const [driverVehicleType, setDriverVehicleType] = useState('125cc');
+  const [driverVehicleColor, setDriverVehicleColor] = useState('');
+  const [driverPlateNumber, setDriverPlateNumber] = useState('');
+  const [driverLicenseNumber, setDriverLicenseNumber] = useState('');
 
   const Arrow = isAr ? ArrowLeft : ArrowRight;
 
@@ -79,15 +90,15 @@ export function AuthFlow() {
   }, [resendTimer]);
 
   const handleSendOtp = async () => {
-    // SECURITY + UX: single normalizer shared with the API — accepts local,
+    // SECURITY + UX: single normalizer shared with the API â€” accepts local,
     // international (+213), 00213 forms, spaces/dashes/invisible marks.
     const clean = normalizeAlgerianPhone(phone);
 
     if (!clean) {
       toast.error(
         isAr
-          ? 'أدخل رقم هاتف جزائري صحيح'
-          : 'Entrez un numéro de téléphone algérien valide'
+          ? 'ط£ط¯ط®ظ„ ط±ظ‚ظ… ظ‡ط§طھظپ ط¬ط²ط§ط¦ط±ظٹ طµط­ظٹط­'
+          : 'Entrez un numأ©ro de tأ©lأ©phone algأ©rien valide'
       );
       return;
     }
@@ -105,14 +116,14 @@ export function AuthFlow() {
       if (OTP_DEMO_MODE) {
         toast.success(
           isAr
-            ? `رمز التجربة: ${result.devOtp || '0000'}`
-            : `Code démo : ${result.devOtp || '0000'}`
+            ? `ط±ظ…ط² ط§ظ„طھط¬ط±ط¨ط©: ${result.devOtp || '0000'}`
+            : `Code dأ©mo : ${result.devOtp || '0000'}`
         );
       } else {
         toast.success(
           isAr
-            ? 'تم إرسال رمز التحقق إلى هاتفك'
-            : 'Le code de vérification a été envoyé à votre téléphone'
+            ? 'طھظ… ط¥ط±ط³ط§ظ„ ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚ ط¥ظ„ظ‰ ظ‡ط§طھظپظƒ'
+            : 'Le code de vأ©rification a أ©tأ© envoyأ© أ  votre tأ©lأ©phone'
         );
       }
     } catch (error) {
@@ -120,8 +131,49 @@ export function AuthFlow() {
 
       toast.error(
         isAr
-          ? 'تعذر إرسال رمز التحقق. حاول مرة أخرى.'
-          : 'Impossible d’envoyer le code. Réessayez.'
+          ? 'طھط¹ط°ط± ط¥ط±ط³ط§ظ„ ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚. ط­ط§ظˆظ„ ظ…ط±ط© ط£ط®ط±ظ‰.'
+          : 'Impossible dâ€™envoyer le code. Rأ©essayez.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Driver self-registration: identical OTP step as the customer flow, but
+  // after verifying the OTP we route the user into the driver-form step
+  // (which calls /api/auth/apply-driver) instead of the customer signup.
+  // SECURITY: the role is still forced server-side; this is only UX.
+  const handleSendOtpAsDriver = async () => {
+    const clean = normalizeAlgerianPhone(phone);
+    if (!clean) {
+      toast.error(
+        isAr
+          ? 'ط£ط¯ط®ظ„ ط±ظ‚ظ… ظ‡ط§طھظپ ط¬ط²ط§ط¦ط±ظٹ طµط­ظٹط­'
+          : 'Entrez un numأ©ro de tأ©lأ©phone algأ©rien valide'
+      );
+      return;
+    }
+    setLoading(true);
+    setIntendsDriver(true);
+    try {
+      const result = await api.sendOtp(clean);
+      setPhone(clean);
+      setOtp('');
+      setStep('otp');
+      setResendTimer(30);
+      if (OTP_DEMO_MODE) {
+        toast.success(
+          isAr
+            ? `ط±ظ…ط² ط§ظ„طھط¬ط±ط¨ط©: ${result.devOtp || '0000'}`
+            : `Code dأ©mo : ${result.devOtp || '0000'}`
+        );
+      }
+    } catch (error) {
+      console.error('SEND OTP (DRIVER) ERROR:', error);
+      toast.error(
+        isAr
+          ? 'طھط¹ط°ط± ط¥ط±ط³ط§ظ„ ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚. ط­ط§ظˆظ„ ظ…ط±ط© ط£ط®ط±ظ‰.'
+          : 'Impossible dâ€™envoyer le code. Rأ©essayez.'
       );
     } finally {
       setLoading(false);
@@ -132,8 +184,8 @@ export function AuthFlow() {
     if (otp.length !== OTP_LENGTH) {
       toast.error(
         isAr
-          ? `أدخل رمز التحقق المكون من ${OTP_LENGTH} أرقام`
-          : `Entrez le code à ${OTP_LENGTH} chiffres`
+          ? `ط£ط¯ط®ظ„ ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ظ…ظƒظˆظ† ظ…ظ† ${OTP_LENGTH} ط£ط±ظ‚ط§ظ…`
+          : `Entrez le code أ  ${OTP_LENGTH} chiffres`
       );
       return;
     }
@@ -148,7 +200,25 @@ export function AuthFlow() {
       );
 
       if (result.requiresSignup) {
-        setStep('signup');
+        // Fresh account: pick the right next step based on user intent.
+        if (intendsDriver) {
+          setStep('driver-form');
+        } else {
+          setStep('signup');
+        }
+        return;
+      }
+
+      // Driver self-registration flow: existing user is a pending/rejected
+      // driver. The server refused to issue a session and told us the
+      // application status. Surface that to the driver so they know they
+      // are waiting for admin approval (or can re-apply if rejected).
+      if (result.driverApplicationPending) {
+        setStep('driver-pending');
+        return;
+      }
+      if (result.driverApplicationRejected) {
+        setStep('driver-rejected');
         return;
       }
 
@@ -157,7 +227,7 @@ export function AuthFlow() {
 
       toast.success(
         isAr
-          ? `أهلًا ${result.user.name ?? ''}`
+          ? `ط£ظ‡ظ„ظ‹ط§ ${result.user.name ?? ''}`
           : `Bienvenue ${result.user.name ?? ''}`
       );
     } catch (error) {
@@ -165,8 +235,8 @@ export function AuthFlow() {
 
       toast.error(
         isAr
-          ? 'رمز التحقق غير صحيح أو انتهت صلاحيته'
-          : 'Code incorrect ou expiré'
+          ? 'ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚ ط؛ظٹط± طµط­ظٹط­ ط£ظˆ ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹطھظ‡'
+          : 'Code incorrect ou expirأ©'
       );
     } finally {
       setLoading(false);
@@ -175,29 +245,75 @@ export function AuthFlow() {
 
   const handleCompleteSignup = async () => {
     if (name.trim().length < 2) {
-      toast.error(isAr ? 'أدخل الاسم الكامل' : 'Entrez votre nom complet');
+      toast.error(isAr ? 'ط£ط¯ط®ظ„ ط§ظ„ط§ط³ظ… ط§ظ„ظƒط§ظ…ظ„' : 'Entrez votre nom complet');
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      toast.error(isAr ? 'أدخل بريدًا إلكترونيًا صحيحًا' : 'Entrez un email valide');
+      toast.error(isAr ? 'ط£ط¯ط®ظ„ ط¨ط±ظٹط¯ظ‹ط§ ط¥ظ„ظƒطھط±ظˆظ†ظٹظ‹ط§ طµط­ظٹط­ظ‹ط§' : 'Entrez un email valide');
       return;
     }
     if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) {
-      toast.error(isAr ? 'كلمة المرور: 8 أحرف، حرف كبير، حرف صغير ورقم' : 'Mot de passe: 8 caractères, majuscule, minuscule et chiffre');
+      toast.error(isAr ? 'ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±: 8 ط£ط­ط±ظپطŒ ط­ط±ظپ ظƒط¨ظٹط±طŒ ط­ط±ظپ طµط؛ظٹط± ظˆط±ظ‚ظ…' : 'Mot de passe: 8 caractأ¨res, majuscule, minuscule et chiffre');
       return;
     }
     if (password !== confirmPassword) {
-      toast.error(isAr ? 'كلمتا المرور غير متطابقتين' : 'Les mots de passe ne correspondent pas');
+      toast.error(isAr ? 'ظƒظ„ظ…طھط§ ط§ظ„ظ…ط±ظˆط± ط؛ظٹط± ظ…طھط·ط§ط¨ظ‚طھظٹظ†' : 'Les mots de passe ne correspondent pas');
       return;
     }
     setLoading(true);
     try {
       const { user } = await api.completeSignup({ name, email, password, confirmPassword });
       setUser(user);
-      toast.success(isAr ? 'تم إنشاء حسابك بنجاح' : 'Votre compte a été créé avec succès');
+      toast.success(isAr ? 'طھظ… ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ظƒ ط¨ظ†ط¬ط§ط­' : 'Votre compte a أ©tأ© crأ©أ© avec succأ¨s');
     } catch (error) {
       console.error('COMPLETE SIGNUP ERROR:', error);
-      toast.error(isAr ? 'تعذر إنشاء الحساب. تحقق من البيانات.' : 'Impossible de créer le compte. Vérifiez vos données.');
+      toast.error(isAr ? 'طھط¹ط°ط± ط¥ظ†ط´ط§ط، ط§ظ„ط­ط³ط§ط¨. طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط¨ظٹط§ظ†ط§طھ.' : 'Impossible de crأ©er le compte. Vأ©rifiez vos donnأ©es.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Driver self-registration: send vehicle + license details to the server.
+  // The server forces role="driver" + accountStatus="pending". No session
+  // is returned here — the driver remains in the pending state until an
+  // admin approves the application.
+  const handleApplyDriver = async () => {
+    if (name.trim().length < 2) {
+      toast.error(isAr ? 'ط£ط¯ط®ظ„ ط§ظ„ط§ط³ظ… ط§ظ„ظƒط§ظ…ظ„' : 'Entrez votre nom complet');
+      return;
+    }
+    if (!driverVehicleType) {
+      toast.error(isAr ? 'ط­ط¯ط¯ ظ†ظˆط¹ ط§ظ„ظ…ط±ظƒط¨ط©' : 'Sأ©lectionnez le type de vأ©hicule');
+      return;
+    }
+    if (!driverVehicleColor.trim()) {
+      toast.error(isAr ? 'ط£ط¯ط®ظ„ ظ„ظˆظ† ط§ظ„ظ…ط±ظƒط¨ط©' : 'Entrez la couleur du vأ©hicule');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.applyDriver({
+        name: name.trim(),
+        vehicleType: driverVehicleType,
+        vehicleColor: driverVehicleColor.trim(),
+        plateNumber: driverPlateNumber.trim() || undefined,
+        licenseNumber: driverLicenseNumber.trim() || undefined,
+      });
+      toast.success(
+        isAr
+          ? 'طھظ… ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ظƒ. ط³ظٹظھظ… ط§ظ„ظ…ط±ط§ط¬ط¹ط© ظ…ظ† ط·ط±ظپ ط§ظ„ظ…ط¯ظٹط±.'
+          : 'Demande envoyأ©e. L\u2019administrateur va la passer en revue.'
+      );
+      setStep('driver-pending');
+    } catch (error) {
+      console.error('APPLY DRIVER ERROR:', error);
+      const msg = error instanceof Error ? error.message : '';
+      toast.error(
+        msg ||
+          (isAr
+            ? 'طھط¹ط°ط± ط¥ط±ط³ط§ظ„ ط§ظ„ط·ظ„ط¨. ط­ط§ظˆظ„ ظ…ط±ط© ط£ط®ط±ظ‰.'
+            : 'Impossible d\u2019envoyer la demande. Rأ©essayez.')
+      );
     } finally {
       setLoading(false);
     }
@@ -205,7 +321,7 @@ export function AuthFlow() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      toast.error(isAr ? 'أدخل البريد الإلكتروني وكلمة المرور' : 'Entrez votre email et votre mot de passe');
+      toast.error(isAr ? 'ط£ط¯ط®ظ„ ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظˆظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Entrez votre email et votre mot de passe');
       return;
     }
     setLoading(true);
@@ -213,10 +329,80 @@ export function AuthFlow() {
       const { user } = await api.login(email, password);
       if (!user) throw new Error('Authenticated user missing');
       setUser(user);
-      toast.success(isAr ? `أهلًا ${user.name}` : `Bienvenue ${user.name}`);
+      toast.success(isAr ? `ط£ظ‡ظ„ظ‹ط§ ${user.name}` : `Bienvenue ${user.name}`);
     } catch (error) {
       console.error('EMAIL LOGIN ERROR:', error);
-      toast.error(isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : 'Email ou mot de passe incorrect');
+      toast.error(isAr ? 'ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ط£ظˆ ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط± ط؛ظٹط± طµط­ظٹط­ط©' : 'Email ou mot de passe incorrect');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestPasswordReset = async () => {
+    const clean = normalizeAlgerianPhone(forgotPhone);
+    if (!clean) {
+      toast.error(isAr ? 'Enter phone' : 'Entrez numero');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await api.requestPasswordReset(clean);
+      setForgotPhone(clean);
+      setOtp('');
+      setStep('forgot-otp');
+      setResendTimer(30);
+      if (OTP_DEMO_MODE) toast.success('Demo code: ' + (result.devOtp || '0000'));
+      else toast.success(isAr ? 'Code sent' : 'Code envoye');
+    } catch (error) {
+      console.error('REQUEST RESET ERROR:', error);
+      toast.error(isAr ? 'Error' : 'Erreur');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyForgotOtp = async () => {
+    if (otp.length !== OTP_LENGTH) return;
+    setLoading(true);
+    try {
+      const result = await api.verifyOtp(forgotPhone, otp);
+      if (result.requiresSignup) {
+        toast.error(isAr ? 'Account not found' : 'Compte non trouve');
+        return;
+      }
+      if (!result.user) throw new Error('Missing user');
+      setStep('forgot-reset');
+      setPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('VERIFY FORGOT OTP ERROR:', error);
+      toast.error(isAr ? 'Code incorrect or expired' : 'Code incorrect ou expire');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (password.length < 8) {
+      toast.error('8 chars min');
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) {
+      toast.error('Need upper lower digit');
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error(isAr ? 'Passwords do not match' : 'Ne correspondent pas');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { user } = await api.resetPassword({ code: otp, password, confirmPassword });
+      setUser(user);
+      toast.success(isAr ? 'Password changed' : 'Mot de passe change');
+    } catch (error) {
+      console.error('RESET PASSWORD ERROR:', error);
+      toast.error(isAr ? 'Error' : 'Erreur');
     } finally {
       setLoading(false);
     }
@@ -234,7 +420,7 @@ export function AuthFlow() {
 
       toast.success(
         isAr
-          ? `أهلًا ${user.name}`
+          ? `ط£ظ‡ظ„ظ‹ط§ ${user.name}`
           : `Bienvenue ${user.name}`
       );
     } catch (error) {
@@ -242,8 +428,8 @@ export function AuthFlow() {
 
       toast.error(
         isAr
-          ? 'فشل تسجيل الدخول'
-          : 'Échec de connexion'
+          ? 'ظپط´ظ„ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„'
+          : 'أ‰chec de connexion'
       );
     } finally {
       setLoading(false);
@@ -287,7 +473,7 @@ export function AuthFlow() {
           </h1>
 
           <p className="mt-1 text-sm font-bold uppercase tracking-[0.3em] text-white/70">
-            {t.appSub} · TRI PORTEUR
+            {t.appSub} آ· TRI PORTEUR
           </p>
 
           <p className="mt-5 max-w-sm text-balance text-base text-white/85">
@@ -395,7 +581,7 @@ export function AuthFlow() {
           </h2>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            {t.welcome} — {t.tagline}
+            {t.welcome} â€” {t.tagline}
           </p>
 
           <div className="mt-8 space-y-4">
@@ -406,7 +592,7 @@ export function AuthFlow() {
 
               <div className="flex items-center gap-2">
                 <div className="flex h-12 items-center gap-1.5 rounded-xl border border-border bg-card px-3">
-                  <span className="text-lg">🇩🇿</span>
+                  <span className="text-lg">ًں‡©ًں‡؟</span>
 
                   <span
                     className="text-sm font-bold text-foreground"
@@ -442,7 +628,7 @@ export function AuthFlow() {
               <Input
                 placeholder={
                   isAr
-                    ? 'اسمك (اختياري)'
+                    ? 'ط§ط³ظ…ظƒ (ط§ط®طھظٹط§ط±ظٹ)'
                     : 'Votre nom (optionnel)'
                 }
                 value={name}
@@ -477,8 +663,31 @@ export function AuthFlow() {
               className="w-full text-center text-xs font-bold text-primary hover:underline"
             >
               {isAr
-                ? 'الدخول بالبريد الإلكتروني وكلمة المرور'
+                ? 'ط§ظ„ط¯ط®ظˆظ„ ط¨ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظˆظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±'
                 : 'Connexion par email et mot de passe'}
+            </button>
+
+            <div className="mt-4 flex items-center gap-3 text-[11px] text-muted-foreground">
+              <div className="h-px flex-1 bg-border" />
+              <span>{isAr ? 'ط£ظˆ' : 'OU'}</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                // Driver flow: send the OTP just like the customer flow, then
+                // once verified, the server will route the user to the driver
+                // form (since role=driver + accountStatus=pending drivers
+                // don't get a session and surface the "pending" state).
+                setName('');
+                await handleSendOtpAsDriver();
+              }}
+              disabled={loading}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 py-2.5 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50"
+            >
+              <Bike size={16} />
+              {isAr ? 'ط£ط±ظٹط¯ ط§ظ„طھط³ط¬ظٹظ„ ظƒط³ط§ط¦ظ‚' : 'Devenir chauffeur'}
             </button>
           </div>
 
@@ -489,16 +698,175 @@ export function AuthFlow() {
                 className="text-primary"
               />
 
-              {t.securedBy} ·{' '}
+              {t.securedBy} آ·{' '}
               {isAr
-                ? 'رمز تحقق آمن'
-                : 'Code de vérification sécurisé'}
+                ? 'ط±ظ…ط² طھط­ظ‚ظ‚ ط¢ظ…ظ†'
+                : 'Code de vأ©rification sأ©curisأ©'}
             </div>
           </div>
         </div>
       </div>
     );
   }
+
+
+  if (step === 'forgot-phone') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => setStep('login')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col px-6">
+          <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
+          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Key size={30} className="text-primary" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'ظ†ط³ظٹطھ ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Mot de passe oublie'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {isAr ? 'ط£ط¯ط®ظ„ ط±ظ‚ظ… ظ‡ط§طھظپظƒ ظ„ط§ط³طھظ„ط§ظ… ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚' : 'Entrez votre numero de telephone pour recevoir un code'}
+          </p>
+          <div className="mt-8 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                {isAr ? 'ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ' : 'Numero de telephone'}
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="flex h-12 items-center gap-1.5 rounded-xl border border-border bg-card px-3">
+                  <span className="text-lg">ًں‡©ًں‡؟</span>
+                  <span className="text-sm font-bold text-foreground" dir="ltr">+213</span>
+                </div>
+                <Input
+                  dir="ltr"
+                  inputMode="tel"
+                  placeholder="5XX XX XX XX"
+                  value={forgotPhone}
+                  onChange={(e) => setForgotPhone(e.target.value)}
+                  className="h-12 flex-1 text-start font-semibold tracking-wide"
+                />
+              </div>
+            </div>
+            <Button onClick={handleRequestPasswordReset} disabled={loading} size="lg" className="h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
+              {loading ? <Sparkles className="animate-spin" size={18} /> : null}
+              {isAr ? 'ط¥ط±ط³ط§ظ„ ط§ظ„ط±ظ…ط²' : 'Envoyer le code'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+
+  if (step === 'forgot-otp') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => setStep('forgot-phone')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col px-6">
+          <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
+          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <ShieldCheck size={30} className="text-primary" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚' : 'Code de verification'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {isAr ? 'ط£ط¯ط®ظ„ ط§ظ„ط±ظ…ط² ط§ظ„ظ…ط±ط³ظ„ ط¥ظ„ظ‰' : 'Entrez le code envoye au'}{' '}
+            <span dir="ltr" className="font-bold text-foreground">+213 {forgotPhone}</span>
+          </p>
+          <div className="mt-8 flex justify-center" dir="ltr">
+            <InputOTP maxLength={OTP_LENGTH} value={otp} onChange={setOtp}>
+              <InputOTPGroup className="gap-2">
+                {Array.from({ length: OTP_LENGTH }).map((_, index) => (
+                  <InputOTPSlot key={index} index={index} className={cn('h-14 rounded-xl border-2 text-xl font-bold', OTP_LENGTH === 6 ? 'w-10 sm:w-12' : 'w-12')} />
+                ))}
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+          <Button onClick={handleVerifyForgotOtp} disabled={loading || otp.length !== OTP_LENGTH} size="lg" className="mt-8 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
+            {loading ? <Sparkles className="animate-spin" size={18} /> : null}
+            {isAr ? 'طھط­ظ‚ظ‚' : 'Verifier'}
+          </Button>
+          <div className="mt-4 text-center">
+            {resendTimer > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {isAr ? 'ط¥ط¹ط§ط¯ط© ط§ظ„ط¥ط±ط³ط§ظ„ ط®ظ„ط§ظ„' : 'Renvoyer dans'} {resendTimer} {isAr ? 'ط«ط§ظ†ظٹط©' : 's'}
+              </p>
+            ) : (
+              <button onClick={handleRequestPasswordReset} className="text-xs font-bold text-primary hover:underline">
+                {isAr ? 'ط¥ط¹ط§ط¯ط© ط¥ط±ط³ط§ظ„ ط§ظ„ط±ظ…ط²' : 'Renvoyer le code'}
+              </button>
+            )}
+          </div>
+          <div className="mt-auto pb-6 pt-8">
+            <div className="rounded-xl bg-amber-50 p-3 text-center text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              {OTP_DEMO_MODE
+                ? isAr
+                  ? 'ظˆط¶ط¹ ط§ظ„طھط¬ط±ط¨ط©: ط§ط³طھط®ط¯ظ… 0000'
+                  : 'Mode demo : utilisez 0000'
+                : isAr
+                  ? 'ط£ط¯ط®ظ„ ط§ظ„ط±ظ…ط² ط§ظ„ظ…ظƒظˆظ† ظ…ظ† 6 ط£ط±ظ‚ط§ظ… ط§ظ„ظ…ط±ط³ظ„ ط¹ط¨ط± SMS'
+                  : 'Entrez le code a 6 chiffres recu par SMS'}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+
+  if (step === 'forgot-reset') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => setStep('forgot-otp')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col px-6">
+          <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
+          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Lock size={30} className="text-primary" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'ظƒظ„ظ…ط© ظ…ط±ظˆط± ط¬ط¯ظٹط¯ط©' : 'Nouveau mot de passe'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {isAr ? '8 ط£ط­ط±ظپ ط¹ظ„ظ‰ ط§ظ„ط£ظ‚ظ„طŒ طھط­طھظˆظٹ ط¹ظ„ظ‰ ط­ط±ظپ ظƒط¨ظٹط± ظˆطµط؛ظٹط± ظˆط±ظ‚ظ…' : '8 caracteres min, avec majuscule, minuscule et chiffre'}
+          </p>
+          <div className="mt-8 space-y-4">
+            <Input type="password" dir="ltr" placeholder={isAr ? 'ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط± ط§ظ„ط¬ط¯ظٹط¯ط©' : 'Nouveau mot de passe'} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" />
+            <Input type="password" dir="ltr" placeholder={isAr ? 'طھط£ظƒظٹط¯ ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Confirmer le mot de passe'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleResetPassword(); }} />
+            <Button onClick={handleResetPassword} disabled={loading} size="lg" className="h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
+              {loading ? <Sparkles className="animate-spin" size={18} /> : null}
+              {isAr ? 'طھط؛ظٹظٹط± ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Changer le mot de passe'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
 
   if (step === 'login') {
     return (
@@ -515,20 +883,21 @@ export function AuthFlow() {
         <div className="flex flex-1 flex-col px-6">
           <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
           <h2 className="text-2xl font-black text-foreground">
-            {isAr ? 'تسجيل الدخول' : 'Connexion'}
+            {isAr ? 'طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„' : 'Connexion'}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            {isAr ? 'استخدم بريدك الإلكتروني وكلمة المرور' : 'Utilisez votre email et votre mot de passe'}
+            {isAr ? 'ط§ط³طھط®ط¯ظ… ط¨ط±ظٹط¯ظƒ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظˆظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Utilisez votre email et votre mot de passe'}
           </p>
           <div className="mt-8 space-y-4">
             <Input type="email" dir="ltr" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12" />
-            <Input type="password" dir="ltr" placeholder={isAr ? 'كلمة المرور' : 'Mot de passe'} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }} />
+            <Input type="password" dir="ltr" placeholder={isAr ? 'ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Mot de passe'} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }} />
+            <button type="button" onClick={() => { setForgotPhone(''); setOtp(''); setStep('forgot-phone'); }} className="text-xs font-bold text-primary hover:underline self-end">{isAr ? 'نسيت كلمة المرور' : 'Mot de passe oublie ?'}</button>
             <Button onClick={handleLogin} disabled={loading} size="lg" className="h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
               {loading ? <Sparkles className="animate-spin" size={18} /> : null}
-              {isAr ? 'دخول' : 'Se connecter'}
+              {isAr ? 'ط¯ط®ظˆظ„' : 'Se connecter'}
             </Button>
             <button type="button" onClick={() => setStep('phone')} className="w-full text-center text-xs font-bold text-primary hover:underline">
-              {isAr ? 'تسجيل حساب جديد عبر الهاتف' : 'Créer un compte avec votre téléphone'}
+              {isAr ? 'طھط³ط¬ظٹظ„ ط­ط³ط§ط¨ ط¬ط¯ظٹط¯ ط¹ط¨ط± ط§ظ„ظ‡ط§طھظپ' : 'Crأ©er un compte avec votre tأ©lأ©phone'}
             </button>
           </div>
         </div>
@@ -543,22 +912,22 @@ export function AuthFlow() {
         <div className="flex flex-1 flex-col px-6">
           <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
           <h2 className="text-2xl font-black text-foreground">
-            {isAr ? 'إنشاء حسابك' : 'Créer votre compte'}
+            {isAr ? 'ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ظƒ' : 'Crأ©er votre compte'}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            {isAr ? 'تم التحقق من رقم هاتفك بنجاح. أكمل بياناتك لإنشاء حسابك في وصلها.' : 'Votre téléphone est vérifié. Complétez vos informations pour créer votre compte.'}
+            {isAr ? 'طھظ… ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط±ظ‚ظ… ظ‡ط§طھظپظƒ ط¨ظ†ط¬ط§ط­. ط£ظƒظ…ظ„ ط¨ظٹط§ظ†ط§طھظƒ ظ„ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ظƒ ظپظٹ ظˆطµظ„ظ‡ط§.' : 'Votre tأ©lأ©phone est vأ©rifiأ©. Complأ©tez vos informations pour crأ©er votre compte.'}
           </p>
           <div className="mt-5 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" dir="ltr">
-            ✓ {phone} - {isAr ? 'رقم الهاتف مؤكد' : 'Téléphone confirmé'}
+            âœ“ {phone} - {isAr ? 'ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ظ…ط¤ظƒط¯' : 'Tأ©lأ©phone confirmأ©'}
           </div>
           <div className="mt-5 space-y-3">
-            <Input placeholder={isAr ? 'الاسم الكامل' : 'Nom complet'} value={name} onChange={(e) => setName(e.target.value)} className="h-12" />
+            <Input placeholder={isAr ? 'ط§ظ„ط§ط³ظ… ط§ظ„ظƒط§ظ…ظ„' : 'Nom complet'} value={name} onChange={(e) => setName(e.target.value)} className="h-12" />
             <Input type="email" dir="ltr" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12" />
-            <Input type="password" dir="ltr" placeholder={isAr ? 'كلمة المرور' : 'Mot de passe'} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" />
-            <Input type="password" dir="ltr" placeholder={isAr ? 'تأكيد كلمة المرور' : 'Confirmer le mot de passe'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleCompleteSignup(); }} />
+            <Input type="password" dir="ltr" placeholder={isAr ? 'ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Mot de passe'} value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" />
+            <Input type="password" dir="ltr" placeholder={isAr ? 'طھط£ظƒظٹط¯ ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±' : 'Confirmer le mot de passe'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleCompleteSignup(); }} />
             <Button onClick={handleCompleteSignup} disabled={loading} size="lg" className="h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
               {loading ? <Sparkles className="animate-spin" size={18} /> : null}
-              {isAr ? 'إنشاء الحساب' : 'Créer le compte'}
+              {isAr ? 'ط¥ظ†ط´ط§ط، ط§ظ„ط­ط³ط§ط¨' : 'Crأ©er le compte'}
             </Button>
           </div>
         </div>
@@ -608,8 +977,8 @@ export function AuthFlow() {
 
         <p className="mt-2 text-sm text-muted-foreground">
           {isAr
-            ? 'أدخل رمز التحقق المرسل إلى'
-            : 'Entrez le code envoyé au'}{' '}
+            ? 'ط£ط¯ط®ظ„ ط±ظ…ط² ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ظ…ط±ط³ظ„ ط¥ظ„ظ‰'
+            : 'Entrez le code envoyأ© au'}{' '}
           <span
             dir="ltr"
             className="font-bold text-foreground"
@@ -628,9 +997,7 @@ export function AuthFlow() {
             onChange={setOtp}
           >
             <InputOTPGroup className="gap-2">
-              {Array.from({
-                length: OTP_LENGTH,
-              }).map((_, index) => (
+              {Array.from({ length: OTP_LENGTH }).map((_, index) => (
                 <InputOTPSlot
                   key={index}
                   index={index}
@@ -684,16 +1051,229 @@ export function AuthFlow() {
           <div className="rounded-xl bg-amber-50 p-3 text-center text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
             {OTP_DEMO_MODE
               ? isAr
-                ? 'وضع التجربة: استخدم 0000'
-                : 'Mode démo : utilisez 0000'
+                ? 'ظˆط¶ط¹ ط§ظ„طھط¬ط±ط¨ط©: ط§ط³طھط®ط¯ظ… 0000'
+                : 'Mode dأ©mo : utilisez 0000'
               : isAr
-                ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS'
-                : 'Entrez le code à 6 chiffres reçu par SMS'}
+                ? 'ط£ط¯ط®ظ„ ط§ظ„ط±ظ…ط² ط§ظ„ظ…ظƒظˆظ† ظ…ظ† 6 ط£ط±ظ‚ط§ظ… ط§ظ„ظ…ط±ط³ظ„ ط¹ط¨ط± SMS'
+                : 'Entrez le code أ  6 chiffres reأ§u par SMS'}
           </div>
         </div>
       </div>
     </div>
   );
+
+  if (step === 'driver-form') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => setStep('phone')}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col px-6 pb-8">
+          <div className="mb-6 mt-2">
+            <BrandLogo size={56} showText />
+          </div>
+          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <Bike size={30} className="text-primary" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'طھط³ط¬ظٹظ„ ط§ظ„ط³ط§ط¦ظ‚' : 'Inscription chauffeur'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {isAr
+              ? 'ط£ط±ط³ظ„ ط·ظ„ط¨ظƒ. ط³ظٹطھظ… ط§ظ„ظ…ط±ط§ط¬ط¹ط© ظ…ظ† ط·ط±ظپ ط§ظ„ظ…ط¯ظٹط±.'
+              : 'Envoyez votre demande. L\u2019administrateur la passera en revue.'}
+          </p>
+          <div className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                {isAr ? 'ط§ظ„ط§ط³ظ… ط§ظ„ظƒط§ظ…ظ„' : 'Nom complet'}
+              </label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={isAr ? 'ط§ظ„ط§ط³ظ…' : 'Nom'}
+                className="h-12 rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                {isAr ? 'ظ†ظˆط¹ ط§ظ„ظ…ط±ظƒط¨ط©' : 'Type de vأ©hicule'}
+              </label>
+              <select
+                value={driverVehicleType}
+                onChange={(e) => setDriverVehicleType(e.target.value)}
+                className="h-12 w-full rounded-xl border bg-card px-3 text-sm"
+                dir="ltr"
+              >
+                <option value="125cc">125cc</option>
+                <option value="150cc">150cc</option>
+                <option value="200cc">200cc</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                {isAr ? 'ظ„ظˆظ† ط§ظ„ظ…ط±ظƒط¨ط©' : 'Couleur du vأ©hicule'}
+              </label>
+              <Input
+                value={driverVehicleColor}
+                onChange={(e) => setDriverVehicleColor(e.target.value)}
+                placeholder={isAr ? 'ظ…ط«ط§ظ„: ط£ط¨ظٹط¶' : 'ex: Blanc'}
+                className="h-12 rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                {isAr ? 'ط±ظ‚ظ… ط§ظ„ظ„ظˆط­ط©' : 'Numأ©ro de plaque'}
+              </label>
+              <Input
+                value={driverPlateNumber}
+                onChange={(e) => setDriverPlateNumber(e.target.value)}
+                placeholder={isAr ? 'ط§ط®طھظٹط§ط±ظٹ' : 'optionnel'}
+                className="h-12 rounded-xl"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                {isAr ? 'ط±ظ‚ظ… ط±ط®طµط© ط§ظ„ظ‚ظٹط§ط¯ط©' : 'Numأ©ro de permis'}
+              </label>
+              <Input
+                value={driverLicenseNumber}
+                onChange={(e) => setDriverLicenseNumber(e.target.value)}
+                placeholder={isAr ? 'ط§ط®طھظٹط§ط±ظٹ' : 'optionnel'}
+                className="h-12 rounded-xl"
+                dir="ltr"
+              />
+            </div>
+          </div>
+          <Button
+            onClick={handleApplyDriver}
+            disabled={loading}
+            size="lg"
+            className="mt-6 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg"
+          >
+            {loading ? <Sparkles className="animate-spin" size={18} /> : null}
+            {isAr ? 'ط¥ط±ط³ط§ظ„ ط§ظ„ط·ظ„ط¨' : 'Envoyer la demande'}
+          </Button>
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
+            {isAr
+              ? `ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ط§ظ„ظ…ط³طھط®ط¯ظ…: +213 ${phone}`
+              : `Numأ©ro utilisأ©: +213 ${phone}`}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'driver-pending') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => {
+              setStep('phone');
+              setOtp('');
+              setName('');
+              setPassword('');
+              setConfirmPassword('');
+              setEmail('');
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-8 text-center">
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/40">
+            <ShieldCheck size={40} className="text-amber-600" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'ط·ظ„ط¨ظƒ ظ‚ظٹط¯ ط§ظ„ظ…ط±ط§ط¬ط¹ط©' : 'Demande en cours de revue'}
+          </h2>
+          <p className="mt-3 max-w-sm text-sm text-muted-foreground">
+            {isAr
+              ? 'طھظ… ط§ط³طھظ„ط§ظ… ط·ظ„ط¨ ط§ظ„طھط³ط¬ظٹظ„ ط¨ظ†ط¬ط§ط­. ط³ظٹطھظ… ط¥ط¨ظ„ط§ط؛ظƒ ط¹ظ†ط·ط±ظٹظ‹ط§ ط­ظٹظ† ظٹط±ط§ط¬ط¹ ط§ظ„ظ…ط¯ظٹط± ط§ظ„ظ…ط¹ظ„ظˆظ…ط§طھ.'
+              : 'Votre demande d\u2019inscription a bien أ©tأ© reأ§ue. Vous serez notifiأ© dأ¨s que l\u2019administrateur l\u2019aura passأ©e en revue.'}
+          </p>
+          <Button
+            onClick={() => {
+              setStep('phone');
+              setOtp('');
+              setName('');
+            }}
+            variant="outline"
+            className="mt-6 h-11 rounded-xl"
+          >
+            {isAr ? 'ط§ظ„ط±ط¬ظˆط¹' : 'Retour'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'driver-rejected') {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex items-center justify-between p-5">
+          <button
+            onClick={() => {
+              setStep('phone');
+              setOtp('');
+              setName('');
+              setPassword('');
+              setConfirmPassword('');
+              setEmail('');
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
+          >
+            {isAr ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
+          </button>
+          <LangToggle />
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-8 text-center">
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-950/40">
+            <ShieldCheck size={40} className="text-red-600" />
+          </div>
+          <h2 className="text-2xl font-black text-foreground">
+            {isAr ? 'طھظ… ط±ظپط¶ ط§ظ„ط·ظ„ط¨' : 'Demande refusأ©e'}
+          </h2>
+          <p className="mt-3 max-w-sm text-sm text-muted-foreground">
+            {isAr
+              ? 'ظ„ظ… ظٹطھظ… ط§ظ„ظ…ظˆط§ظپظ‚ط© ط¹ظ„ظ‰ ط·ظ„ط¨ظƒ. ظٹظ…ظƒظ†ظƒ ط¥ط¹ط§ط¯ط© ط§ظ„طھظ‚ط¯ظٹظ… ط¨ط¹ط¯ طھط­ط³ظٹظ† ط§ظ„ظ…ط¹ظ„ظˆظ…ط§طھ.'
+              : 'Votre demande n\u2019a pas أ©tأ© acceptأ©e. Vous pouvez resoumettre aprأ¨s avoir corrigأ© les informations.'}
+          </p>
+          <Button
+            onClick={() => {
+              setStep('driver-form');
+            }}
+            className="mt-6 h-11 rounded-xl"
+          >
+            {isAr ? 'ط¥ط¹ط§ط¯ط© ط§ظ„طھظ‚ط¯ظٹظ…' : 'Resoumettre'}
+          </Button>
+          <Button
+            onClick={() => {
+              setStep('phone');
+              setOtp('');
+              setName('');
+            }}
+            variant="ghost"
+            className="mt-2 h-11 rounded-xl"
+          >
+            {isAr ? 'ط§ظ„ط±ط¬ظˆط¹' : 'Retour'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function FeaturePill({

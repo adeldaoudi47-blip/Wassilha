@@ -87,11 +87,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Create the user + driver + vehicle atomically.
+    // Admin-created drivers skip the pending workflow — they are immediately
+    // active. (This is the only path that grants driver privileges without
+    // an admin approval step.)
     const user = await db.user.create({
       data: {
         phone: body.phone,
         name: body.name,
         role: 'driver',
+        accountStatus: 'active',
+        phoneVerified: true,
       },
     });
     const driver = await db.driver.create({
@@ -101,6 +106,9 @@ export async function POST(req: NextRequest) {
         vehicleColor: body.vehicleColor,
         isOnline: false,
         isVerified: true,
+        applicationStatus: 'active',
+        appliedAt: new Date(),
+        reviewedAt: new Date(),
       },
       include: { user: true },
     });

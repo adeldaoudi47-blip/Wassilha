@@ -19,6 +19,7 @@ import { AdminDashboard } from '@/components/wassilha/admin/admin-dashboard';
 import { AdminDrivers } from '@/components/wassilha/admin/admin-drivers';
 import { AdminOrders } from '@/components/wassilha/admin/admin-orders';
 import { AdminPricing } from '@/components/wassilha/admin/admin-pricing';
+import { AdminDriverApplications } from '@/components/wassilha/admin/admin-driver-applications';
 
 export default function Home() {
   const { t, isRtl } = useT();
@@ -76,6 +77,7 @@ export default function Home() {
     else if (driverTab === 'profile') { title = t.profile; content = <DriverProfile />; }
   } else if (user.role === 'admin') {
     if (adminTab === 'dashboard') { title = t.dashboard; subtitle = t.location; content = <AdminDashboard />; }
+    else if (adminTab === 'applications') { title = t.driverApplications; content = <AdminDriverApplications />; }
     else if (adminTab === 'drivers') { title = t.drivers; content = <AdminDrivers />; }
     else if (adminTab === 'orders') { title = t.orders; content = <AdminOrders />; }
     else if (adminTab === 'pricing') { title = t.pricing; content = <AdminPricing />; }
