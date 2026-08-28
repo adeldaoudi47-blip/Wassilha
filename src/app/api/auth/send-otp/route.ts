@@ -70,6 +70,13 @@ await db.otpCode.create({
   },
 });
 
+
+  // DIAG: confirms the DB write actually persisted the row before we attempt
+  // to send the SMS. If a user reports "I never got the SMS", this log lets
+  // support distinguish between (a) row was saved and the provider silently
+  // failed, and (b) DB write itself failed.
+  console.log('[SEND-OTP] Saved OTP for phone:', phone, '| Code:', code);
+
 if (demoMode) {
   console.log('[WASSILHA OTP DEMO] ' + phone + ' -> ' + code);
 
@@ -98,7 +105,10 @@ return NextResponse.json({
 });
 
 } catch (e) {
-console.error('[WASSILHA SMS] Server error:', e);
+  // DIAG: surface the exact failure so support can tell whether the DB
+  // write threw, the SMS provider rejected, or the rate limiter failed.
+  console.error('[SEND-OTP] DB or SMS Error:', e);
+  console.error('[WASSILHA SMS] Server error:', e);
 
 return NextResponse.json(
   {

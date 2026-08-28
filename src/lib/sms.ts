@@ -55,6 +55,18 @@ async function sendWithTextBee(
     throw new Error(`TextBee HTTP ${response.status}: ${JSON.stringify(result)}`);
   }
 
+  // TextBee may return 200 OK with success=false in the body when the
+  // underlying Android device is offline, the deviceId is wrong, or the
+  // content was rejected. Without this check the API would silently claim
+  // success and the user would never receive the SMS. Throw so the caller
+  // can either fall back to Brevo or surface a serverError to the user.
+  const body = result as
+    | { data?: { success?: boolean; message?: string } }
+    | null;
+  if (body && body.data && body.data.success === false) {
+    throw new Error('TextBee device offline or rejected the request');
+  }
+
   return { provider: 'textbee', response: result };
 }
 

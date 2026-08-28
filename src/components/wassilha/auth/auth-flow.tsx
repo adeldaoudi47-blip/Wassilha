@@ -129,11 +129,32 @@ export function AuthFlow() {
     } catch (error) {
       console.error('SEND OTP ERROR:', error);
 
-      toast.error(
-        isAr
-          ? 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.'
-          : 'Impossible dâ€™envoyer le code. Rأ©essayez.'
-      );
+      // Differentiate server-side failures (DB / SMS provider) from
+      // rate-limits or cooldown so the user gets a useful message instead
+      // of a generic "try again". The API client surfaces the backend's
+      // `error` field as the thrown Error's message.
+      const code = error instanceof Error ? error.message : '';
+      let ar: string;
+      let fr: string;
+      switch (code) {
+        case 'tooManyRequests':
+          ar = 'تجاوزت الحد المسموح من المحاولات. حاول لاحقاً.';
+          fr = 'Trop de tentatives, reessayez plus tard.';
+          break;
+        case 'resendCooldown':
+          ar = 'يرجى الانتظار قبل إعادة طلب الرمز.';
+          fr = 'Veuillez patienter avant de renvoyer une demande.';
+          break;
+        case 'invalidPhone':
+          ar = 'رقم الهاتف غير صحيح.';
+          fr = 'Numero de telephone invalide.';
+          break;
+        case 'serverError':
+        default:
+          ar = 'تعذر إرسال الرمز، تأكد من اتصالك بالإنترنت أو حاول لاحقاً.';
+          fr = 'Envoi du code impossible, verifiez votre connexion et reessayez.';
+      }
+      toast.error(isAr ? ar : fr);
     } finally {
       setLoading(false);
     }
@@ -170,11 +191,29 @@ export function AuthFlow() {
       }
     } catch (error) {
       console.error('SEND OTP (DRIVER) ERROR:', error);
-      toast.error(
-        isAr
-          ? 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.'
-          : 'Impossible dâ€™envoyer le code. Rأ©essayez.'
-      );
+      // Same error-code mapping as the customer flow (see handleSendOtp).
+      const code = error instanceof Error ? error.message : '';
+      let ar = 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.';
+      let fr = 'Impossible dâ€™envoyer le code. Rأ©essayez.';
+      switch (code) {
+        case 'tooManyRequests':
+          ar = 'تجاوزت الحد المسموح من المحاولات. حاول لاحقاً.';
+          fr = 'Trop de tentatives, reessayez plus tard.';
+          break;
+        case 'resendCooldown':
+          ar = 'يرجى الانتظار قبل إعادة طلب الرمز.';
+          fr = 'Veuillez patienter avant de renvoyer une demande.';
+          break;
+        case 'invalidPhone':
+          ar = 'رقم الهاتف غير صحيح.';
+          fr = 'Numero de telephone invalide.';
+          break;
+        case 'serverError':
+          ar = 'تعذر إرسال الرمز، تأكد من اتصالك بالإنترنت أو حاول لاحقاً.';
+          fr = 'Envoi du code impossible, verifiez votre connexion et reessayez.';
+          break;
+      }
+      toast.error(isAr ? ar : fr);
     } finally {
       setLoading(false);
     }
@@ -389,7 +428,29 @@ export function AuthFlow() {
       else toast.success(isAr ? 'Code sent' : 'Code envoye');
     } catch (error) {
       console.error('REQUEST RESET ERROR:', error);
-      toast.error(isAr ? 'Error' : 'Erreur');
+      // Same error-code mapping as the customer flow (see handleSendOtp).
+      const code = error instanceof Error ? error.message : '';
+      let ar = 'حدث خطأ. حاول مرة أخرى.';
+      let fr = 'Erreur, reessayez.';
+      switch (code) {
+        case 'tooManyRequests':
+          ar = 'تجاوزت الحد المسموح من المحاولات. حاول لاحقاً.';
+          fr = 'Trop de tentatives, reessayez plus tard.';
+          break;
+        case 'resendCooldown':
+          ar = 'يرجى الانتظار قبل إعادة طلب الرمز.';
+          fr = 'Veuillez patienter avant de renvoyer une demande.';
+          break;
+        case 'invalidPhone':
+          ar = 'رقم الهاتف غير صحيح.';
+          fr = 'Numero de telephone invalide.';
+          break;
+        case 'serverError':
+          ar = 'تعذر إرسال الرمز، تأكد من اتصالك بالإنترنت أو حاول لاحقاً.';
+          fr = 'Envoi du code impossible, verifiez votre connexion et reessayez.';
+          break;
+      }
+      toast.error(isAr ? ar : fr);
     } finally {
       setLoading(false);
     }
