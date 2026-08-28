@@ -76,3 +76,8 @@ android/build/
 tool-results/
 upload/
 workspace-*
+
+# Debug & Build Artifacts
+build-out*.txt
+check-db.cjs
+wassilha-debug.apk
