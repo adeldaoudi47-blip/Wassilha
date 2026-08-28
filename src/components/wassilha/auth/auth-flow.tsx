@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import {
@@ -233,10 +233,21 @@ export function AuthFlow() {
     } catch (error) {
       console.error('VERIFY OTP ERROR:', error);
 
+      // Distinguish a server-side crash (500 / network) from a real "wrong
+      // code" verdict so we can tell whether the user is mis-typing or the
+      // backend is failing. The API client surfaces the backend's `error`
+      // field as the thrown Error's message.
+      const isServerError =
+        error instanceof Error && error.message === 'serverError';
+
       toast.error(
-        isAr
+        isServerError
+          ? isAr
+            ? 'حدث خطأ تقني في الخادم. يرجى المحاولة مرة أخرى.'
+            : 'Une erreur technique est survenue. Veuillez reessayer.'
+          : isAr
           ? 'رمز التحقق غير صحيح أو انتهت صلاحيته'
-          : 'Code incorrect ou expirأ©'
+          : 'Code incorrect ou expire'
       );
     } finally {
       setLoading(false);

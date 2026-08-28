@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const otp = await db.otpCode.findFirst({
       where: { phone },
       orderBy: {
-        expiresAt: 'desc',
+        createdAt: 'desc',
       },
     });
 
@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
       user: authUser,
     });
   } catch (e) {
+    console.error('[WASSILHA VERIFY-OTP ERROR]', e);
     return NextResponse.json(
       {
         error: 'serverError',
