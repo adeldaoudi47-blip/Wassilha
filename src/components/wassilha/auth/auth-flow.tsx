@@ -233,22 +233,45 @@ export function AuthFlow() {
     } catch (error) {
       console.error('VERIFY OTP ERROR:', error);
 
-      // Distinguish a server-side crash (500 / network) from a real "wrong
-      // code" verdict so we can tell whether the user is mis-typing or the
-      // backend is failing. The API client surfaces the backend's `error`
-      // field as the thrown Error's message.
-      const isServerError =
-        error instanceof Error && error.message === 'serverError';
+      // Map each backend error code to a specific user-facing message so the
+      // user (and support) can tell whether the code is wrong, expired, not
+      // yet requested, rate-limited, or whether the server crashed. The API
+      // client surfaces the backend's `error` field as the thrown Error's
+      // message.
+      const code =
+        error instanceof Error ? error.message : '';
 
-      toast.error(
-        isServerError
-          ? isAr
-            ? 'حدث خطأ تقني في الخادم. يرجى المحاولة مرة أخرى.'
-            : 'Une erreur technique est survenue. Veuillez reessayer.'
-          : isAr
-          ? 'رمز التحقق غير صحيح أو انتهت صلاحيته'
-          : 'Code incorrect ou expire'
-      );
+      let ar: string;
+      let fr: string;
+
+      switch (code) {
+        case 'codeExpired':
+          ar = 'انتهت صلاحية الرمز، يرجى طلب رمز جديد.';
+          fr = 'Code expire, veuillez demander un nouveau code.';
+          break;
+        case 'codeNotFound':
+          ar = 'لم يتم العثور على رمز، يرجى طلب رمز جديد.';
+          fr = 'Aucun code trouve, veuillez en demander un nouveau.';
+          break;
+        case 'tooManyAttempts':
+          ar = 'تجاوزت عدد المحاولات، حاول لاحقاً.';
+          fr = 'Trop de tentatives, reessayez plus tard.';
+          break;
+        case 'serverError':
+          ar = 'حدث خطأ تقني في الخادم. يرجى المحاولة مرة أخرى.';
+          fr = 'Une erreur technique est survenue. Veuillez reessayer.';
+          break;
+        case 'invalidPhone':
+          ar = 'رقم الهاتف غير صحيح.';
+          fr = 'Numero de telephone invalide.';
+          break;
+        case 'invalidOtp':
+        default:
+          ar = 'رمز التحقق غير صحيح.';
+          fr = 'Code de verification incorrect.';
+      }
+
+      toast.error(isAr ? ar : fr);
     } finally {
       setLoading(false);
     }
@@ -387,7 +410,36 @@ export function AuthFlow() {
       setConfirmPassword('');
     } catch (error) {
       console.error('VERIFY FORGOT OTP ERROR:', error);
-      toast.error(isAr ? 'Code incorrect or expired' : 'Code incorrect ou expire');
+
+      // Same error-code → user-facing-message mapping as the login OTP flow
+      // (see handleVerify). Keeps the forgot-password UX consistent with the
+      // main login screen.
+      const code = error instanceof Error ? error.message : '';
+      let ar = 'رمز التحقق غير صحيح أو انتهت صلاحيته';
+      let fr = 'Code incorrect ou expire';
+      switch (code) {
+        case 'codeExpired':
+          ar = 'انتهت صلاحية الرمز، يرجى طلب رمز جديد.';
+          fr = 'Code expire, veuillez demander un nouveau code.';
+          break;
+        case 'codeNotFound':
+          ar = 'لم يتم العثور على رمز، يرجى طلب رمز جديد.';
+          fr = 'Aucun code trouve, veuillez en demander un nouveau.';
+          break;
+        case 'tooManyAttempts':
+          ar = 'تجاوزت عدد المحاولات، حاول لاحقاً.';
+          fr = 'Trop de tentatives, reessayez plus tard.';
+          break;
+        case 'serverError':
+          ar = 'حدث خطأ تقني في الخادم. يرجى المحاولة مرة أخرى.';
+          fr = 'Une erreur technique est survenue. Veuillez reessayer.';
+          break;
+        case 'invalidPhone':
+          ar = 'رقم الهاتف غير صحيح.';
+          fr = 'Numero de telephone invalide.';
+          break;
+      }
+      toast.error(isAr ? ar : fr);
     } finally {
       setLoading(false);
     }

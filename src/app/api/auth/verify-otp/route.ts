@@ -52,10 +52,41 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // No live code for this phone (never sent / expired).
-    if (!otp || new Date(otp.expiresAt).getTime() <= Date.now()) {
+    // DIAG: temporary structured log to disambiguate the three early-exit
+    // branches below (no row / expired / wrong code). Helps the user + on-call
+    // tell whether the issue is a missing record, an expired TTL, or a real
+    // mismatch — without changing any production behavior.
+    console.log(
+      '[VERIFY-OTP] Searching for phone:',
+      phone,
+      '| Found:',
+      otp
+        ? {
+            id: otp.id,
+            attempts: otp.attempts,
+            expiresAt: otp.expiresAt,
+            ageSec: Math.round(
+              (Date.now() - new Date(otp.createdAt).getTime()) / 1000
+            ),
+          }
+        : null
+    );
+
+    // No row at all for this phone — user never requested a code (or send-otp
+    // failed silently). Distinct from "expired" so the UI can guide the user
+    // to re-request instead of just calling the code wrong.
+    if (!otp) {
       return NextResponse.json(
-        { error: 'invalidOtp' },
+        { error: 'codeNotFound' },
+        { status: 400 }
+      );
+    }
+
+    // Row exists but its TTL has lapsed. Distinguish from codeNotFound so the
+    // UI can say "expired, request a new one" rather than "wrong code".
+    if (new Date(otp.expiresAt).getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'codeExpired' },
         { status: 400 }
       );
     }
