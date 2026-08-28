@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { requirePrivilegedAdmin } from '@/lib/auth';
 import { CARGO_MULTIPLIERS_DEFAULT } from '@/lib/wassilha-data';
 import type { CargoKey, PricingConfig } from '@/lib/types';
 
@@ -55,12 +55,10 @@ export async function GET() {
 // PUT /api/pricing  { basePrice?, perKm?, multipliers? }  (admin only)
 export async function PUT(req: NextRequest) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    if (session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can write pricing.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
 
     const body = await req.json();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, requirePrivilegedAdmin } from '@/lib/auth';
 import type { DriverProfile } from '@/lib/types';
 
 function toDriverProfile(driver: {
@@ -42,9 +42,10 @@ function toDriverProfile(driver: {
 // GET /api/admin/drivers  (admin only)
 export async function GET() {
   try {
-    const session = await getSession();
-    if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can access.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
     const drivers = await db.driver.findMany({
       include: { user: true },
@@ -62,9 +63,10 @@ export async function GET() {
 // POST /api/admin/drivers  { name, phone, vehicleType, vehicleColor }  (admin only)
 export async function POST(req: NextRequest) {
   try {
-    const session = await getSession();
-    if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can access.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
     const body = await req.json();
     if (

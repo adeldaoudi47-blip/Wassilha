@@ -164,3 +164,42 @@ export async function clearSession() {
   }
   store.delete(SESSION_COOKIE);
 }
+
+/**
+ * The only phone number authorized to hold the "admin" role.
+ * Hard-coded as defense-in-depth so that even if an attacker finds a way to
+ * mutate `User.role` directly (e.g. via a future code path that mis-trusts
+ * client input), they still cannot reach admin APIs.
+ *
+ * The DB still owns the role assignment (no code path lets a non-bootstrap
+ * user set role='admin'); this constant is the second gate.
+ */
+export const PRIVILEGED_ADMIN_PHONE = '0562166355';
+
+/**
+ * Validates the current session is held by the privileged admin
+ * (phone === PRIVILEGED_ADMIN_PHONE) and that role === 'admin'.
+ *
+ * Return shape:
+ *   { ok: true,  session } on success
+ *   { ok: false, status: 401 | 403, body: { error: 'unauthorized' | 'forbidden' } } otherwise
+ *
+ * Use in admin API routes as:
+ *   const gate = await requirePrivilegedAdmin();
+ *   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status });
+ *   // gate.session is the verified AuthUser.
+ */
+export async function requirePrivilegedAdmin(): Promise<
+  | { ok: true; session: AuthUser }
+  | { ok: false; status: 401; body: { error: 'unauthorized' } }
+  | { ok: false; status: 403; body: { error: 'forbidden' } }
+> {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false, status: 401, body: { error: 'unauthorized' } };
+  }
+  if (session.role !== 'admin' || session.phone !== PRIVILEGED_ADMIN_PHONE) {
+    return { ok: false, status: 403, body: { error: 'forbidden' } };
+  }
+  return { ok: true, session };
+}

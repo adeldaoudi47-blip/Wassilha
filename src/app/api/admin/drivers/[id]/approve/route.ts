@@ -1,7 +1,7 @@
 // PATCH /api/admin/drivers/:id/approve  (admin only)
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { requirePrivilegedAdmin } from '@/lib/auth';
 import type { DriverProfile } from '@/lib/types';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -25,12 +25,10 @@ function toDriverProfile(driver) {
 
 export async function PATCH(_req, { params }) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    if (session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can access.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
     const { id } = await params;
     const existing = await db.driver.findUnique({ where: { id }, include: { user: true } });

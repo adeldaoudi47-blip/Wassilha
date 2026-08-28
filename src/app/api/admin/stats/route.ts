@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, requirePrivilegedAdmin } from '@/lib/auth';
 import type { AdminStats } from '@/lib/types';
 
 function startOfDay(d: Date): Date {
@@ -20,9 +20,10 @@ function toIsoDay(d: Date): string {
 // GET /api/admin/stats  (admin only)
 export async function GET() {
   try {
-    const session = await getSession();
-    if (!session || session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can access.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
 
     const [

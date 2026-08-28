@@ -1,16 +1,14 @@
 // GET /api/admin/driver-applications  (admin only)
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { requirePrivilegedAdmin } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-    if (session.role !== 'admin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    // SECURITY: only the privileged admin phone (hard-coded) can access.
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
     }
     const drivers = await db.driver.findMany({
       where: { applicationStatus: { in: ['pending', 'rejected'] } },
