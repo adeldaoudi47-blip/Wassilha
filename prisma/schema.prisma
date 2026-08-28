@@ -67,6 +67,15 @@ model Driver {
   vehicleRegistration   VehicleRegistration? @relation(fields: [vehicleRegistrationId], references: [id], onDelete: SetNull)
   isOnline      Boolean  @default(false)
   isVerified    Boolean  @default(true)
+  // Last known GPS position broadcasted by the driver's mobile/web app.
+  // Persisted on the Driver row so that we have a current position to send
+  // to customers (after a fresh page load) and to admin (fleet view) even
+  // before the next socket.io tick arrives.
+  currentLat    Float?
+  currentLng    Float?
+  // Timestamp of the last position fix. Stale rows (e.g. lastSeenAt > 60s ago)
+  // should be treated as "offline" by the UI regardless of `isOnline`.
+  lastSeenAt    DateTime?
   // applicationStatus reflects the self-registration workflow:
   //   "pending"  — driver submitted an application, awaiting admin approval
   //   "active"   — admin approved the driver; full driver privileges

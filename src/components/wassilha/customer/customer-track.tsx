@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Search, Bike, Package, CheckCircle2, Phone, MessageCircle, Star,
   XCircle, Clock, Navigation, MapPin, Flag,
@@ -10,6 +11,20 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useNavStore } from '@/lib/store';
 import { onOrderStatus, onDriverLocation, subscribeToOrder, unsubscribeFromOrder } from '@/lib/realtime';
+// LiveMap is dynamically imported with ssr:false because Leaflet touches
+// `window` at module init. The bundled component is loaded only on the
+// client; during SSR a lightweight placeholder div is rendered.
+const LiveMap = dynamic(
+  () => import('../live-map').then((m) => m.LiveMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-56 w-full animate-pulse rounded-2xl border border-border bg-emerald-50/40 dark:bg-emerald-950/20" />
+    ),
+  },
+);
+// Keep the old import for screens that still rely on it (e.g. customer-home
+// preview). We do not render it on this page anymore.
 import { GuerraraMap } from '../guerrara-map';
 import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
@@ -41,6 +56,10 @@ export function CustomerTrack() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [driverProgress, setDriverProgress] = useState(0);
+  // Latest GPS fix broadcasted by the driver via socket.io. We use this
+  // (instead of the abstract progress value) to position the driver marker
+  // on the real Leaflet map.
+  const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
   const [rating, setRating] = useState(5);
@@ -96,7 +115,9 @@ export function CustomerTrack() {
     });
     const offLoc = onDriverLocation((p) => {
       if (order && p.orderId === order.id) {
-        // approximate progress based on lat (very rough)
+        // Update the real GPS marker. We still keep `driverProgress` so
+        // any non-map UI (e.g. progress bar) keeps working.
+        setDriverCoords({ lat: p.lat, lng: p.lng });
         setDriverProgress((prev) => Math.min(1, prev + 0.08));
       }
     });
@@ -111,9 +132,46 @@ export function CustomerTrack() {
     if (order && (order.status === 'accepted' || order.status === 'picked')) {
       subscribeToOrder(order.id);
       setDriverProgress(0.15);
+      // Reset live driver marker so we don't show a stale position from a
+      // previous ride on the new one.
+      setDriverCoords(null);
       return () => unsubscribeFromOrder(order.id);
     }
   }, [order?.id, order?.status]);
+
+  // Seed the live driver marker with the last known position persisted on
+  // the Driver row (if any) so the map shows something useful before the
+  // first socket.io tick arrives.
+  useEffect(() => {
+    if (!order || !order.driverId) return;
+    if (driverCoords) return; // already have a fresher value
+    if (order.status !== 'accepted' && order.status !== 'picked') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/driver/location/${order.driverId}`, {
+          cache: 'no-store',
+        });
+        if (!r.ok) return;
+        const j = (await r.json()) as {
+          currentLat?: number | null;
+          currentLng?: number | null;
+        };
+        if (
+          !cancelled &&
+          typeof j.currentLat === 'number' &&
+          typeof j.currentLng === 'number'
+        ) {
+          setDriverCoords({ lat: j.currentLat, lng: j.currentLng });
+        }
+      } catch {
+        // Ignore — socket.io will deliver the first live tick shortly.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.id, order?.status, order?.driverId, driverCoords]);
 
   const currentStepIdx = order ? STEP_ORDER.indexOf(order.status) : -1;
 
@@ -181,14 +239,29 @@ export function CustomerTrack() {
 
         {/* Map */}
         <div className="p-3">
-          <GuerraraMap
-            showDriver={showDriver}
-            driverProgress={driverProgress}
-            pickupLabel={order.pickup}
-            dropoffLabel={order.dropoff}
-            live={showDriver}
-            height="h-56"
-          />
+          {order.pickupLat != null && order.pickupLng != null &&
+           order.dropoffLat != null && order.dropoffLng != null ? (
+            <LiveMap
+              pickupCoords={{ lat: order.pickupLat, lng: order.pickupLng }}
+              dropoffCoords={{ lat: order.dropoffLat, lng: order.dropoffLng }}
+              driverCoords={showDriver ? driverCoords : null}
+              pickupLabel={order.pickup}
+              dropoffLabel={order.dropoff}
+              driverLabel={driverName ?? undefined}
+              height="h-56"
+            />
+          ) : (
+            // Fallback to the SVG schematic if the order has no real coords
+            // yet (legacy rows or tests with stub data).
+            <GuerraraMap
+              showDriver={showDriver}
+              driverProgress={driverProgress}
+              pickupLabel={order.pickup}
+              dropoffLabel={order.dropoff}
+              live={showDriver}
+              height="h-56"
+            />
+          )}
         </div>
 
         {/* Searching / Driver found box */}

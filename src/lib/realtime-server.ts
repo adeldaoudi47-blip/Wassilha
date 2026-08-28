@@ -181,3 +181,28 @@ export function ensureRealtime(): void {
     console.warn('[wassilha-realtime] failed to start:', e);
   }
 }
+
+// Broadcast a driver location update to every client subscribed to the
+// given order room. Used by /api/driver/location (HTTP) when the driver
+// posts a fix from a mobile app that may not have a stable socket.io
+// connection (e.g. backgrounded browser, weak network).
+//
+// Falls through silently if the realtime server hasn't booted yet.
+export function broadcastDriverLocation(
+  orderId: string,
+  lat: number,
+  lng: number,
+  driverId: string,
+): void {
+  const io = globalForRealtime.__wassilhaIo;
+  if (!io) {
+    ensureRealtime();
+    return;
+  }
+  io.to(`order:${orderId}`).emit('driver:location', {
+    orderId,
+    lat,
+    lng,
+    driverId,
+  });
+}
