@@ -1,34 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, requirePrivilegedAdmin } from '@/lib/auth';
-import type { DriverProfile } from '@/lib/types';
+import type { DriverProfile, VehicleRegistrationInfo } from '@/lib/types';
 
-function toDriverProfile(driver: {
+type DriverWithRelations = {
   id: string;
   userId: string;
-  vehicleType: string;
-  vehicleColor: string;
-  plateNumber: string | null;
-  licenseNumber: string | null;
   isOnline: boolean;
   isVerified: boolean;
   rating: number;
   totalTrips: number;
   totalEarnings: number;
+  applicationStatus: string;
+  appliedAt: Date | null;
+  reviewedAt: Date | null;
   user: { id: string; phone: string; name: string; role: string; avatar: string | null };
-}): DriverProfile {
+  vehicleRegistration: {
+    id: string;
+    numeroImmatriculation: string;
+    typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+    nom: string | null;
+    prenom: string | null;
+    raisonSociale: string | null;
+    marque: string;
+    type: string | null;
+    anneePremiereMiseCirculation: number;
+  } | null;
+};
+
+function toDriverProfile(driver: DriverWithRelations): DriverProfile {
+  const vrInfo: VehicleRegistrationInfo | null = driver.vehicleRegistration
+    ? {
+        id: driver.vehicleRegistration.id,
+        numeroImmatriculation: driver.vehicleRegistration.numeroImmatriculation,
+        typeProprietaire: driver.vehicleRegistration.typeProprietaire,
+        nom: driver.vehicleRegistration.nom,
+        prenom: driver.vehicleRegistration.prenom,
+        raisonSociale: driver.vehicleRegistration.raisonSociale,
+        marque: driver.vehicleRegistration.marque,
+        type: driver.vehicleRegistration.type,
+        anneePremiereMiseCirculation:
+          driver.vehicleRegistration.anneePremiereMiseCirculation,
+      }
+    : null;
   return {
     id: driver.id,
     userId: driver.userId,
-    vehicleType: driver.vehicleType,
-    vehicleColor: driver.vehicleColor,
-    plateNumber: driver.plateNumber,
-    licenseNumber: driver.licenseNumber,
     isOnline: driver.isOnline,
     isVerified: driver.isVerified,
     rating: driver.rating,
     totalTrips: driver.totalTrips,
     totalEarnings: driver.totalEarnings,
+    applicationStatus: driver.applicationStatus as
+      | 'active'
+      | 'pending'
+      | 'rejected',
+    appliedAt: driver.appliedAt ? driver.appliedAt.toISOString() : null,
+    reviewedAt: driver.reviewedAt ? driver.reviewedAt.toISOString() : null,
+    vehicleRegistration: vrInfo,
     user: {
       id: driver.user.id,
       phone: driver.user.phone,
@@ -48,10 +77,10 @@ export async function GET() {
       return NextResponse.json(gate.body, { status: gate.status });
     }
     const drivers = await db.driver.findMany({
-      include: { user: true },
+      include: { user: true, vehicleRegistration: true },
       orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(drivers.map(toDriverProfile));
+    return NextResponse.json(drivers.map((d) => toDriverProfile(d as unknown as DriverWithRelations)));
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },
@@ -60,7 +89,7 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/drivers  { name, phone, vehicleType, vehicleColor }  (admin only)
+// POST /api/admin/drivers  { name, phone, vehicleType, vehicleColor, numeroImmatriculation? }  (admin only)
 export async function POST(req: NextRequest) {
   try {
     // SECURITY: only the privileged admin phone (hard-coded) can access.
@@ -88,41 +117,64 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create the user + driver + vehicle atomically.
     // Admin-created drivers skip the pending workflow — they are immediately
     // active. (This is the only path that grants driver privileges without
-    // an admin approval step.)
-    const user = await db.user.create({
-      data: {
-        phone: body.phone,
-        name: body.name,
-        role: 'driver',
-        accountStatus: 'active',
-        phoneVerified: true,
-      },
-    });
-    const driver = await db.driver.create({
-      data: {
-        userId: user.id,
-        vehicleType: body.vehicleType,
-        vehicleColor: body.vehicleColor,
-        isOnline: false,
-        isVerified: true,
-        applicationStatus: 'active',
-        appliedAt: new Date(),
-        reviewedAt: new Date(),
-      },
-      include: { user: true },
-    });
-    await db.vehicle.create({
-      data: {
-        driverId: driver.id,
-        type: body.vehicleType,
-        color: body.vehicleColor,
-      },
+    // an admin approval step.) They still need a VehicleRegistration row to
+    // satisfy the Driver FK: if the admin did not pass a registration
+    // number, we mint an internal placeholder so the schema stays consistent.
+    const immat =
+      typeof body.numeroImmatriculation === 'string' &&
+      body.numeroImmatriculation.trim().length > 0
+        ? body.numeroImmatriculation.trim()
+        : `ADMIN-${Date.now()}-${body.phone.slice(-4)}`;
+
+    const driver = await db.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          phone: body.phone,
+          name: body.name,
+          role: 'driver',
+          accountStatus: 'active',
+          phoneVerified: true,
+        },
+      });
+      const vr = await tx.vehicleRegistration.create({
+        data: {
+          numeroImmatriculation: immat,
+          typeProprietaire: 'PERSONNE_PHYSIQUE',
+          nom: body.name,
+          prenom: '-',
+          marque: body.vehicleType,
+          type: body.vehicleType,
+          anneePremiereMiseCirculation: new Date().getFullYear(),
+        },
+      });
+      const drv = await tx.driver.create({
+        data: {
+          userId: user.id,
+          vehicleRegistrationId: vr.id,
+          isOnline: false,
+          isVerified: true,
+          applicationStatus: 'active',
+          appliedAt: new Date(),
+          reviewedAt: new Date(),
+        },
+        include: { user: true, vehicleRegistration: true },
+      });
+      await tx.vehicle.create({
+        data: {
+          driverId: drv.id,
+          type: body.vehicleType,
+          color: body.vehicleColor,
+        },
+      });
+      return drv;
     });
 
-    return NextResponse.json(toDriverProfile(driver), { status: 201 });
+    return NextResponse.json(
+      toDriverProfile(driver as unknown as DriverWithRelations),
+      { status: 201 }
+    );
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },

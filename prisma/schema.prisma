@@ -60,10 +60,11 @@ model Driver {
   id            String   @id @default(cuid())
   userId        String   @unique
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicleType   String   @default("Triporteur 125cc") // e.g. Triporteur 125cc, 150cc
-  vehicleColor  String   @default("أزرق")
-  plateNumber   String?
-  licenseNumber String?
+  // One-to-One with the driver's vehicle registration (carte grise).
+  // Kept optional so that admin-created drivers without a carte grise remain
+  // valid (legacy rows preserved).
+  vehicleRegistrationId String? @unique
+  vehicleRegistration   VehicleRegistration? @relation(fields: [vehicleRegistrationId], references: [id], onDelete: SetNull)
   isOnline      Boolean  @default(false)
   isVerified    Boolean  @default(true)
   // applicationStatus reflects the self-registration workflow:
@@ -79,6 +80,44 @@ model Driver {
   totalEarnings Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+/// Carte grise (vehicle registration document) for a driver. The OwnerType
+/// enum determines which owner-name fields are required at the API layer:
+///   - PERSONNE_PHYSIQUE requires `nom` + `prenom`
+///   - PERSONNE_MORALE   requires `raisonSociale`
+enum OwnerType {
+  PERSONNE_PHYSIQUE
+  PERSONNE_MORALE
+}
+
+model VehicleRegistration {
+  id                             String   @id @default(cuid())
+  // Algerian registration number (e.g. "12345-A-06"). Required, unique.
+  numeroImmatriculation          String   @unique
+  // Type of legal owner of the vehicle.
+  typeProprietaire               OwnerType
+  // Required for PERSONNE_PHYSIQUE, null for PERSONNE_MORALE.
+  nom                            String?
+  prenom                         String?
+  // Required for PERSONNE_MORALE, null for PERSONNE_PHYSIQUE.
+  raisonSociale                  String?
+  // Brand / make of the vehicle (e.g. "TVS", "Bajaj", "Piaggio").
+  marque                         String
+  // Detailed vehicle type / model (free-form). Optional.
+  type                           String?
+  // Year the vehicle was first put into service (e.g. 2021).
+  anneePremiereMiseCirculation   Int
+  // Chassis / serial number fields are intentionally NOT exposed in the
+  // driver-facing form (privacy + verification happens off-platform). They
+  // are kept in the schema for future use.
+  numeroSerie                    String?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  driver Driver?
+
+  @@index([numeroImmatriculation])
 }
 
 model Vehicle {

@@ -60,10 +60,24 @@ export function AuthFlow() {
   // routed to the driver form on a fresh account instead of customer signup.
   const [intendsDriver, setIntendsDriver] = useState(false);
   // Driver self-registration form fields (filled after OTP verification).
-  const [driverVehicleType, setDriverVehicleType] = useState('125cc');
-  const [driverVehicleColor, setDriverVehicleColor] = useState('');
-  const [driverPlateNumber, setDriverPlateNumber] = useState('');
-  const [driverLicenseNumber, setDriverLicenseNumber] = useState('');
+  // Carte grise (vehicle registration) data — replaces the legacy ad-hoc
+  // vehicleType / vehicleColor / plate / license inputs.
+  const [vehicleRegistration, setVehicleRegistration] = useState({
+    numeroImmatriculation: '',
+    typeProprietaire: 'PERSONNE_PHYSIQUE' as 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE',
+    nom: '',
+    prenom: '',
+    raisonSociale: '',
+    marque: '',
+    type: '',
+    anneePremiereMiseCirculation: '',
+  });
+  const updateVehicleRegistration = (
+    field: keyof typeof vehicleRegistration,
+    value: string
+  ) => {
+    setVehicleRegistration((prev) => ({ ...prev, [field]: value }));
+  };
 
   const Arrow = isAr ? ArrowLeft : ArrowRight;
 
@@ -346,31 +360,65 @@ export function AuthFlow() {
     }
   };
 
-  // Driver self-registration: send vehicle + license details to the server.
-  // The server forces role="driver" + accountStatus="pending". No session
-  // is returned here — the driver remains in the pending state until an
-  // admin approves the application.
+  // Driver self-registration: send vehicle registration (carte grise) details
+  // to the server. The server forces role="driver" + accountStatus="pending".
+  // No session is returned here — the driver remains in the pending state
+  // until an admin approves the application.
   const handleApplyDriver = async () => {
     if (name.trim().length < 2) {
       toast.error(isAr ? 'أدخل الاسم الكامل' : 'Entrez votre nom complet');
       return;
     }
-    if (!driverVehicleType) {
-      toast.error(isAr ? 'حدد نوع المركبة' : 'Sأ©lectionnez le type de vأ©hicule');
+    const vr = vehicleRegistration;
+    if (!vr.numeroImmatriculation.trim()) {
+      toast.error(
+        isAr ? 'أدخل رقم التسجيل' : 'Entrez le numero d\'immatriculation'
+      );
       return;
     }
-    if (!driverVehicleColor.trim()) {
-      toast.error(isAr ? 'أدخل لون المركبة' : 'Entrez la couleur du vأ©hicule');
+    if (vr.typeProprietaire === 'PERSONNE_PHYSIQUE') {
+      if (!vr.nom.trim() || !vr.prenom.trim()) {
+        toast.error(
+          isAr ? 'أدخل اسم المالك ولقبه' : 'Entrez le nom et le prenom du proprietaire'
+        );
+        return;
+      }
+    } else if (!vr.raisonSociale.trim()) {
+      toast.error(
+        isAr ? 'أدخل اسم الشركة' : 'Entrez la raison sociale du proprietaire'
+      );
+      return;
+    }
+    if (!vr.marque.trim()) {
+      toast.error(isAr ? 'أدخل ماركة المركبة' : 'Entrez la marque du vehicule');
+      return;
+    }
+    const year = parseInt(vr.anneePremiereMiseCirculation, 10);
+    const currentYear = new Date().getFullYear();
+    if (
+      !Number.isFinite(year) ||
+      year < 1950 ||
+      year > currentYear + 1
+    ) {
+      toast.error(
+        isAr
+          ? `أدخل سنة صحيحة بين 1950 و ${currentYear + 1}`
+          : `Entrez une annee valide entre 1950 et ${currentYear + 1}`
+      );
       return;
     }
     setLoading(true);
     try {
       await api.applyDriver({
         name: name.trim(),
-        vehicleType: driverVehicleType,
-        vehicleColor: driverVehicleColor.trim(),
-        plateNumber: driverPlateNumber.trim() || undefined,
-        licenseNumber: driverLicenseNumber.trim() || undefined,
+        numeroImmatriculation: vr.numeroImmatriculation.trim(),
+        typeProprietaire: vr.typeProprietaire,
+        nom: vr.typeProprietaire === 'PERSONNE_PHYSIQUE' ? vr.nom.trim() : undefined,
+        prenom: vr.typeProprietaire === 'PERSONNE_PHYSIQUE' ? vr.prenom.trim() : undefined,
+        raisonSociale: vr.typeProprietaire === 'PERSONNE_MORALE' ? vr.raisonSociale.trim() : undefined,
+        marque: vr.marque.trim(),
+        type: vr.type.trim() || undefined,
+        anneePremiereMiseCirculation: year,
       });
       toast.success(
         isAr
@@ -1213,7 +1261,8 @@ export function AuthFlow() {
               ? 'أرسل طلبك. سيتم المراجعة من طرف المدير.'
               : 'Envoyez votre demande. L\u2019administrateur la passera en revue.'}
           </p>
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-5">
+            {/* Driver identity (carte grise "owner-driver" name) */}
             <div>
               <label className="mb-1 block text-xs font-bold text-muted-foreground">
                 {isAr ? 'الاسم الكامل' : 'Nom complet'}
@@ -1225,55 +1274,150 @@ export function AuthFlow() {
                 className="h-12 rounded-xl"
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                {isAr ? 'نوع المركبة' : 'Type de vأ©hicule'}
-              </label>
-              <select
-                value={driverVehicleType}
-                onChange={(e) => setDriverVehicleType(e.target.value)}
-                className="h-12 w-full rounded-xl border bg-card px-3 text-sm"
-                dir="ltr"
-              >
-                <option value="125cc">125cc</option>
-                <option value="150cc">150cc</option>
-                <option value="200cc">200cc</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                {isAr ? 'لون المركبة' : 'Couleur du vأ©hicule'}
-              </label>
-              <Input
-                value={driverVehicleColor}
-                onChange={(e) => setDriverVehicleColor(e.target.value)}
-                placeholder={isAr ? 'مثال: أبيض' : 'ex: Blanc'}
-                className="h-12 rounded-xl"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                {isAr ? 'رقم اللوحة' : 'Numأ©ro de plaque'}
-              </label>
-              <Input
-                value={driverPlateNumber}
-                onChange={(e) => setDriverPlateNumber(e.target.value)}
-                placeholder={isAr ? 'اختياري' : 'optionnel'}
-                className="h-12 rounded-xl"
-                dir="ltr"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                {isAr ? 'رقم رخصة القيادة' : 'Numأ©ro de permis'}
-              </label>
-              <Input
-                value={driverLicenseNumber}
-                onChange={(e) => setDriverLicenseNumber(e.target.value)}
-                placeholder={isAr ? 'اختياري' : 'optionnel'}
-                className="h-12 rounded-xl"
-                dir="ltr"
-              />
+
+            {/* Section: Vehicle registration (carte grise) */}
+            <div className="rounded-2xl border border-border bg-muted/30 p-4">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-primary">
+                {isAr ? 'بيانات البطاقة الرمادية' : 'Carte grise'}
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {isAr ? 'رقم التسجيل' : "Numero d'immatriculation"}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.numeroImmatriculation}
+                    onChange={(e) =>
+                      updateVehicleRegistration('numeroImmatriculation', e.target.value)
+                    }
+                    placeholder={isAr ? 'مثال: 12345-A-06' : 'ex: 12345-A-06'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {isAr ? 'نوع المالك' : 'Type de proprietaire'}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <select
+                    value={vehicleRegistration.typeProprietaire}
+                    onChange={(e) =>
+                      updateVehicleRegistration(
+                        'typeProprietaire',
+                        e.target.value as 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE'
+                      )
+                    }
+                    className="h-12 w-full rounded-xl border bg-card px-3 text-sm"
+                    dir="ltr"
+                  >
+                    <option value="PERSONNE_PHYSIQUE">
+                      {isAr ? 'شخص طبيعي' : 'Personne physique'}
+                    </option>
+                    <option value="PERSONNE_MORALE">
+                      {isAr ? 'شخص معنوي' : 'Personne morale'}
+                    </option>
+                  </select>
+                </div>
+
+                {vehicleRegistration.typeProprietaire === 'PERSONNE_PHYSIQUE' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                        {isAr ? 'الاسم' : 'Nom'}
+                        <span className="text-destructive"> *</span>
+                      </label>
+                      <Input
+                        value={vehicleRegistration.nom}
+                        onChange={(e) => updateVehicleRegistration('nom', e.target.value)}
+                        placeholder={isAr ? 'اللقب' : 'Nom'}
+                        className="h-12 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                        {isAr ? 'اللقب' : 'Prenom'}
+                        <span className="text-destructive"> *</span>
+                      </label>
+                      <Input
+                        value={vehicleRegistration.prenom}
+                        onChange={(e) => updateVehicleRegistration('prenom', e.target.value)}
+                        placeholder={isAr ? 'الاسم' : 'Prenom'}
+                        className="h-12 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                      {isAr ? 'اسم الشركة' : 'Raison sociale'}
+                      <span className="text-destructive"> *</span>
+                    </label>
+                    <Input
+                      value={vehicleRegistration.raisonSociale}
+                      onChange={(e) =>
+                        updateVehicleRegistration('raisonSociale', e.target.value)
+                      }
+                      placeholder={isAr ? 'مثال: شركة...' : 'ex: Societe...'}
+                      className="h-12 rounded-xl"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {isAr ? 'الماركة' : 'Marque'}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.marque}
+                    onChange={(e) => updateVehicleRegistration('marque', e.target.value)}
+                    placeholder={isAr ? 'مثال: TVS, Bajaj' : 'ex: TVS, Bajaj'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {isAr ? 'نوع المركبة' : 'Type de vehicule'}
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      {' '}
+                      ({isAr ? 'اختياري' : 'optionnel'})
+                    </span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.type}
+                    onChange={(e) => updateVehicleRegistration('type', e.target.value)}
+                    placeholder={isAr ? 'مثال: Triporteur' : 'ex: Triporteur'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {isAr ? 'سنة أول ضخ في الخدمة' : 'Annee de mise en circulation'}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Input
+                    type="number"
+                    min={1950}
+                    max={new Date().getFullYear() + 1}
+                    value={vehicleRegistration.anneePremiereMiseCirculation}
+                    onChange={(e) =>
+                      updateVehicleRegistration('anneePremiereMiseCirculation', e.target.value)
+                    }
+                    placeholder={isAr ? 'مثال: 2021' : 'ex: 2021'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <Button

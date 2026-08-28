@@ -16,7 +16,7 @@ export async function GET() {
 
     const driver = await db.driver.findUnique({
       where: { userId: session.id },
-      include: { user: true },
+      include: { user: true, vehicleRegistration: true },
     });
     if (!driver) {
       return NextResponse.json({ error: 'noDriverProfile' }, { status: 404 });
@@ -25,15 +25,31 @@ export async function GET() {
     const profile: DriverProfile = {
       id: driver.id,
       userId: driver.userId,
-      vehicleType: driver.vehicleType,
-      vehicleColor: driver.vehicleColor,
-      plateNumber: driver.plateNumber,
-      licenseNumber: driver.licenseNumber,
       isOnline: driver.isOnline,
       isVerified: driver.isVerified,
       rating: driver.rating,
       totalTrips: driver.totalTrips,
       totalEarnings: driver.totalEarnings,
+      applicationStatus: driver.applicationStatus as
+        | 'active'
+        | 'pending'
+        | 'rejected',
+      appliedAt: driver.appliedAt ? driver.appliedAt.toISOString() : null,
+      reviewedAt: driver.reviewedAt ? driver.reviewedAt.toISOString() : null,
+      vehicleRegistration: driver.vehicleRegistration
+        ? {
+            id: driver.vehicleRegistration.id,
+            numeroImmatriculation: driver.vehicleRegistration.numeroImmatriculation,
+            typeProprietaire: driver.vehicleRegistration.typeProprietaire,
+            nom: driver.vehicleRegistration.nom,
+            prenom: driver.vehicleRegistration.prenom,
+            raisonSociale: driver.vehicleRegistration.raisonSociale,
+            marque: driver.vehicleRegistration.marque,
+            type: driver.vehicleRegistration.type,
+            anneePremiereMiseCirculation:
+              driver.vehicleRegistration.anneePremiereMiseCirculation,
+          }
+        : null,
       user: {
         id: driver.user.id,
         phone: driver.user.phone,

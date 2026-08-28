@@ -129,7 +129,11 @@ export function DriverRequests() {
               </div>
               <div>
                 <p className="text-base font-bold">{user?.name}</p>
-                <p className="text-xs text-primary-foreground/80">{profile?.vehicleType} · {profile?.vehicleColor}</p>
+                <p className="text-xs text-primary-foreground/80">
+                  {profile?.vehicleRegistration
+                    ? `${profile.vehicleRegistration.numeroImmatriculation} · ${profile.vehicleRegistration.marque}`
+                    : '-'}
+                </p>
                 <p className="mt-0.5 text-[11px] font-bold">⭐ {profile?.rating} · {profile?.totalTrips} {t.trips}</p>
               </div>
             </div>

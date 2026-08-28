@@ -21,7 +21,13 @@ export function AdminDrivers() {
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', vehicleType: 'Triporteur 125cc', vehicleColor: 'أزرق' });
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    vehicleType: 'Triporteur 125cc',
+    vehicleColor: 'أزرق',
+    numeroImmatriculation: '',
+  });
   const [saving, setSaving] = useState(false);
 
   const load = () => {
@@ -39,7 +45,13 @@ export function AdminDrivers() {
       await api.addDriver(form);
       toast.success(isAr ? 'تمت إضافة السائق' : 'Chauffeur ajouté');
       setAddOpen(false);
-      setForm({ name: '', phone: '', vehicleType: 'Triporteur 125cc', vehicleColor: 'أزرق' });
+      setForm({
+        name: '',
+        phone: '',
+        vehicleType: 'Triporteur 125cc',
+        vehicleColor: 'أزرق',
+        numeroImmatriculation: '',
+      });
       load();
     } catch {
       toast.error(isAr ? 'فشل' : 'Échec');
@@ -113,7 +125,11 @@ export function AdminDrivers() {
                     <span>·</span>
                     <span>{d.totalTrips} {t.trips}</span>
                     <span>·</span>
-                    <span className="truncate">{d.vehicleColor}</span>
+                    <span className="truncate">
+                      {d.vehicleRegistration
+                        ? `${d.vehicleRegistration.numeroImmatriculation} · ${d.vehicleRegistration.marque}`
+                        : '-'}
+                    </span>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
@@ -148,6 +164,18 @@ export function AdminDrivers() {
             <div>
               <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t.driverPhone}</label>
               <Input dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="06XX XXX XXX" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+                {isAr ? 'رقم التسجيل' : "Numero d'immatriculation"}
+                <span className="text-[10px] text-muted-foreground"> ({isAr ? 'اختياري - ينشأ تلقائياً' : 'optionnel - auto'})</span>
+              </label>
+              <Input
+                dir="ltr"
+                value={form.numeroImmatriculation}
+                onChange={(e) => setForm({ ...form, numeroImmatriculation: e.target.value })}
+                placeholder={isAr ? 'مثال: 12345-A-06' : 'ex: 12345-A-06'}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-muted-foreground">{t.vehicleType}</label>

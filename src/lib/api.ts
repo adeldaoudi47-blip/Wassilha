@@ -161,6 +161,7 @@ export const api = {
     phone: string;
     vehicleType: string;
     vehicleColor: string;
+    numeroImmatriculation?: string;
   }) =>
     req<DriverProfile>('/api/admin/drivers', {
       method: 'POST',
@@ -175,10 +176,14 @@ export const api = {
   // Driver self-registration (admin approval required before activation)
   applyDriver: (data: {
     name: string;
-    vehicleType: string;
-    vehicleColor: string;
-    plateNumber?: string;
-    licenseNumber?: string;
+    numeroImmatriculation: string;
+    typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+    nom?: string;
+    prenom?: string;
+    raisonSociale?: string;
+    marque: string;
+    type?: string;
+    anneePremiereMiseCirculation: number;
   }) =>
     req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
       method: 'POST',
@@ -191,14 +196,21 @@ export const api = {
         userId: string;
         name: string;
         phone: string;
-        vehicleType: string;
-        vehicleColor: string;
-        plateNumber: string | null;
-        licenseNumber: string | null;
         applicationStatus: 'pending' | 'rejected';
         appliedAt: string | null;
         reviewedAt: string | null;
         createdAt: string;
+        vehicleRegistration: {
+          id: string;
+          numeroImmatriculation: string;
+          typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+          nom: string | null;
+          prenom: string | null;
+          raisonSociale: string | null;
+          marque: string;
+          type: string | null;
+          anneePremiereMiseCirculation: number;
+        } | null;
       }[]
     >('/api/admin/driver-applications'),
   approveDriver: (id: string) =>

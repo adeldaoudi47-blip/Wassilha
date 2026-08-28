@@ -1,36 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, requirePrivilegedAdmin } from '@/lib/auth';
-import type { DriverProfile } from '@/lib/types';
+import type { DriverProfile, VehicleRegistrationInfo } from '@/lib/types';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function toDriverProfile(driver: {
+type DriverWithRelations = {
   id: string;
   userId: string;
-  vehicleType: string;
-  vehicleColor: string;
-  plateNumber: string | null;
-  licenseNumber: string | null;
   isOnline: boolean;
   isVerified: boolean;
   rating: number;
   totalTrips: number;
   totalEarnings: number;
+  applicationStatus: string;
+  appliedAt: Date | null;
+  reviewedAt: Date | null;
   user: { id: string; phone: string; name: string; role: string; avatar: string | null };
-}): DriverProfile {
+  vehicleRegistration: {
+    id: string;
+    numeroImmatriculation: string;
+    typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+    nom: string | null;
+    prenom: string | null;
+    raisonSociale: string | null;
+    marque: string;
+    type: string | null;
+    anneePremiereMiseCirculation: number;
+  } | null;
+};
+
+function toDriverProfile(driver: DriverWithRelations): DriverProfile {
+  const vrInfo: VehicleRegistrationInfo | null = driver.vehicleRegistration
+    ? {
+        id: driver.vehicleRegistration.id,
+        numeroImmatriculation: driver.vehicleRegistration.numeroImmatriculation,
+        typeProprietaire: driver.vehicleRegistration.typeProprietaire,
+        nom: driver.vehicleRegistration.nom,
+        prenom: driver.vehicleRegistration.prenom,
+        raisonSociale: driver.vehicleRegistration.raisonSociale,
+        marque: driver.vehicleRegistration.marque,
+        type: driver.vehicleRegistration.type,
+        anneePremiereMiseCirculation:
+          driver.vehicleRegistration.anneePremiereMiseCirculation,
+      }
+    : null;
   return {
     id: driver.id,
     userId: driver.userId,
-    vehicleType: driver.vehicleType,
-    vehicleColor: driver.vehicleColor,
-    plateNumber: driver.plateNumber,
-    licenseNumber: driver.licenseNumber,
     isOnline: driver.isOnline,
     isVerified: driver.isVerified,
     rating: driver.rating,
     totalTrips: driver.totalTrips,
     totalEarnings: driver.totalEarnings,
+    applicationStatus: driver.applicationStatus as
+      | 'active'
+      | 'pending'
+      | 'rejected',
+    appliedAt: driver.appliedAt ? driver.appliedAt.toISOString() : null,
+    reviewedAt: driver.reviewedAt ? driver.reviewedAt.toISOString() : null,
+    vehicleRegistration: vrInfo,
     user: {
       id: driver.user.id,
       phone: driver.user.phone,
@@ -65,9 +94,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const updated = await db.driver.update({
       where: { id },
       data,
-      include: { user: true },
+      include: { user: true, vehicleRegistration: true },
     });
-    return NextResponse.json(toDriverProfile(updated));
+    return NextResponse.json(toDriverProfile(updated as unknown as DriverWithRelations));
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },

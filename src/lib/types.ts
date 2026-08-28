@@ -21,13 +21,21 @@ export interface AuthUser {
   avatar?: string | null;
 }
 
+export interface VehicleRegistrationInfo {
+  id: string;
+  numeroImmatriculation: string;
+  typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+  nom: string | null;
+  prenom: string | null;
+  raisonSociale: string | null;
+  marque: string;
+  type: string | null;
+  anneePremiereMiseCirculation: number;
+}
+
 export interface DriverProfile {
   id: string;
   userId: string;
-  vehicleType: string;
-  vehicleColor: string;
-  plateNumber: string | null;
-  licenseNumber: string | null;
   isOnline: boolean;
   isVerified: boolean;
   rating: number;
@@ -40,6 +48,9 @@ export interface DriverProfile {
   applicationStatus?: 'active' | 'pending' | 'rejected';
   appliedAt?: string | null;
   reviewedAt?: string | null;
+  // Carte grise (vehicle registration) data — null if the driver has not
+  // submitted one (e.g. admin-created legacy accounts).
+  vehicleRegistration?: VehicleRegistrationInfo | null;
   user: AuthUser;
 }
 

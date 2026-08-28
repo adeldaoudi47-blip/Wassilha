@@ -80,12 +80,37 @@ export function DriverProfile() {
         <Switch checked={profile?.isOnline ?? false} onCheckedChange={toggleOnline} />
       </Card>
 
-      {/* Vehicle info */}
+      {/* Vehicle info (carte grise) */}
       <Card className="divide-y divide-border p-0">
-        <Row icon={<Bike size={16} className="text-primary" />} label={t.vehicleType} value={profile?.vehicleType ?? '-'} />
-        <Row icon={<span className="text-base">🎨</span>} label={t.vehicleColor} value={profile?.vehicleColor ?? '-'} />
-        <Row icon={<span className="text-base">🔢</span>} label={isAr ? 'رقم اللوحة' : 'Plaque'} value={profile?.plateNumber ?? '-'} />
-        <Row icon={<MapPin size={16} className="text-sky-500" />} label={t.location} value={t.location} />
+        <Row
+          icon={<Bike size={16} className="text-primary" />}
+          label={isAr ? 'رقم التسجيل' : "Numero d'immatriculation"}
+          value={profile?.vehicleRegistration?.numeroImmatriculation ?? '-'}
+        />
+        <Row
+          icon={<span className="text-base">🏷️</span>}
+          label={isAr ? 'الماركة' : 'Marque'}
+          value={profile?.vehicleRegistration?.marque ?? '-'}
+        />
+        <Row
+          icon={<span className="text-base">🔢</span>}
+          label={isAr ? 'نوع المركبة' : 'Type'}
+          value={profile?.vehicleRegistration?.type ?? '-'}
+        />
+        <Row
+          icon={<span className="text-base">📅</span>}
+          label={isAr ? 'سنة الضخ' : 'Mise en circulation'}
+          value={
+            profile?.vehicleRegistration?.anneePremiereMiseCirculation
+              ? String(profile.vehicleRegistration.anneePremiereMiseCirculation)
+              : '-'
+          }
+        />
+        <Row
+          icon={<MapPin size={16} className="text-sky-500" />}
+          label={t.location}
+          value={t.location}
+        />
       </Card>
 
       <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">

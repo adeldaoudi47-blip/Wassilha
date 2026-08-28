@@ -47,11 +47,21 @@ export async function POST(req: NextRequest) {
           where: { userId: user.id },
         });
         if (!existingDriver) {
+          const vr = await db.vehicleRegistration.create({
+            data: {
+              numeroImmatriculation: `DEMO-${demo.phone.slice(-4)}`,
+              typeProprietaire: 'PERSONNE_PHYSIQUE',
+              nom: 'Demo',
+              prenom: 'Driver',
+              marque: 'TVS King',
+              type: 'Triporteur 125cc',
+              anneePremiereMiseCirculation: 2020,
+            },
+          });
           await db.driver.create({
             data: {
               userId: user.id,
-              vehicleType: 'Triporteur 125cc',
-              vehicleColor: 'أزرق',
+              vehicleRegistrationId: vr.id,
               isOnline: true,
               isVerified: true,
             },

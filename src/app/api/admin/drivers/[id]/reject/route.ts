@@ -2,23 +2,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
-import type { DriverProfile } from '@/lib/types';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function toDriverProfile(driver) {
+function toDriverProfile(driver: any) {
   return {
     id: driver.id,
     userId: driver.userId,
-    vehicleType: driver.vehicleType,
-    vehicleColor: driver.vehicleColor,
-    plateNumber: driver.plateNumber,
-    licenseNumber: driver.licenseNumber,
     isOnline: driver.isOnline,
     isVerified: driver.isVerified,
     rating: driver.rating,
     totalTrips: driver.totalTrips,
     totalEarnings: driver.totalEarnings,
+    applicationStatus: driver.applicationStatus,
+    appliedAt: driver.appliedAt,
+    reviewedAt: driver.reviewedAt,
+    vehicleRegistration: driver.vehicleRegistration ?? null,
     user: { id: driver.user.id, phone: driver.user.phone, name: driver.user.name, role: 'driver', avatar: driver.user.avatar },
   };
 }
@@ -31,7 +30,7 @@ export async function PATCH(_req, { params }) {
       return NextResponse.json(gate.body, { status: gate.status });
     }
     const { id } = await params;
-    const existing = await db.driver.findUnique({ where: { id }, include: { user: true } });
+    const existing = await db.driver.findUnique({ where: { id }, include: { user: true, vehicleRegistration: true } });
     if (!existing) {
       return NextResponse.json({ error: 'notFound' }, { status: 404 });
     }
@@ -42,7 +41,7 @@ export async function PATCH(_req, { params }) {
       const driverRow = await tx.driver.update({
         where: { id },
         data: { applicationStatus: 'rejected', isVerified: false, reviewedAt: new Date() },
-        include: { user: true },
+        include: { user: true, vehicleRegistration: true },
       });
       await tx.user.update({
         where: { id: driverRow.userId },

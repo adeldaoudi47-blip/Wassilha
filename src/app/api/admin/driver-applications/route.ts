@@ -12,7 +12,7 @@ export async function GET() {
     }
     const drivers = await db.driver.findMany({
       where: { applicationStatus: { in: ['pending', 'rejected'] } },
-      include: { user: true },
+      include: { user: true, vehicleRegistration: true },
       orderBy: { appliedAt: 'desc' },
     });
     return NextResponse.json(
@@ -21,14 +21,26 @@ export async function GET() {
         userId: d.userId,
         name: d.user.name,
         phone: d.user.phone,
-        vehicleType: d.vehicleType,
-        vehicleColor: d.vehicleColor,
-        plateNumber: d.plateNumber,
-        licenseNumber: d.licenseNumber,
         applicationStatus: d.applicationStatus,
         appliedAt: d.appliedAt,
         reviewedAt: d.reviewedAt,
         createdAt: d.createdAt,
+        // Carte grise (vehicle registration) — admins review this before
+        // approving/rejecting a driver application.
+        vehicleRegistration: d.vehicleRegistration
+          ? {
+              id: d.vehicleRegistration.id,
+              numeroImmatriculation: d.vehicleRegistration.numeroImmatriculation,
+              typeProprietaire: d.vehicleRegistration.typeProprietaire,
+              nom: d.vehicleRegistration.nom,
+              prenom: d.vehicleRegistration.prenom,
+              raisonSociale: d.vehicleRegistration.raisonSociale,
+              marque: d.vehicleRegistration.marque,
+              type: d.vehicleRegistration.type,
+              anneePremiereMiseCirculation:
+                d.vehicleRegistration.anneePremiereMiseCirculation,
+            }
+          : null,
       }))
     );
   } catch (e) {

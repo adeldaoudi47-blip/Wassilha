@@ -16,19 +16,27 @@ import { db } from '@/lib/db';
 import { getVerifiedPhone, clearPhoneVerification } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
+import { OwnerType } from '@prisma/client';
 
-const VEHICLE_TYPES = new Set([
-  '125cc',
-  '150cc',
-  '200cc',
+const OWNER_TYPES: ReadonlySet<string> = new Set([
+  OwnerType.PERSONNE_PHYSIQUE,
+  OwnerType.PERSONNE_MORALE,
 ]);
 
 interface ApplyDriverBody {
   name?: unknown;
-  vehicleType?: unknown;
-  vehicleColor?: unknown;
-  plateNumber?: unknown;
-  licenseNumber?: unknown;
+  numeroImmatriculation?: unknown;
+  typeProprietaire?: unknown;
+  nom?: unknown;
+  prenom?: unknown;
+  raisonSociale?: unknown;
+  marque?: unknown;
+  type?: unknown;
+  anneePremiereMiseCirculation?: unknown;
+}
+
+function badRequest(error: string) {
+  return NextResponse.json({ error }, { status: 400 });
 }
 
 export async function POST(req: NextRequest) {
@@ -58,40 +66,100 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as ApplyDriverBody;
 
+    // Driver identity (the user-facing full name).
     if (typeof body.name !== 'string' || body.name.trim().length < 2) {
-      return NextResponse.json({ error: 'invalidName' }, { status: 400 });
+      return badRequest('invalidName');
     }
+
+    // Carte grise fields.
     if (
-      typeof body.vehicleType !== 'string' ||
-      !VEHICLE_TYPES.has(body.vehicleType)
+      typeof body.numeroImmatriculation !== 'string' ||
+      body.numeroImmatriculation.trim().length < 1 ||
+      body.numeroImmatriculation.length > 64
     ) {
-      return NextResponse.json({ error: 'invalidVehicleType' }, { status: 400 });
-    }
-    if (typeof body.vehicleColor !== 'string' || body.vehicleColor.trim().length < 1) {
-      return NextResponse.json({ error: 'invalidVehicleColor' }, { status: 400 });
+      return badRequest('invalidNumeroImmatriculation');
     }
 
     if (
-      body.plateNumber !== undefined &&
-      (typeof body.plateNumber !== 'string' || body.plateNumber.length > 32)
+      typeof body.typeProprietaire !== 'string' ||
+      !OWNER_TYPES.has(body.typeProprietaire)
     ) {
-      return NextResponse.json({ error: 'invalidPlateNumber' }, { status: 400 });
+      return badRequest('invalidTypeProprietaire');
     }
+    const typeProprietaire = body.typeProprietaire as OwnerType;
+
+    let ownerNom: string | null = null;
+    let ownerPrenom: string | null = null;
+    let ownerRaisonSociale: string | null = null;
+    if (typeProprietaire === OwnerType.PERSONNE_PHYSIQUE) {
+      if (typeof body.nom !== 'string' || body.nom.trim().length < 1) {
+        return badRequest('invalidNom');
+      }
+      if (typeof body.prenom !== 'string' || body.prenom.trim().length < 1) {
+        return badRequest('invalidPrenom');
+      }
+      ownerNom = body.nom.trim();
+      ownerPrenom = body.prenom.trim();
+    } else {
+      if (
+        typeof body.raisonSociale !== 'string' ||
+        body.raisonSociale.trim().length < 1
+      ) {
+        return badRequest('invalidRaisonSociale');
+      }
+      ownerRaisonSociale = body.raisonSociale.trim();
+    }
+
+    if (typeof body.marque !== 'string' || body.marque.trim().length < 1) {
+      return badRequest('invalidMarque');
+    }
+    const marque = body.marque.trim();
+
     if (
-      body.licenseNumber !== undefined &&
-      (typeof body.licenseNumber !== 'string' || body.licenseNumber.length > 64)
+      body.type !== undefined &&
+      body.type !== null &&
+      (typeof body.type !== 'string' || body.type.length > 64)
     ) {
-      return NextResponse.json({ error: 'invalidLicenseNumber' }, { status: 400 });
+      return badRequest('invalidType');
+    }
+    const typeStr =
+      typeof body.type === 'string' && body.type.trim().length > 0
+        ? body.type.trim()
+        : null;
+
+    if (
+      typeof body.anneePremiereMiseCirculation !== 'number' ||
+      !Number.isInteger(body.anneePremiereMiseCirculation)
+    ) {
+      return badRequest('invalidAnneePremiereMiseCirculation');
+    }
+    const year = body.anneePremiereMiseCirculation as number;
+    const currentYear = new Date().getFullYear();
+    if (year < 1950 || year > currentYear + 1) {
+      return badRequest('invalidAnneePremiereMiseCirculation');
     }
 
     const canonicalPhone = normalizeAlgerianPhone(phone);
     if (!canonicalPhone) {
-      return NextResponse.json({ error: 'invalidPhone' }, { status: 400 });
+      return badRequest('invalidPhone');
+    }
+
+    // Reject duplicate registration numbers up-front so the transaction never
+    // sees them. The DB also has a unique constraint as a final safeguard.
+    const immat = body.numeroImmatriculation.trim();
+    const existingImmat = await db.vehicleRegistration.findUnique({
+      where: { numeroImmatriculation: immat },
+    });
+    if (existingImmat) {
+      return NextResponse.json(
+        { error: 'numeroImmatriculationAlreadyUsed' },
+        { status: 409 }
+      );
     }
 
     const existing = await db.user.findUnique({
       where: { phone: canonicalPhone },
-      include: { driver: true },
+      include: { driver: { include: { vehicleRegistration: true } } },
     });
 
     if (existing) {
@@ -118,6 +186,9 @@ export async function POST(req: NextRequest) {
         existing.role === 'driver' &&
         existing.driver?.applicationStatus === 'rejected'
       ) {
+        // Re-submission after a rejection: rebuild the carte grise and
+        // reset the application lifecycle. The previous VehicleRegistration
+        // is deleted (not cascaded — we own the lifecycle here).
         const updated = await db.$transaction(async (tx) => {
           await tx.user.update({
             where: { id: existing.id },
@@ -126,13 +197,28 @@ export async function POST(req: NextRequest) {
               accountStatus: 'pending',
             },
           });
+          // Wipe any previous carte grise left dangling.
+          if (existing.driver?.vehicleRegistrationId) {
+            await tx.vehicleRegistration.deleteMany({
+              where: { id: existing.driver.vehicleRegistrationId },
+            });
+          }
+          const vr = await tx.vehicleRegistration.create({
+            data: {
+              numeroImmatriculation: immat,
+              typeProprietaire,
+              nom: ownerNom,
+              prenom: ownerPrenom,
+              raisonSociale: ownerRaisonSociale,
+              marque,
+              type: typeStr,
+              anneePremiereMiseCirculation: year,
+            },
+          });
           return tx.driver.update({
             where: { userId: existing.id },
             data: {
-              vehicleType: body.vehicleType as string,
-              vehicleColor: (body.vehicleColor as string).trim(),
-              plateNumber: (body.plateNumber as string | undefined) || null,
-              licenseNumber: (body.licenseNumber as string | undefined) || null,
+              vehicleRegistrationId: vr.id,
               applicationStatus: 'pending',
               appliedAt: new Date(),
               reviewedAt: null,
@@ -164,13 +250,22 @@ export async function POST(req: NextRequest) {
           phoneVerified: true,
         },
       });
+      const vr = await tx.vehicleRegistration.create({
+        data: {
+          numeroImmatriculation: immat,
+          typeProprietaire,
+          nom: ownerNom,
+          prenom: ownerPrenom,
+          raisonSociale: ownerRaisonSociale,
+          marque,
+          type: typeStr,
+          anneePremiereMiseCirculation: year,
+        },
+      });
       return tx.driver.create({
         data: {
           userId: user.id,
-          vehicleType: body.vehicleType as string,
-          vehicleColor: (body.vehicleColor as string).trim(),
-          plateNumber: (body.plateNumber as string | undefined) || null,
-          licenseNumber: (body.licenseNumber as string | undefined) || null,
+          vehicleRegistrationId: vr.id,
           isOnline: false,
           isVerified: false,
           applicationStatus: 'pending',

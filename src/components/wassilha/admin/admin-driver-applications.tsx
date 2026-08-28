@@ -9,23 +9,32 @@ import { useT } from '../use-t';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+type VehicleRegistration = {
+  id: string;
+  numeroImmatriculation: string;
+  typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+  nom: string | null;
+  prenom: string | null;
+  raisonSociale: string | null;
+  marque: string;
+  type: string | null;
+  anneePremiereMiseCirculation: number;
+};
+
 type Application = {
   id: string;
   userId: string;
   name: string;
   phone: string;
-  vehicleType: string;
-  vehicleColor: string;
-  plateNumber: string | null;
-  licenseNumber: string | null;
   applicationStatus: 'pending' | 'rejected';
   appliedAt: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  vehicleRegistration: VehicleRegistration | null;
 };
 
 export function AdminDriverApplications() {
-  const { t } = useT();
+  const { t, isAr } = useT();
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -113,20 +122,30 @@ export function AdminDriverApplications() {
                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground" dir="ltr">
                   <Phone size={11} /> {a.phone}
                 </p>
-                <div className="mt-2 grid grid-cols-2 gap-1 text-[11px]">
-                  <span className="text-muted-foreground">
-                    {a.vehicleType} · {a.vehicleColor}
-                  </span>
-                  {a.plateNumber ? (
-                    <span className="text-muted-foreground" dir="ltr">
-                      {a.plateNumber}
-                    </span>
-                  ) : null}
-                </div>
-                {a.licenseNumber ? (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground" dir="ltr">
-                    {t.dashboard}: {a.licenseNumber}
-                  </p>
+                {a.vehicleRegistration ? (
+                  <div className="mt-2 space-y-0.5 rounded-lg bg-muted/40 p-2 text-[11px]">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary">
+                      {isAr ? 'البطاقة الرمادية' : 'Carte grise'}
+                    </p>
+                    <p className="font-semibold text-foreground" dir="ltr">
+                      {a.vehicleRegistration.numeroImmatriculation}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {a.vehicleRegistration.marque}
+                      {a.vehicleRegistration.type
+                        ? ` · ${a.vehicleRegistration.type}`
+                        : ''}
+                      {' · '}
+                      {a.vehicleRegistration.anneePremiereMiseCirculation}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {a.vehicleRegistration.typeProprietaire === 'PERSONNE_PHYSIQUE'
+                        ? `${a.vehicleRegistration.prenom ?? ''} ${a.vehicleRegistration.nom ?? ''}`.trim() ||
+                          (isAr ? 'مالك' : 'Proprietaire')
+                        : a.vehicleRegistration.raisonSociale ||
+                          (isAr ? 'شركة' : 'Societe')}
+                    </p>
+                  </div>
                 ) : null}
                 <p className="mt-1 text-[10px] text-muted-foreground">
                   {a.appliedAt

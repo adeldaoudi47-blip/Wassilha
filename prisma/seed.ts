@@ -31,10 +31,10 @@ async function main() {
 
   // Drivers
   const driverData = [
-    { name: 'أحمد بن سالم', phone: '0555123456', vehicleType: 'Triporteur 125cc', vehicleColor: 'أزرق', rating: 4.9, trips: 342, earnings: 184500 },
-    { name: 'محمد لعروسي', phone: '0661234789', vehicleType: 'Triporteur 150cc', vehicleColor: 'أبيض', rating: 4.7, trips: 210, earnings: 112800 },
-    { name: 'ياسين قاسمي', phone: '0770987654', vehicleType: 'Triporteur 125cc', vehicleColor: 'أحمر', rating: 4.8, trips: 189, earnings: 98300 },
-    { name: 'عبد الرحمن حمداوي', phone: '0555778899', vehicleType: 'Triporteur 150cc', vehicleColor: 'أخضر', rating: 4.6, trips: 156, earnings: 84200 },
+    { name: 'أحمد بن سالم', phone: '0555123456', marque: 'TVS King', type: 'Triporteur 125cc', immat: '00001-A-06', color: 'أزرق', rating: 4.9, trips: 342, earnings: 184500 },
+    { name: 'محمد لعروسي', phone: '0661234789', marque: 'Bajaj', type: 'Triporteur 150cc', immat: '00002-A-06', color: 'أبيض', rating: 4.7, trips: 210, earnings: 112800 },
+    { name: 'ياسين قاسمي', phone: '0770987654', marque: 'Piaggio', type: 'Triporteur 125cc', immat: '00003-A-06', color: 'أحمر', rating: 4.8, trips: 189, earnings: 98300 },
+    { name: 'عبد الرحمن حمداوي', phone: '0555778899', marque: 'TVS King', type: 'Triporteur 150cc', immat: '00004-A-06', color: 'أخضر', rating: 4.6, trips: 156, earnings: 84200 },
   ];
  const drivers: {
   user: {
@@ -51,12 +51,21 @@ async function main() {
 }[] = [];
   for (const d of driverData) {
     const u = await db.user.create({ data: { phone: d.phone, name: d.name, role: 'driver' } });
+    const vr = await db.vehicleRegistration.create({
+      data: {
+        numeroImmatriculation: d.immat,
+        typeProprietaire: 'PERSONNE_PHYSIQUE',
+        nom: d.name.split(' ')[0] || 'N/A',
+        prenom: d.name.split(' ').slice(1).join(' ') || 'N/A',
+        marque: d.marque,
+        type: d.type,
+        anneePremiereMiseCirculation: 2020,
+      },
+    });
     const drv = await db.driver.create({
       data: {
         userId: u.id,
-        vehicleType: d.vehicleType,
-        vehicleColor: d.vehicleColor,
-        plateNumber: `${d.phone.slice(-4)}-DW`,
+        vehicleRegistrationId: vr.id,
         isOnline: d.trips % 2 === 0,
         isVerified: true,
         rating: d.rating,
@@ -65,7 +74,7 @@ async function main() {
       },
     });
     await db.vehicle.create({
-      data: { driverId: drv.id, type: d.vehicleType, color: d.vehicleColor, plateNumber: `${d.phone.slice(-4)}-DW`, capacityKg: 500 },
+      data: { driverId: drv.id, type: d.type || d.marque, color: d.color, plateNumber: `${d.phone.slice(-4)}-DW`, capacityKg: 500 },
     });
     drivers.push({ user: u, driver: drv });
   }
