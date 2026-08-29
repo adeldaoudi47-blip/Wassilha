@@ -764,7 +764,7 @@ export function AuthFlow() {
 
               <div className="flex items-center gap-2">
                 <div className="flex h-12 items-center gap-1.5 rounded-xl border border-border bg-card px-3">
-                  <span className="text-lg">ًں‡©ًں‡؟</span>
+                  <span className="text-lg">🇩🇿</span>
 
                   <span
                     className="text-sm font-bold text-foreground"
@@ -912,7 +912,7 @@ export function AuthFlow() {
               </label>
               <div className="flex items-center gap-2">
                 <div className="flex h-12 items-center gap-1.5 rounded-xl border border-border bg-card px-3">
-                  <span className="text-lg">ًں‡©ًں‡؟</span>
+                  <span className="text-lg">🇩🇿</span>
                   <span className="text-sm font-bold text-foreground" dir="ltr">+213</span>
                 </div>
                 <Input
