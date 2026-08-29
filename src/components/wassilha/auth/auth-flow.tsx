@@ -104,7 +104,7 @@ export function AuthFlow() {
   }, [resendTimer]);
 
   const handleSendOtp = async () => {
-    // SECURITY + UX: single normalizer shared with the API â€” accepts local,
+    // SECURITY + UX: single normalizer shared with the API €” accepts local,
     // international (+213), 00213 forms, spaces/dashes/invisible marks.
     const clean = normalizeAlgerianPhone(phone);
 
@@ -112,7 +112,7 @@ export function AuthFlow() {
       toast.error(
         isAr
           ? 'أدخل رقم هاتف جزائري صحيح'
-          : 'Entrez un numأ©ro de tأ©lأ©phone algأ©rien valide'
+          : 'Entrez un numéro de téléphone algérien valide'
       );
       return;
     }
@@ -131,13 +131,13 @@ export function AuthFlow() {
         toast.success(
           isAr
             ? `رمز التجربة: ${result.devOtp || '0000'}`
-            : `Code dأ©mo : ${result.devOtp || '0000'}`
+            : `Code démo : ${result.devOtp || '0000'}`
         );
       } else {
         toast.success(
           isAr
             ? 'تم إرسال رمز التحقق إلى هاتفك'
-            : 'Le code de vأ©rification a أ©tأ© envoyأ© أ  votre tأ©lأ©phone'
+            : 'Le code de vérification a été envoyé à votre téléphone'
         );
       }
     } catch (error) {
@@ -184,7 +184,7 @@ export function AuthFlow() {
       toast.error(
         isAr
           ? 'أدخل رقم هاتف جزائري صحيح'
-          : 'Entrez un numأ©ro de tأ©lأ©phone algأ©rien valide'
+          : 'Entrez un numéro de téléphone algérien valide'
       );
       return;
     }
@@ -200,7 +200,7 @@ export function AuthFlow() {
         toast.success(
           isAr
             ? `رمز التجربة: ${result.devOtp || '0000'}`
-            : `Code dأ©mo : ${result.devOtp || '0000'}`
+            : `Code démo : ${result.devOtp || '0000'}`
         );
       }
     } catch (error) {
@@ -208,7 +208,7 @@ export function AuthFlow() {
       // Same error-code mapping as the customer flow (see handleSendOtp).
       const code = error instanceof Error ? error.message : '';
       let ar = 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.';
-      let fr = 'Impossible dâ€™envoyer le code. Rأ©essayez.';
+      let fr = 'Impossible d’envoyer le code. Réessayez.';
       switch (code) {
         case 'tooManyRequests':
           ar = 'تجاوزت الحد المسموح من المحاولات. حاول لاحقاً.';
@@ -238,7 +238,7 @@ export function AuthFlow() {
       toast.error(
         isAr
           ? `أدخل رمز التحقق المكون من ${OTP_LENGTH} أرقام`
-          : `Entrez le code أ  ${OTP_LENGTH} chiffres`
+          : `Entrez le code à ${OTP_LENGTH} chiffres`
       );
       return;
     }
@@ -340,7 +340,7 @@ export function AuthFlow() {
       return;
     }
     if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) {
-      toast.error(isAr ? 'كلمة المرور: 8 أحرف، حرف كبير، حرف صغير ورقم' : 'Mot de passe: 8 caractأ¨res, majuscule, minuscule et chiffre');
+      toast.error(isAr ? 'كلمة المرور: 8 أحرف، حرف كبير، حرف صغير ورقم' : 'Mot de passe: 8 caractères, majuscule, minuscule et chiffre');
       return;
     }
     if (password !== confirmPassword) {
@@ -351,10 +351,10 @@ export function AuthFlow() {
     try {
       const { user } = await api.completeSignup({ name, email, password, confirmPassword });
       setUser(user);
-      toast.success(isAr ? 'تم إنشاء حسابك بنجاح' : 'Votre compte a أ©tأ© crأ©أ© avec succأ¨s');
+      toast.success(isAr ? 'تم إنشاء حسابك بنجاح' : 'Votre compte a été créé avec succès');
     } catch (error) {
       console.error('COMPLETE SIGNUP ERROR:', error);
-      toast.error(isAr ? 'تعذّر إنشاء الحساب. تحقق من البيانات.' : 'Impossible de crأ©er le compte. Vأ©rifiez vos donnأ©es.');
+      toast.error(isAr ? 'تعذّر إنشاء الحساب. تحقق من البيانات.' : 'Impossible de créer le compte. Vérifiez vos données.');
     } finally {
       setLoading(false);
     }
@@ -423,7 +423,7 @@ export function AuthFlow() {
       toast.success(
         isAr
           ? 'أرسل طلبك. سيتم المراجعة من طرف المدير.'
-          : 'Demande envoyأ©e. L\u2019administrateur va la passer en revue.'
+          : 'Demande envoyée. L\u2019administrateur va la passer en revue.'
       );
       setStep('driver-pending');
     } catch (error) {
@@ -433,7 +433,7 @@ export function AuthFlow() {
         msg ||
           (isAr
             ? 'تعذّر إرسال الطلب. حاول مرة أخرى.'
-            : 'Impossible d\u2019envoyer la demande. Rأ©essayez.')
+            : 'Impossible d\u2019envoyer la demande. Réessayez.')
       );
     } finally {
       setLoading(false);
@@ -753,7 +753,7 @@ export function AuthFlow() {
           </h2>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            {t.welcome} â€” {t.tagline}
+            {t.welcome} €” {t.tagline}
           </p>
 
           <div className="mt-8 space-y-4">
@@ -873,7 +873,7 @@ export function AuthFlow() {
               {t.securedBy} آ·{' '}
               {isAr
                 ? 'رمز تحقق آمن'
-                : 'Code de vأ©rification sأ©curisأ©'}
+                : 'Code de vérification sécurisé'}
             </div>
           </div>
         </div>
@@ -1069,7 +1069,7 @@ export function AuthFlow() {
               {isAr ? 'دخول' : 'Se connecter'}
             </Button>
             <button type="button" onClick={() => setStep('phone')} className="w-full text-center text-xs font-bold text-primary hover:underline">
-              {isAr ? 'تسجيل حساب جديد عبر الهاتف' : 'Crأ©er un compte avec votre tأ©lأ©phone'}
+              {isAr ? 'تسجيل حساب جديد عبر الهاتف' : 'Créer un compte avec votre téléphone'}
             </button>
           </div>
         </div>
@@ -1084,13 +1084,13 @@ export function AuthFlow() {
         <div className="flex flex-1 flex-col px-6">
           <div className="mb-8 mt-4"><BrandLogo size={56} showText /></div>
           <h2 className="text-2xl font-black text-foreground">
-            {isAr ? 'إنشاء حسابك' : 'Crأ©er votre compte'}
+            {isAr ? 'إنشاء حسابك' : 'Créer votre compte'}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            {isAr ? 'تم التحقق من رقم هاتفك بنجاح. أكمل بياناتك لإنشاء حسابك في وصّلها.' : 'Votre tأ©lأ©phone est vأ©rifiأ©. Complأ©tez vos informations pour crأ©er votre compte.'}
+            {isAr ? 'تم التحقق من رقم هاتفك بنجاح. أكمل بياناتك لإنشاء حسابك في وصّلها.' : 'Votre téléphone est vérifié. Complétez vos informations pour créer votre compte.'}
           </p>
           <div className="mt-5 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" dir="ltr">
-            âœ“ {phone} - {isAr ? 'رقم الهاتف مؤكّد' : 'Tأ©lأ©phone confirmأ©'}
+            ✓ {phone} - {isAr ? 'رقم الهاتف مؤكّد' : 'Téléphone confirmé'}
           </div>
           <div className="mt-5 space-y-3">
             <Input placeholder={isAr ? 'الاسم الكامل' : 'Nom complet'} value={name} onChange={(e) => setName(e.target.value)} className="h-12" />
@@ -1099,7 +1099,7 @@ export function AuthFlow() {
             <Input type="password" dir="ltr" placeholder={isAr ? 'تأكيد كلمة المرور' : 'Confirmer le mot de passe'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="h-12" onKeyDown={(e) => { if (e.key === 'Enter') handleCompleteSignup(); }} />
             <Button onClick={handleCompleteSignup} disabled={loading} size="lg" className="h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
               {loading ? <Sparkles className="animate-spin" size={18} /> : null}
-              {isAr ? 'إنشاء الحساب' : 'Crأ©er le compte'}
+              {isAr ? 'إنشاء الحساب' : 'Créer le compte'}
             </Button>
           </div>
         </div>
@@ -1150,7 +1150,7 @@ export function AuthFlow() {
         <p className="mt-2 text-sm text-muted-foreground">
           {isAr
             ? 'أدخل رمز التحقق المرسل إلى'
-            : 'Entrez le code envoyأ© au'}{' '}
+            : 'Entrez le code envoyé au'}{' '}
           <span
             dir="ltr"
             className="font-bold text-foreground"
@@ -1224,10 +1224,10 @@ export function AuthFlow() {
             {OTP_DEMO_MODE
               ? isAr
                 ? 'وضع التجربة: استخدم 0000'
-                : 'Mode dأ©mo : utilisez 0000'
+                : 'Mode démo : utilisez 0000'
               : isAr
                 ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS'
-                : 'Entrez le code أ  6 chiffres reأ§u par SMS'}
+                : 'Entrez le code à 6 chiffres reçu par SMS'}
           </div>
         </div>
       </div>
@@ -1432,7 +1432,7 @@ export function AuthFlow() {
           <p className="mt-4 text-center text-[11px] text-muted-foreground">
             {isAr
               ? `رقم الهاتف المستخدم: +213 ${phone}`
-              : `Numأ©ro utilisأ©: +213 ${phone}`}
+              : `Numéro utilisé: +213 ${phone}`}
           </p>
         </div>
       </div>
@@ -1468,7 +1468,7 @@ export function AuthFlow() {
           <p className="mt-3 max-w-sm text-sm text-muted-foreground">
             {isAr
               ? 'تم استلام طلب التسجيل بنجاح. سيتم إبلاغك عاجلاً حين يراجع المدير المعلومات.'
-              : 'Votre demande d\u2019inscription a bien أ©tأ© reأ§ue. Vous serez notifiأ© dأ¨s que l\u2019administrateur l\u2019aura passأ©e en revue.'}
+              : 'Votre demande d\u2019inscription a bien été reçue. Vous serez notifié dès que l\u2019administrateur l\u2019aura passée en revue.'}
           </p>
           <Button
             onClick={() => {
@@ -1510,12 +1510,12 @@ export function AuthFlow() {
             <ShieldCheck size={40} className="text-red-600" />
           </div>
           <h2 className="text-2xl font-black text-foreground">
-            {isAr ? 'تم رفض الطلب' : 'Demande refusأ©e'}
+            {isAr ? 'تم رفض الطلب' : 'Demande refusée'}
           </h2>
           <p className="mt-3 max-w-sm text-sm text-muted-foreground">
             {isAr
               ? 'لم يتم الموافقة على طلبك. يمكنك إعادة التقديم بعد تحسين المعلومات.'
-              : 'Votre demande n\u2019a pas أ©tأ© acceptأ©e. Vous pouvez resoumettre aprأ¨s avoir corrigأ© les informations.'}
+              : 'Votre demande n\u2019a pas été acceptée. Vous pouvez resoumettre après avoir corrigé les informations.'}
           </p>
           <Button
             onClick={() => {
