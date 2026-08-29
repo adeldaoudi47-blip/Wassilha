@@ -16,6 +16,9 @@ type DriverWithRelations = {
   applicationStatus: string;
   appliedAt: Date | null;
   reviewedAt: Date | null;
+  currentLat: number | null;
+  currentLng: number | null;
+  lastSeenAt: Date | null;
   user: { id: string; phone: string; name: string; role: string; avatar: string | null };
   vehicleRegistration: {
     id: string;
@@ -59,6 +62,9 @@ function toDriverProfile(driver: DriverWithRelations): DriverProfile {
       | 'rejected',
     appliedAt: driver.appliedAt ? driver.appliedAt.toISOString() : null,
     reviewedAt: driver.reviewedAt ? driver.reviewedAt.toISOString() : null,
+    currentLat: driver.currentLat,
+    currentLng: driver.currentLng,
+    lastSeenAt: driver.lastSeenAt ? driver.lastSeenAt.toISOString() : null,
     vehicleRegistration: vrInfo,
     user: {
       id: driver.user.id,

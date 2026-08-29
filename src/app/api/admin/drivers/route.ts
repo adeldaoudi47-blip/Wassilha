@@ -14,6 +14,11 @@ type DriverWithRelations = {
   applicationStatus: string;
   appliedAt: Date | null;
   reviewedAt: Date | null;
+  // Live GPS position (updated by /api/driver/location). Null until the
+  // driver accepts their first trip and starts broadcasting fixes.
+  currentLat: number | null;
+  currentLng: number | null;
+  lastSeenAt: Date | null;
   user: { id: string; phone: string; name: string; role: string; avatar: string | null };
   vehicleRegistration: {
     id: string;
@@ -57,6 +62,12 @@ function toDriverProfile(driver: DriverWithRelations): DriverProfile {
       | 'rejected',
     appliedAt: driver.appliedAt ? driver.appliedAt.toISOString() : null,
     reviewedAt: driver.reviewedAt ? driver.reviewedAt.toISOString() : null,
+    // GPS — null while the driver has never broadcast a position. The admin
+    // map treats these as "unknown position" and skips them when computing
+    // bounds.
+    currentLat: driver.currentLat,
+    currentLng: driver.currentLng,
+    lastSeenAt: driver.lastSeenAt ? driver.lastSeenAt.toISOString() : null,
     vehicleRegistration: vrInfo,
     user: {
       id: driver.user.id,

@@ -48,10 +48,38 @@ export interface DriverProfile {
   applicationStatus?: 'active' | 'pending' | 'rejected';
   appliedAt?: string | null;
   reviewedAt?: string | null;
+  // Live GPS position (Phase 2 driver tracking). Null until the driver has
+  // started broadcasting fixes via /api/driver/location. `lastSeenAt` lets
+  // the UI distinguish "stale" drivers (online flag on but no fix in a
+  // while) from "fresh" ones — used by the admin fleet map to colour the
+  // marker and decide if the driver is "live" vs "offline".
+  currentLat?: number | null;
+  currentLng?: number | null;
+  lastSeenAt?: string | null;
   // Carte grise (vehicle registration) data — null if the driver has not
   // submitted one (e.g. admin-created legacy accounts).
   vehicleRegistration?: VehicleRegistrationInfo | null;
   user: AuthUser;
+}
+
+// Compact GPS-only projection of a driver, served by
+// /api/admin/drivers/locations. Returned *only* for drivers that are
+// currently broadcasting (last fix in the last 10 minutes), so the
+// admin fleet map can render a marker without re-asking for the full
+// profile (name + phone is enough to label the pin).
+export interface AdminDriverLocation {
+  id: string;
+  name: string;
+  phone: string;
+  avatar: string | null;
+  isOnline: boolean;
+  isVerified: boolean;
+  rating: number;
+  totalTrips: number;
+  currentLat: number;
+  currentLng: number;
+  lastSeenAt: string;
+  vehicleLabel: string | null;
 }
 
 export interface Order {

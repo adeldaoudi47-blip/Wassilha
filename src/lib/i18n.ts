@@ -218,6 +218,16 @@ export const translations = {
     meters: 'م',
     shareLocation: 'مشاركة الموقع',
     stopSharing: 'إيقاف المشاركة',
+    // Admin fleet map (Phase 3)
+    fleetMap: 'خريطة الأسطول',
+    live: 'مباشر',
+    stale: 'متأخر',
+    lastSeen: 'آخر ظهور',
+    lastUpdate: 'آخر تحديث:',
+    refresh: 'تحديث',
+    fetchError: 'تعذّر تحميل بيانات السائقين. حاول مرة أخرى.',
+    noDriversOnline: 'لا يوجد سائقون متصلون الآن',
+    noDriversHint: 'سيظهر السائقون هنا تلقائياً عند بدء رحلة نشطة.',
   },
   fr: {
     dir: 'ltr' as const,
@@ -436,6 +446,16 @@ export const translations = {
     meters: 'm',
     shareLocation: 'Partager ma position',
     stopSharing: 'Arrêter le partage',
+    // Admin fleet map (Phase 3)
+    fleetMap: 'Carte de la flotte',
+    live: 'En direct',
+    stale: 'Inactif',
+    lastSeen: 'Dernier signal',
+    lastUpdate: 'Dernière mise à jour :',
+    refresh: 'Actualiser',
+    fetchError: 'Impossible de charger les chauffeurs. Réessayez.',
+    noDriversOnline: 'Aucun chauffeur en ligne pour le moment',
+    noDriversHint: 'Les chauffeurs apparaîtront ici dès qu\u2019ils démarrent une course.',
   },
 };
 

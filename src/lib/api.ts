@@ -1,5 +1,6 @@
 // Thin API client for the WASSILHA frontend. All calls go to relative Next.js API routes.
 import type {
+  AdminDriverLocation,
   AdminStats,
   AuthUser,
   DriverProfile,
@@ -155,6 +156,8 @@ export const api = {
   // Admin
   adminStats: () => req<AdminStats>('/api/admin/stats'),
   adminDrivers: () => req<DriverProfile[]>('/api/admin/drivers'),
+  adminDriverLocations: () =>
+    req<AdminDriverLocation[]>('/api/admin/drivers/locations'),
   adminOrders: () => req<Order[]>('/api/admin/orders'),
   addDriver: (data: {
     name: string;
