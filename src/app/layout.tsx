@@ -35,9 +35,10 @@ export const metadata: Metadata = {
     "Ghardaïa",
   ],
   authors: [{ name: "WASSILHA" }],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
+  // Favicon is provided by src/app/icon.tsx (renders the official
+  // BrandLogo as a PNG, matching the Onboarding/splash screen and
+  // every app header across the app). The previous Z.ai blue "Z"
+  // placeholder has been removed.
   openGraph: {
     title: "وَصِّلها · WASSILHA",
     description: "نقل بضائعك بثقة في القرارة - غرداية",
