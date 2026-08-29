@@ -1,14 +1,15 @@
-﻿import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Package, MapPin, Flag, Navigation, Bike, Phone, MessageCircle,
   PackageCheck, AlertTriangle, Radio, Gauge, Crosshair,
+  CheckCircle2, MapPinned,
 } from "lucide-react";
 import { useT } from "../use-t";
 import { useDriverLocation } from "../use-driver-location";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDzd } from "@/lib/wassilha-data";
+import { formatDzd, haversineKm } from "@/lib/wassilha-data";
 import type { Order, OrderStatus } from "@/lib/types";
 
 // Leaflet touches window at module init so the map is loaded only on the
@@ -79,6 +80,34 @@ export function ActiveTrip({
     if (error.code === "http") return t.gpsError;
     return t.gpsError;
   }, [error, t]);
+
+  // Geofence: when the driver comes within 50 m of the pickup or the
+  // dropoff, raise a localised banner. The threshold (0.05 km) is the
+  // standard rideshare arrival radius; we only fire the banner ONCE per
+  // leg, so the driver isn't nagged if they idle near the pin. The
+  // banner stays up until the status changes (next leg or end of trip).
+  const [arrivedPickup, setArrivedPickup] = useState(false);
+  const [arrivedDropoff, setArrivedDropoff] = useState(false);
+  const arrivedPickupRef = useRef(false);
+  const arrivedDropoffRef = useRef(false);
+
+  useEffect(() => {
+    if (!fix) return;
+    if (active.status === "accepted" && !arrivedPickupRef.current) {
+      const d = haversineKm(fix, pickupCoords);
+      if (d <= 0.05) {
+        arrivedPickupRef.current = true;
+        setArrivedPickup(true);
+      }
+    }
+    if (active.status === "picked" && !arrivedDropoffRef.current) {
+      const d = haversineKm(fix, dropoffCoords);
+      if (d <= 0.05) {
+        arrivedDropoffRef.current = true;
+        setArrivedDropoff(true);
+      }
+    }
+  }, [fix, pickupCoords, dropoffCoords, active.status]);
 
   // Whether the map has real coords to show. Guards against an order
   // that was created before we started persisting lat/lng.
@@ -168,6 +197,28 @@ export function ActiveTrip({
             {isAr ? "لا توجد إحداثيات لهذه الرحلة" : "Pas de coordonnées pour cette course"}
           </div>
         )}
+
+        {/* Geofence banner -- shown when the driver comes within 50 m of the active pin */}
+        {arrivedPickup && active.status === "accepted" ? (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3 text-emerald-800 dark:text-emerald-200" role="status" aria-live="polite">
+            <CheckCircle2 size={18} className="shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">{t.arrivedPickup}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{t.nearPickup}</p>
+            </div>
+            <MapPinned size={14} className="opacity-60" />
+          </div>
+        ) : null}
+        {arrivedDropoff && active.status === "picked" ? (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3 text-emerald-800 dark:text-emerald-200" role="status" aria-live="polite">
+            <CheckCircle2 size={18} className="shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">{t.arrivedDropoff}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{t.nearDropoff}</p>
+            </div>
+            <MapPinned size={14} className="opacity-60" />
+          </div>
+        ) : null}
 
         {/* GPS telemetry */}
         <GpsTelemetry fix={fix} speedKmh={speedKmh} />

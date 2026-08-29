@@ -233,6 +233,11 @@ export const translations = {
     searchPoint: '🔎 ابحث عن مسجد، مدرسة، صيدلية...',
     chooseArea: 'اختر الحي أولاً',
     choosePoint: 'اختر نقطة التسليم',
+    // Phase 6 -- Geofencing banners
+    arrivedPickup: '✓ لقد وصلت إلى نقطة الاستلام',
+    arrivedDropoff: '✓ لقد وصلت إلى الوجهة',
+    nearPickup: 'تشبه الوصول إلى نقطة الاستلام',
+    nearDropoff: 'تشبه الوصول إلى الوجهة',
   },
   fr: {
     dir: 'ltr' as const,
@@ -466,6 +471,11 @@ export const translations = {
     searchPoint: '🔎 Rechercher une mosquée, école, pharmacie...',
     chooseArea: 'Choisissez d\u2019abord un quartier',
     choosePoint: 'Choisissez un point de livraison',
+    // Phase 6 -- Geofencing banners
+    arrivedPickup: 'Vous etes arrive au point de ramassage',
+    arrivedDropoff: 'Vous etes arrive a destination',
+    nearPickup: 'Vous approchez du point de ramassage',
+    nearDropoff: 'Vous approchez de la destination',
   },
 };
 

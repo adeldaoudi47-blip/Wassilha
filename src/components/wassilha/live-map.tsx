@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 const dropoffIcon = new L.Icon({
@@ -76,13 +76,75 @@ export function LiveMap({
   height = 'h-72',
   className,
 }: LiveMapProps) {
-  const routeLine = useMemo<[number, number][]>(
-    () => [
-      [pickupCoords.lat, pickupCoords.lng],
-      [dropoffCoords.lat, dropoffCoords.lng],
-    ],
-    [pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng],
-  );
+  // Real road geometry fetched from the public OSRM demo server. We
+  // store the result in state and fall back to a straight line if the
+  // network call fails (no connectivity, OSRM rate-limited, or the
+  // server is down). OSRM returns [lng, lat]; Leaflet wants [lat, lng].
+  const [routeLine, setRouteLine] = useState<[number, number][]>([
+    [pickupCoords.lat, pickupCoords.lng],
+    [dropoffCoords.lat, dropoffCoords.lng],
+  ]);
+  const [routeMeta, setRouteMeta] = useState<{
+    distanceKm: number | null;
+    durationMin: number | null;
+    source: 'osrm' | 'fallback';
+  }>({ distanceKm: null, durationMin: null, source: 'fallback' });
+
+  useEffect(() => {
+    // Same pickup & dropoff – nothing to route, keep the current line.
+    if (
+      pickupCoords.lat === dropoffCoords.lat &&
+      pickupCoords.lng === dropoffCoords.lng
+    ) {
+      setRouteLine([[pickupCoords.lat, pickupCoords.lng]]);
+      setRouteMeta({ distanceKm: 0, durationMin: 0, source: 'osrm' });
+      return;
+    }
+
+    const ctrl = new AbortController();
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${pickupCoords.lng},${pickupCoords.lat};${dropoffCoords.lng},${dropoffCoords.lat}` +
+      `?overview=full&geometries=geojson`;
+
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => {
+        const route = data?.routes?.[0];
+        if (!route || !Array.isArray(route.geometry?.coordinates)) {
+          throw new Error('OSRM: no route');
+        }
+        const coords: [number, number][] = route.geometry.coordinates.map(
+          ([lng, lat]: [number, number]) => [lat, lng],
+        );
+        setRouteLine(coords);
+        setRouteMeta({
+          distanceKm:
+            typeof route.distance === 'number' ? route.distance / 1000 : null,
+          durationMin:
+            typeof route.duration === 'number' ? route.duration / 60 : null,
+          source: 'osrm',
+        });
+      })
+      .catch((e) => {
+        if (e?.name === 'AbortError') return;
+        // Fallback: straight line. We keep the previous `routeMeta.source`
+        // marker as 'fallback' so the UI can show a small disclaimer if
+        // desired.
+        setRouteLine([
+          [pickupCoords.lat, pickupCoords.lng],
+          [dropoffCoords.lat, dropoffCoords.lng],
+        ]);
+        setRouteMeta((m) => ({ ...m, source: 'fallback' }));
+      });
+
+    return () => ctrl.abort();
+  }, [
+    pickupCoords.lat,
+    pickupCoords.lng,
+    dropoffCoords.lat,
+    dropoffCoords.lng,
+  ]);
   const boundsPoints = useMemo<Array<[number, number]>>(() => {
     const arr: Array<[number, number]> = [
       [pickupCoords.lat, pickupCoords.lng],
@@ -127,7 +189,13 @@ export function LiveMap({
         />
         <Polyline
           positions={routeLine}
-          pathOptions={{ color: '#0E6B5E', weight: 4, opacity: 0.8, dashArray: '8 8' }}
+          pathOptions={{
+            color: '#0E6B5E',
+            weight: 4,
+            opacity: 0.85,
+            // Real road geometry → solid; fallback straight line → dashed.
+            dashArray: routeMeta.source === 'osrm' ? undefined : '8 8',
+          }}
         />
         <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={pickupTargetIcon}>
           <Popup>

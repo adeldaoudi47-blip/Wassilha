@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -22,6 +22,13 @@ export interface UseDriverLocationOptions {
   orderId: string | null | undefined;
   minIntervalMs?: number;
   post?: (url: string, body: unknown) => Promise<Response>;
+  /**
+   * Optional callback fired on every successful GPS fix. Use it for
+   * geofencing logic. The hook calls it synchronously inside the
+   * watchPosition success handler, so any heavy work should be
+   * debounced upstream.
+   */
+  onFix?: (fix: DriverFix) => void;
 }
 
 export interface UseDriverLocationResult {
@@ -48,6 +55,7 @@ export function useDriverLocation(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }),
+    onFix,
   } = opts;
 
   const [fix, setFix] = useState<DriverFix | null>(null);
@@ -118,6 +126,7 @@ export function useDriverLocation(
         };
         setFix(next);
         send(next.lat, next.lng, next.accuracy);
+        if (onFix) onFix(next);
       },
       (err) => {
         setLoading(false);
@@ -144,7 +153,7 @@ export function useDriverLocation(
         watchIdRef.current = null;
       }
     };
-  }, [enabled, retryTick, send]);
+  }, [enabled, retryTick, send, onFix]);
 
   return { fix, error, loading, sentCount, retry };
 }
