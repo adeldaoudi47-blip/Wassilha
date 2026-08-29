@@ -2,14 +2,6 @@
 import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-const pickupIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
 const dropoffIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
@@ -25,6 +17,31 @@ const driverIcon = new L.Icon({
   iconAnchor: [15, 49],
   popupAnchor: [1, -38],
   shadowSize: [41, 41],
+});
+// "Target / crosshair" SVG icon for the pickup point. Drawn with
+// concentric circles + cardinal lines so the rider can see the exact
+// pin location at a glance (the classic pickup-pin metaphor used by
+// rideshare apps). Anchored at its centre (18,18) so the inner dot
+// sits exactly on `pickupCoords`. Markers stay clickable because
+// `L.divIcon` renders an HTML element which Leaflet treats like any
+// other interactive marker.
+const pickupTargetIcon = L.divIcon({
+  className: 'wassilha-pickup-target',
+  html:
+    '<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.35));">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="12" cy="12" r="10"></circle>' +
+    '<circle cx="12" cy="12" r="6"></circle>' +
+    '<circle cx="12" cy="12" r="2" fill="#DC2626"></circle>' +
+    '<line x1="12" y1="2" x2="12" y2="5"></line>' +
+    '<line x1="12" y1="19" x2="12" y2="22"></line>' +
+    '<line x1="2" y1="12" x2="5" y2="12"></line>' +
+    '<line x1="19" y1="12" x2="22" y2="12"></line>' +
+    '</svg>' +
+    '</div>',
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+  popupAnchor: [0, -20],
 });
 function MapBounds({ points }: { points: Array<[number, number]> }) {
   const map = useMap();
@@ -112,7 +129,7 @@ export function LiveMap({
           positions={routeLine}
           pathOptions={{ color: '#0E6B5E', weight: 4, opacity: 0.8, dashArray: '8 8' }}
         />
-        <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={pickupIcon}>
+        <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={pickupTargetIcon}>
           <Popup>
             <strong>Pickup</strong>
             {pickupLabel ? <div>{pickupLabel}</div> : null}
