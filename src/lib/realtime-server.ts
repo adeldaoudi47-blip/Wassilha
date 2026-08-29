@@ -12,6 +12,9 @@ import type { Order } from './types';
 const REALTIME_PORT = 3003;
 
 interface DriverTrack {
+  // Legacy type kept only for the global handle shape — real GPS tracking
+  // no longer runs on the server. Drivers now POST their position to
+  // /api/driver/location which fans it out to subscribers.
   orderId: string;
   driverId: string;
   startLat: number;
@@ -52,6 +55,10 @@ function startRealtime(): IOServer | null {
   const sockets = new Map<string, { userId: string; role: string }>();
   globalForRealtime.__wassilhaTracks = tracks;
   globalForRealtime.__wassilhaSockets = sockets;
+  // The `tracks` map is intentionally kept around even though no events
+  // populate it anymore. It exists so that future server-side driver
+  // analytics (e.g. geofencing) have a place to register per-trip state
+  // without needing a schema migration.
 
   const httpServer = createServer((req, res) => {
     // Health check
@@ -120,33 +127,24 @@ function startRealtime(): IOServer | null {
       socket.leave(`order:${orderId}`);
     });
 
-    // Simulated movement
-    socket.on('driver:start-track', (p: { orderId: string; driverId: string; startLat: number; startLng: number; endLat: number; endLng: number }) => {
-      // stop existing
-      const ex = tracks.get(p.orderId);
-      if (ex) clearInterval(ex.interval);
-      const track: DriverTrack = { ...p, progress: 0, interval: setInterval(() => {}) };
-      track.interval = setInterval(() => {
-        track.progress += 0.08;
-        const lat = p.startLat + (p.endLat - p.startLat) * track.progress;
-        const lng = p.startLng + (p.endLng - p.startLng) * track.progress;
-        io.to(`order:${p.orderId}`).emit('driver:location', {
-          orderId: p.orderId, lat, lng, driverId: p.driverId,
-        });
-        if (track.progress >= 1) {
-          clearInterval(track.interval);
-          tracks.delete(p.orderId);
-        }
-      }, 1500);
-      tracks.set(p.orderId, track);
+    // driver:start-track / driver:stop-track are no-ops now.
+    //
+    // The driver used to ask the server to *simulate* a trip by interpolating
+    // a straight line between pickup and dropoff. That was useful while the
+    // mobile geolocation pipeline wasn't wired up, but it's misleading now:
+    // real GPS positions arrive via the HTTP POST /api/driver/location
+    // endpoint and are broadcast by broadcastDriverLocation(). We keep the
+    // event handlers so any stale client still emitting start-track doesn't
+    // crash the server — we just ignore the payload.
+
+    socket.on('driver:start-track', () => {
+      // Intentionally empty: real GPS drives the live marker.
     });
 
-    socket.on('driver:stop-track', ({ orderId }: { orderId: string }) => {
-      const t = tracks.get(orderId);
-      if (t) {
-        clearInterval(t.interval);
-        tracks.delete(orderId);
-      }
+    socket.on('driver:stop-track', () => {
+      // Intentionally empty: location stops being broadcast once the driver
+      // closes the active trip UI (HTTP polling picks up the order status
+      // change from the DB and stops the geolocation watcher client-side).
     });
 
     socket.on('disconnect', () => {
