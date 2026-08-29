@@ -3,13 +3,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
-  MapPin, Flag, ChevronDown, Settings2, Check,
+  MapPin, Flag, Settings2, Check,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
-  CARGO_TYPES, GUERRARA_LOCATIONS, GUERRARA_COORDS, haversineKm, calcPrice, formatDzd,
+  CARGO_TYPES, GUERRARA_CENTER, haversineKm, calcPrice, formatDzd,
 } from '@/lib/wassilha-data';
 import { emitOrderCreated } from '@/lib/realtime';
 import { useNavStore } from '@/lib/store';
@@ -18,14 +18,49 @@ import { CargoIcon } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { CargoKey, PricingConfig } from '@/lib/types';
+import {
+  DeliveryPointPicker,
+  type DeliveryAreaOption,
+  type DeliveryPointOption,
+  type DeliveryCoords,
+} from '../delivery-point-picker';
+import { deliveryAreas, deliveryPoints } from '@/lib/delivery-data';
+
+type PickDropoffPoint = DeliveryPointOption & { coords: DeliveryCoords };
+
+// Pre-bake the picker data: the local const arrays are tuples, the picker
+// wants a richer shape (id, nameAr, nameFr, type, areaId). Slugs become
+// ids so we can join points → areas.
+const PICKER_AREAS: ReadonlyArray<DeliveryAreaOption> = deliveryAreas.map(
+  ([nameAr, nameFr, slug]) => ({
+    id: slug,
+    nameAr,
+    nameFr,
+  }),
+);
+
+const PICKER_POINTS: ReadonlyArray<DeliveryPointOption> = deliveryPoints.map(
+  ([areaSlug, nameAr, nameFr, type]) => ({
+    id: `${areaSlug}--${nameAr}`,
+    nameAr,
+    nameFr,
+    type,
+    areaId: areaSlug,
+  }),
+);
+
+// Per-area fallback coords. Verified centers are added in a follow-up PR
+// once the admin tooling is in place; until then every point resolves to
+// the city center. This is documented in the README and the picker UI
+// shows the resolved coords so the customer can confirm.
+const COORDS_FOR_AREA: Readonly<Record<string, DeliveryCoords>> = {
+  // Verified centroids will go here. None are fabricated at this stage.
+};
 
 export function CustomerHome() {
   const { t, isAr, isRtl } = useT();
@@ -34,22 +69,22 @@ export function CustomerHome() {
 
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   const [selectedCargo, setSelectedCargo] = useState<CargoKey>('parcel');
-  const [pickupIdx, setPickupIdx] = useState(0);
-  const [dropoffIdx, setDropoffIdx] = useState(1);
+  const [pickupPoint, setPickupPoint] = useState<PickDropoffPoint | null>(null);
+  const [dropoffPoint, setDropoffPoint] = useState<PickDropoffPoint | null>(null);
   const [weight, setWeight] = useState(20);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPricingSheet, setShowPricingSheet] = useState(false);
+  const [pickerFor, setPickerFor] = useState<'pickup' | 'dropoff' | null>(null);
 
   useEffect(() => {
     api.getPricing().then(setPricing).catch(() => toast.error(isAr ? 'تعذر تحميل التسعير' : 'Tarifs indisponibles'));
   }, [isAr]);
 
   const distance = useMemo(() => {
-    const a = GUERRARA_COORDS[pickupIdx] ?? { lat: 32.7833, lng: 3.7667 };
-    const b = GUERRARA_COORDS[dropoffIdx] ?? { lat: 32.79, lng: 3.78 };
-    return Math.max(0.8, haversineKm(a, b));
-  }, [pickupIdx, dropoffIdx]);
+    if (!pickupPoint || !dropoffPoint) return 0.8;
+    return Math.max(0.8, haversineKm(pickupPoint.coords, dropoffPoint.coords));
+  }, [pickupPoint, dropoffPoint]);
 
   const estimatedPrice = useMemo(() => {
     if (!pricing) return 0;
@@ -58,20 +93,24 @@ export function CustomerHome() {
   }, [pricing, selectedCargo, distance]);
 
   const handleRequest = async () => {
+    if (!pickupPoint || !dropoffPoint) {
+      toast.error(isAr ? 'اختر نقطة الاستلام ونقطة التوصيل' : 'Choisissez les deux points');
+      return;
+    }
     setSubmitting(true);
     try {
       const order = await api.createOrder({
         cargoType: selectedCargo,
-        pickup: GUERRARA_LOCATIONS[pickupIdx],
-        dropoff: GUERRARA_LOCATIONS[dropoffIdx],
+        pickup: pickupPoint.nameAr,
+        dropoff: dropoffPoint.nameAr,
         weight,
         distance,
         price: estimatedPrice,
         notes: notes || undefined,
-        pickupLat: GUERRARA_COORDS[pickupIdx]?.lat,
-        pickupLng: GUERRARA_COORDS[pickupIdx]?.lng,
-        dropoffLat: GUERRARA_COORDS[dropoffIdx]?.lat,
-        dropoffLng: GUERRARA_COORDS[dropoffIdx]?.lng,
+        pickupLat: pickupPoint.coords.lat,
+        pickupLng: pickupPoint.coords.lng,
+        dropoffLat: dropoffPoint.coords.lat,
+        dropoffLng: dropoffPoint.coords.lng,
       });
       emitOrderCreated(order);
       setActiveOrderId(order.id);
@@ -88,31 +127,27 @@ export function CustomerHome() {
     <div className="space-y-4">
       {/* Map preview */}
       <GuerraraMap
-        pickupLabel={GUERRARA_LOCATIONS[pickupIdx]}
-        dropoffLabel={GUERRARA_LOCATIONS[dropoffIdx]}
+        pickupLabel={pickupPoint?.nameAr ?? (isAr ? 'حدد نقطة الاستلام' : 'Choisir pickup')}
+        dropoffLabel={dropoffPoint?.nameAr ?? (isAr ? 'حدد نقطة التوصيل' : 'Choisir dropoff')}
         height="h-52"
       />
 
-      {/* Pickup / Dropoff */}
-      <Card className="overflow-hidden p-0">
-        <div className="divide-y divide-border">
-          <LocationRow
-            icon={<MapPin size={16} className="text-primary" />}
-            label={t.pickup}
-            value={GUERRARA_LOCATIONS[pickupIdx]}
-            options={GUERRARA_LOCATIONS}
-            onSelect={(i) => setPickupIdx(i)}
-            isRtl={isRtl}
-          />
-          <LocationRow
-            icon={<Flag size={16} className="text-[#FF7A00]" />}
-            label={t.dropoff}
-            value={GUERRARA_LOCATIONS[dropoffIdx]}
-            options={GUERRARA_LOCATIONS}
-            onSelect={(i) => setDropoffIdx(i)}
-            isRtl={isRtl}
-          />
-        </div>
+      {/* Pickup / dropoff selection (careem-style) */}
+      <Card className="divide-y overflow-hidden p-0">
+        <DeliveryLocationRow
+          icon={<MapPin size={16} className="text-primary" />}
+          label={t.pickup}
+          value={pickupPoint?.nameAr ?? ''}
+          placeholder={isAr ? 'اختر نقطة الاستلام' : 'Choisir un point de ramassage'}
+          onPress={() => setPickerFor('pickup')}
+        />
+        <DeliveryLocationRow
+          icon={<Flag size={16} className="text-[#FF7A00]" />}
+          label={t.dropoff}
+          value={dropoffPoint?.nameAr ?? ''}
+          placeholder={isAr ? 'اختر نقطة التوصيل' : 'Choisir un point de livraison'}
+          onPress={() => setPickerFor('dropoff')}
+        />
       </Card>
 
       {/* Cargo types */}
@@ -129,134 +164,95 @@ export function CustomerHome() {
                 key={cargo.key}
                 onClick={() => setSelectedCargo(cargo.key)}
                 className={cn(
-                  'relative flex flex-col items-center gap-1.5 rounded-xl border-2 p-2.5 transition',
-                  selected ? 'border-primary bg-primary/5' : 'border-border bg-card hover:border-primary/30'
+                  'flex flex-col items-center gap-1 rounded-xl border p-2 transition',
+                  selected
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground',
                 )}
               >
-                {selected && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-white">
-                    <Check size={9} />
-                  </span>
-                )}
-                <div
-                  className="flex h-9 w-9 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: selected ? '#0E6B5E' : cargo.color + '15' }}
-                >
-                  <CargoIcon cargo={cargo.key} size={18} className={selected ? '!text-white' : ''} />
-                </div>
-                <span className={cn('text-[10px] font-semibold leading-tight', selected ? 'text-primary' : 'text-muted-foreground')}>
-                  {(t.cargo as Record<string, string>)[cargo.key]}
-                </span>
+                <CargoIcon cargo={cargo.key} size={18} className={cn('h-7 w-7', selected ? '!text-primary' : 'text-muted-foreground')} />
+                <span className="text-[11px] font-bold">{(t.cargo as Record<string, string>)[cargo.key]}</span>
               </button>
             );
           })}
         </div>
       </section>
 
-      {/* Weight */}
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-foreground">{t.weight}</h3>
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
-            {weight} {t.kg}
-          </span>
+      {/* Weight stepper */}
+      <Card className="flex items-center justify-between p-3.5">
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground">{t.weight}</p>
+          <p className="text-lg font-bold text-foreground">{weight} {t.kg}</p>
         </div>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setWeight((w) => Math.max(5, w - 10))}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-primary hover:bg-muted/70"
-            >
-              <Minus size={18} />
-            </button>
-            <div className="relative flex-1">
-              <div className="h-2 rounded-full bg-muted">
-                <div
-                  className="h-2 rounded-full bg-primary transition-all"
-                  style={{ width: `${Math.min(100, (weight / 500) * 100)}%` }}
-                />
-              </div>
-              <div
-                className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border-2 border-primary bg-white shadow"
-                style={{ insetInlineStart: `calc(${Math.min(100, (weight / 500) * 100)}% - 8px)` }}
-              />
-            </div>
-            <button
-              onClick={() => setWeight((w) => Math.min(500, w + 10))}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-primary hover:bg-muted/70"
-            >
-              <Plus size={18} />
-            </button>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {[20, 50, 100, 200].map((w) => (
-              <button
-                key={w}
-                onClick={() => setWeight(w)}
-                className={cn(
-                  'rounded-lg px-3 py-1 text-xs font-bold transition',
-                  weight === w ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
-                )}
-              >
-                {w} {t.kg}
-              </button>
-            ))}
-          </div>
-        </Card>
-      </section>
-
-      {/* Notes */}
-      <section>
-        <h3 className="mb-2 text-sm font-bold text-foreground">{t.notes}</h3>
-        <div className="relative">
-          <Textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder={t.notesPlaceholder}
-            className="min-h-20 resize-none bg-card ps-4 pe-10"
-          />
-        </div>
-      </section>
-
-      {/* Price estimate */}
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Calculator size={20} />
-          </div>
-          <div className="flex-1">
-            <p className="text-xs font-semibold text-muted-foreground">{t.estimate}</p>
-            <p className="text-xs text-muted-foreground">
-              {distance} {t.km} · {(t.cargo as Record<string, string>)[selectedCargo]} · {pricing?.basePrice ?? 150} {t.dzd} + {pricing?.perKm ?? 60}/{t.km}
-            </p>
-          </div>
-          <button
-            onClick={() => setShowPricingSheet(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:bg-muted/70"
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setWeight((w) => Math.max(1, w - 5))}
+            className="h-9 w-9 rounded-full"
+            aria-label="decrease"
           >
-            <Settings2 size={15} />
-          </button>
-        </div>
-        <div className="mt-3 flex items-end justify-between">
-          <div>
-            <p className="text-3xl font-black text-primary">{formatDzd(estimatedPrice)} <span className="text-base">{t.dzd}</span></p>
-            <p className="text-xs text-muted-foreground">{t.payout}</p>
-          </div>
-          <div className="flex flex-col gap-1 text-end">
-            <span className="flex items-center justify-end gap-1 text-[11px] font-semibold text-emerald-600">
-              <ShieldCheck size={12} /> {t.cargoInsurance}
-            </span>
-            <span className="flex items-center justify-end gap-1 text-[11px] font-semibold text-[#FF7A00]">
-              <Clock size={12} /> 12-18 {t.min}
-            </span>
-          </div>
+            <Minus size={16} />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setWeight((w) => Math.min(500, w + 5))}
+            className="h-9 w-9 rounded-full"
+            aria-label="increase"
+          >
+            <Plus size={16} />
+          </Button>
         </div>
       </Card>
 
-      {/* Request button */}
+      {/* Notes */}
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">{t.notes}</label>
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder={t.notesPlaceholder}
+          className="resize-none"
+          rows={2}
+        />
+      </div>
+
+      {/* Estimate + actions */}
+      <Card className="flex items-center justify-between bg-muted/50 p-3.5">
+        <div className="flex items-center gap-2">
+          <Calculator size={18} className="text-primary" />
+          <p className="text-sm font-bold text-foreground">{t.estimate}</p>
+        </div>
+        <p className="text-lg font-black text-primary">
+          {formatDzd(estimatedPrice)} {t.dzd}
+        </p>
+      </Card>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="flex flex-col items-center gap-1 rounded-xl bg-muted/40 p-2">
+          <ShieldCheck size={16} className="text-primary" />
+          <p className="text-[10px] text-muted-foreground">{t.cargoInsurance ?? 'محمي'}</p>
+        </div>
+        <div className="flex flex-col items-center gap-1 rounded-xl bg-muted/40 p-2">
+          <Clock size={16} className="text-primary" />
+          <p className="text-[10px] text-muted-foreground">{t.estTime ?? 'تقدير'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPricingSheet(true)}
+          className="flex flex-col items-center gap-1 rounded-xl bg-muted/40 p-2"
+        >
+          <Settings2 size={16} className="text-primary" />
+          <p className="text-[10px] text-muted-foreground">{t.pricing}</p>
+        </button>
+      </div>
+
       <Button
         onClick={handleRequest}
-        disabled={submitting}
+        disabled={submitting || !pickupPoint || !dropoffPoint}
         size="lg"
         className="h-14 w-full rounded-2xl bg-primary text-base font-bold shadow-xl"
       >
@@ -300,38 +296,79 @@ export function CustomerHome() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Delivery point picker sheet (Phase 5) */}
+      <Sheet
+        open={pickerFor !== null}
+        onOpenChange={(open) => !open && setPickerFor(null)}
+      >
+        <SheetContent side={isRtl ? 'right' : 'left'} className="w-full max-w-md overflow-y-auto p-4">
+          <SheetHeader className="mb-3">
+            <SheetTitle>
+              {pickerFor === 'pickup' ? t.pickup : t.dropoff}
+            </SheetTitle>
+            <SheetDescription>
+              {isAr
+                ? 'اختر الحي ثم نقطة التسليم الدقيقة'
+                : 'Choisissez un quartier puis un point précis'}
+            </SheetDescription>
+          </SheetHeader>
+          <DeliveryPointPicker
+            areas={PICKER_AREAS}
+            points={PICKER_POINTS}
+            fallbackCoords={GUERRARA_CENTER as DeliveryCoords}
+            coordsForArea={COORDS_FOR_AREA}
+            isRtl={isRtl}
+            onSelect={(point, coords) => {
+              const enriched = { ...point, coords };
+              if (pickerFor === 'pickup') {
+                setPickupPoint(enriched);
+              } else if (pickerFor === 'dropoff') {
+                setDropoffPoint(enriched);
+              }
+              setPickerFor(null);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function LocationRow({
-  icon, label, value, options, onSelect, isRtl,
+function DeliveryLocationRow({
+  icon,
+  label,
+  value,
+  placeholder,
+  onPress,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
-  options: string[];
-  onSelect: (idx: number) => void;
-  isRtl: boolean;
+  placeholder: string;
+  onPress: () => void;
 }) {
+  const hasValue = value.length > 0;
   return (
-    <div className="flex items-center gap-3 p-3.5">
+    <button
+      type="button"
+      onClick={onPress}
+      className="flex w-full items-center gap-3 p-3.5 text-right transition hover:bg-muted/40"
+    >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">{icon}</div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 text-right">
         <p className="text-[11px] font-semibold text-muted-foreground">{label}</p>
-        <Select value={value} onValueChange={(v) => onSelect(options.indexOf(v))}>
-          <SelectTrigger className="h-8 border-0 p-0 text-sm font-bold text-foreground focus:ring-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((o) => (
-              <SelectItem key={o} value={o}>{o}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <p
+          className={cn(
+            'truncate text-sm font-bold',
+            hasValue ? 'text-foreground' : 'text-muted-foreground',
+          )}
+        >
+          {hasValue ? value : placeholder}
+        </p>
       </div>
-      <ChevronDown size={16} className={cn('text-muted-foreground', isRtl && 'rotate-180')} />
-    </div>
+      <span className="text-xs font-semibold text-primary">غيّر</span>
+    </button>
   );
 }
 

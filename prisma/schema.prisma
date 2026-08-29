@@ -199,3 +199,79 @@ model OtpCode {
 
   @@index([phone])
 }
+
+
+/// Geographic delivery taxonomy. Used by the new "neighbourhood + drop point"
+/// picker so that customers can pick a specific landmark (mosque, school,
+/// pharmacy, ...) inside one of the 41 neighbourhoods of El Guerrara. The
+/// enum is intentionally permissive (we accept mistypes like RESTAURANT or
+/// SHOP even though the seed only fills a subset) so that future admin
+/// edits do not require a migration.
+enum DeliveryPointType {
+  AREA
+  MOSQUE
+  SCHOOL
+  UNIVERSITY
+  HEALTH
+  PHARMACY
+  POST
+  ADMINISTRATION
+  POLICE
+  CIVIL_PROTECTION
+  MARKET
+  RESTAURANT
+  SHOP
+  FACTORY
+  ARTISANAL
+  CEMETERY
+  YOUTH_CENTER
+  TRANSPORT
+  OTHER
+}
+
+/// A neighbourhood (Íí) of El Guerrara. Slugs are unique and used by the
+/// admin UI to deep-link to a specific area. The relation to DeliveryPoint
+/// uses onDelete: Cascade so that dropping an area also drops its points.
+model DeliveryArea {
+  id        String          @id @default(cuid())
+  nameAr    String
+  nameFr    String?
+  slug      String          @unique
+  isActive  Boolean         @default(true)
+  sortOrder Int             @default(0)
+  points    DeliveryPoint[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+/// A specific delivery landmark inside a DeliveryArea. Latitude/longitude
+/// are nullable on purpose: the seed dataset only contains verified coords
+/// for a small subset, and we want the data layer to remain honest. When
+/// the picker returns a point without coords the UI falls back to
+/// GUERRARA_CENTER (32.7833, 3.7667) so that the order can still be priced
+/// and dispatched.
+model DeliveryPoint {
+  id        String            @id @default(cuid())
+  areaId    String
+  area      DeliveryArea      @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  nameAr    String
+  nameFr    String?
+  type      DeliveryPointType
+  latitude  Decimal?          @db.Decimal(10, 7)
+  longitude Decimal?          @db.Decimal(10, 7)
+  plusCode  String?
+  addressAr String?
+  addressFr String?
+  isVerified Boolean          @default(false)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([areaId])
+  @@index([isActive])
+  @@index([type])
+  @@index([latitude, longitude])
+}

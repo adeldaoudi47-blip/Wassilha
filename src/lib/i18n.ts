@@ -228,6 +228,11 @@ export const translations = {
     fetchError: 'تعذّر تحميل بيانات السائقين. حاول مرة أخرى.',
     noDriversOnline: 'لا يوجد سائقون متصلون الآن',
     noDriversHint: 'سيظهر السائقون هنا تلقائياً عند بدء رحلة نشطة.',
+    // Phase 5 — Delivery point picker (careem-style neighbourhood + landmark)
+    searchArea: '🔎 ابحث عن حي...',
+    searchPoint: '🔎 ابحث عن مسجد، مدرسة، صيدلية...',
+    chooseArea: 'اختر الحي أولاً',
+    choosePoint: 'اختر نقطة التسليم',
   },
   fr: {
     dir: 'ltr' as const,
@@ -456,6 +461,11 @@ export const translations = {
     fetchError: 'Impossible de charger les chauffeurs. Réessayez.',
     noDriversOnline: 'Aucun chauffeur en ligne pour le moment',
     noDriversHint: 'Les chauffeurs apparaîtront ici dès qu\u2019ils démarrent une course.',
+    // Phase 5 — Delivery point picker (careem-style neighbourhood + landmark)
+    searchArea: '🔎 Rechercher un quartier...',
+    searchPoint: '🔎 Rechercher une mosquée, école, pharmacie...',
+    chooseArea: 'Choisissez d\u2019abord un quartier',
+    choosePoint: 'Choisissez un point de livraison',
   },
 };
 
