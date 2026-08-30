@@ -35,6 +35,14 @@ function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
+      // Inline style as a JS-level safety net: even if Tailwind's
+      // `z-50` class is purged in some build, or the `[data-slot]`
+      // CSS rule fails to apply (e.g. the bundler emits the styles
+      // under a different selector), this inline `zIndex` ensures the
+      // overlay always sits at the top of the stacking context.
+      // `2147483647` is the max int32 — no DOM element can request a
+      // higher z-index and win.
+      style={{ zIndex: 2147483647 }}
       className={cn(
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
         className
@@ -57,6 +65,13 @@ function SheetContent({
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        // Inline `zIndex: 2147483647` — see SheetOverlay above. This is
+        // a JS-level safety net on top of the `[data-slot="sheet-content"]`
+        // rule in `globals.css` and any class-name passed by the parent
+        // (e.g. `z-[1100]` from `customer-home.tsx`). Whichever selector
+        // wins, the content panel always ends up at the very top of the
+        // stacking order on every WebView build.
+        style={{ zIndex: 2147483647 }}
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&

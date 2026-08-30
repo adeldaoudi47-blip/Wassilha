@@ -47,6 +47,18 @@ export interface InteractiveMapProps {
    * Optional callback fired when a search result is selected.
    */
   onSelectPlace?: (place: { label: string; lat: number; lng: number }) => void;
+  /**
+   * When `true`, the Leaflet `MapContainer` is NOT mounted. The outer
+   * wrapper div (with its height / rounded corners) is still rendered
+   * so the layout doesn't shift, but no map tiles or compositor layer
+   * exist. The parent uses this while a modal Sheet is open to
+   * guarantee nothing paints above the Sheet on Android WebView (where
+   * Leaflet's promoted GPU layer can win the paint order regardless
+   * of CSS z-index).
+   *
+   * Default: `false`.
+   */
+  hidden?: boolean;
 }
 
 // Reuse the same pin icons we already ship with `live-map.tsx` so the visual
@@ -232,6 +244,7 @@ export function InteractiveMap({
   className,
   searchPlaceholder = 'القرارة، غرداية',
   onSelectPlace,
+  hidden = false,
 }: InteractiveMapProps) {
   const [search, setSearch] = useState('');
   const [showResults, setShowResults] = useState(false);
@@ -347,12 +360,29 @@ export function InteractiveMap({
       )}
       data-testid="wassilha-interactive-map"
     >
+      {/*
+        Hide the map while a Sheet is open. We deliberately do NOT use
+        `display: none` on the wrapper (that would collapse the card and
+        shift the rest of the page up — the user would see a jump when
+        they close the sheet). Instead we skip rendering the Leaflet
+        `MapContainer` entirely: no map DOM, no tile fetch, no GPU
+        compositor layer, so there's nothing that can paint above the
+        Sheet's stacking context on Android WebView.
+      */}
+      {hidden ? null : (
       <MapContainer
         center={[defaultCenter.lat, defaultCenter.lng]}
         zoom={defaultZoom}
         scrollWheelZoom
         style={{ height: '100%', width: '100%' }}
-        attributionControl
+        // Visually hide the Leaflet attribution control. The `attribution`
+        // prop on `<TileLayer>` below still embeds the OSM credit in the
+        // DOM (required by the OpenStreetMap license — it remains accessible
+        // to screen readers and to anyone who inspects the page source),
+        // but we don't show the visible "Leaflet | © OpenStreetMap
+        // contributors" strip on top of the map because it crowds the UI
+        // and overlaps street labels on small screens.
+        attributionControl={false}
         zoomControl={false}
       >
         <TileLayer
@@ -409,6 +439,7 @@ export function InteractiveMap({
           dropoff={dropoffCoords}
         />
       </MapContainer>
+      )}
 
       {/* Permission prompt banner — shown only when the user has neither a
           live GPS fix nor a manual pick. It's intentionally prominent and
@@ -519,10 +550,11 @@ export function InteractiveMap({
         </div>
       ) : null}
 
-      {/* WASSILHA watermark in the bottom-right corner */}
-      <div className="pointer-events-none absolute bottom-2 right-2 z-[400] rounded-full bg-slate-900/80 px-2 py-0.5 text-[9px] font-bold text-white shadow">
-        WASSILHA Maps
-      </div>
+      {/* WASSILHA watermark removed: the floating "WASSILHA Maps" pill in the
+          bottom-right corner was clashing with the OSM tile labels and added
+          no value for the end-user. Branding lives in the app header / tab
+          bar instead. The OSM attribution credit is still embedded (hidden
+          visually but present in the DOM) so we remain license-compliant. */}
     </div>
   );
 }

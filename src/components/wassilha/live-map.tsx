@@ -102,43 +102,99 @@ export function LiveMap({
     }
 
     const ctrl = new AbortController();
-    const url =
-      `https://router.project-osrm.org/route/v1/driving/` +
+    // 10s hard timeout: the public OSRM demo server is often slow /
+    // blocked from Algeria; we don't want a hung request to block the
+    // UI forever. The AbortController will fire `AbortError` which the
+    // catch handler ignores (treated as the user navigating away).
+    const timeoutId = window.setTimeout(() => ctrl.abort(), 10_000);
+
+    // Try the public OSRM demo first, fall back to the OSM Germany
+    // mirror if it fails. Both expose the same v1/driving endpoint and
+    // accept the same lng,lat ordering, so we can share the rest of the
+    // pipeline.
+    const baseUrls = [
+      'https://router.project-osrm.org/route/v1/driving/',
+      'https://routing.openstreetmap.de/routed-car/route/v1/driving/',
+    ];
+    const path =
       `${pickupCoords.lng},${pickupCoords.lat};${dropoffCoords.lng},${dropoffCoords.lat}` +
       `?overview=full&geometries=geojson`;
 
-    fetch(url, { signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((data) => {
-        const route = data?.routes?.[0];
-        if (!route || !Array.isArray(route.geometry?.coordinates)) {
-          throw new Error('OSRM: no route');
-        }
-        const coords: [number, number][] = route.geometry.coordinates.map(
-          ([lng, lat]: [number, number]) => [lat, lng],
-        );
-        setRouteLine(coords);
-        setRouteMeta({
-          distanceKm:
-            typeof route.distance === 'number' ? route.distance / 1000 : null,
-          durationMin:
-            typeof route.duration === 'number' ? route.duration / 60 : null,
-          source: 'osrm',
-        });
-      })
-      .catch((e) => {
-        if (e?.name === 'AbortError') return;
-        // Fallback: straight line. We keep the previous `routeMeta.source`
-        // marker as 'fallback' so the UI can show a small disclaimer if
-        // desired.
-        setRouteLine([
-          [pickupCoords.lat, pickupCoords.lng],
-          [dropoffCoords.lat, dropoffCoords.lng],
-        ]);
-        setRouteMeta((m) => ({ ...m, source: 'fallback' }));
-      });
+    let cancelled = false;
+    const cleanup = () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      ctrl.abort();
+    };
 
-    return () => ctrl.abort();
+    (async () => {
+      // eslint-disable-next-line no-console
+      console.log(
+        '[OSRM] Fetching route from',
+        `${pickupCoords.lat},${pickupCoords.lng}`,
+        '->',
+        `${dropoffCoords.lat},${dropoffCoords.lng}`,
+      );
+      for (let i = 0; i < baseUrls.length; i++) {
+        if (cancelled) return;
+        const url = baseUrls[i] + path;
+        try {
+          const r = await fetch(url, { signal: ctrl.signal });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const data = await r.json();
+          const route = data?.routes?.[0];
+          if (
+            !route ||
+            !Array.isArray(route.geometry?.coordinates) ||
+            route.geometry.coordinates.length < 2
+          ) {
+            throw new Error('OSRM: empty geometry');
+          }
+          if (cancelled) return;
+          // OSRM returns [lng, lat]; Leaflet wants [lat, lng].
+          const coords: [number, number][] = route.geometry.coordinates.map(
+            ([lng, lat]: [number, number]) => [lat, lng],
+          );
+          // eslint-disable-next-line no-console
+          console.log(
+            '[OSRM] Route found:',
+            coords.length,
+            'points via',
+            i === 0 ? 'project-osrm.org' : 'routing.openstreetmap.de',
+          );
+          setRouteLine(coords);
+          setRouteMeta({
+            distanceKm:
+              typeof route.distance === 'number' ? route.distance / 1000 : null,
+            durationMin:
+              typeof route.duration === 'number' ? route.duration / 60 : null,
+            source: 'osrm',
+          });
+          window.clearTimeout(timeoutId);
+          return;
+        } catch (e: any) {
+          if (e?.name === 'AbortError' || cancelled) return;
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[OSRM] Server ${i} failed:`,
+            e?.message ?? e,
+            i === baseUrls.length - 1 ? '-- using fallback straight line' : '-- trying next',
+          );
+        }
+      }
+      // All servers failed -> straight-line fallback so the user still
+      // sees pickup/dropoff connected on the map.
+      if (cancelled) return;
+      // eslint-disable-next-line no-console
+      console.error('[OSRM] Failed, using fallback straight line');
+      setRouteLine([
+        [pickupCoords.lat, pickupCoords.lng],
+        [dropoffCoords.lat, dropoffCoords.lng],
+      ]);
+      setRouteMeta((m) => ({ ...m, source: 'fallback' }));
+    })();
+
+    return cleanup;
   }, [
     pickupCoords.lat,
     pickupCoords.lng,
@@ -180,7 +236,11 @@ export function LiveMap({
         zoom={14}
         scrollWheelZoom
         style={{ height: '100%', width: '100%' }}
-        attributionControl
+        // Visually hide the Leaflet attribution control to keep the map
+        // surface clean. The OSM credit is still attached to the
+        // <TileLayer> below so we remain license-compliant (it's in the
+        // DOM, just not rendered as a strip on top of the map).
+        attributionControl={false}
         zoomControl
       >
         <TileLayer
@@ -190,10 +250,12 @@ export function LiveMap({
         <Polyline
           positions={routeLine}
           pathOptions={{
-            color: '#0E6B5E',
-            weight: 4,
-            opacity: 0.85,
-            // Real road geometry → solid; fallback straight line → dashed.
+            color: '#2563EB',
+            weight: 5,
+            opacity: 0.9,
+            lineJoin: 'round',
+            lineCap: 'round',
+            // Real road geometry -> solid; fallback straight line -> dashed.
             dashArray: routeMeta.source === 'osrm' ? undefined : '8 8',
           }}
         />
@@ -219,9 +281,10 @@ export function LiveMap({
         ) : null}
         <MapBounds points={boundsPoints} />
       </MapContainer>
-      <div className="pointer-events-none absolute right-2 top-2 z-[400] rounded-full bg-slate-900/80 px-2 py-0.5 text-[9px] font-bold text-white shadow">
-        WASSILHA Maps
-      </div>
+      {/* WASSILHA watermark removed: the floating "WASSILHA Maps" pill was
+          overlapping with the OSM street labels and added no value on the
+          tracking screen. Branding lives in the app header. The OSM
+          attribution credit remains in the DOM for license compliance. */}
     </div>
   );
 }

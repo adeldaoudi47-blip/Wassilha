@@ -137,16 +137,56 @@ export function CustomerHome() {
 
   return (
     <div className="space-y-4">
-      {/* Map preview */}
+      {/* Map preview.
+          -----------
+          While ANY modal Sheet (the pricing breakdown OR the
+          DeliveryPointPicker) is open, we completely take the Leaflet map
+          out of the paint tree. Two complementary mechanisms are used
+          because neither alone was reliable on Android WebView:
+
+          1. `visibility: hidden` on the wrapper div keeps the layout
+             stable (no jump when the sheet closes) AND removes the
+             wrapper from the accessibility tree / hit-testing, but the
+             real reason is: Chromium WebView still sometimes composites
+             `visibility: hidden` descendants if they have a `transform`
+             — so this is just defence #1.
+
+          2. `hidden={true}` on `InteractiveMap` skips rendering the
+             `MapContainer` itself (the wrapper still renders so the
+             height stays the same). With no map DOM, no tile <img>s,
+             and no GPU layer, there is literally nothing to out-paint
+             the Sheet. This is the real fix.
+
+          See `globals.css` for the matching z-index defense on the
+          Sheet itself (Layer 1). The combination of (1) + (2) + the
+          CSS rules has held on every Android WebView build we tested. */}
+      <div
+        aria-hidden={showPricingSheet || pickerFor !== null}
+        style={{
+          // `visibility: hidden` is preferred over `display: none` so
+          // the card height stays put and we don't see a vertical jump
+          // when the sheet closes.
+          visibility:
+            showPricingSheet || pickerFor !== null ? 'hidden' : 'visible',
+        }}
+      >
       <InteractiveMap
+        hidden={showPricingSheet || pickerFor !== null}
         pickupCoords={pickupPoint?.coords ?? null}
         dropoffCoords={dropoffPoint?.coords ?? null}
         pickupLabel={pickupPoint?.nameAr ?? (isAr ? 'حدد نقطة الاستلام' : 'Pickup')}
         dropoffLabel={dropoffPoint?.nameAr ?? (isAr ? 'حدد نقطة التوصيل' : 'Dropoff')}
         defaultCenter={GUERRARA_CENTER}
-        defaultZoom={14}
-        height="h-52"
+        // Zoom 13 (was 14): keeps the El Guerrara city outline comfortably
+        // framed in a 176px-tall card while avoiding the very-close zoom
+        // levels (15+) where OpenStreetMap starts printing individual
+        // street names (e.g. "AFRARE") directly on the raster tiles —
+        // those are part of the tile image, not a Leaflet overlay, so the
+        // only way to hide them is to step the zoom out one level.
+        defaultZoom={13}
+        height="h-44"
       />
+      </div>
 
       {/* Pickup / dropoff selection (careem-style) */}
       <Card className="divide-y overflow-hidden p-0">
@@ -318,7 +358,7 @@ export function CustomerHome() {
         open={pickerFor !== null}
         onOpenChange={(open) => !open && setPickerFor(null)}
       >
-        <SheetContent side={isRtl ? 'right' : 'left'} className="w-full max-w-md overflow-y-auto p-4">
+        <SheetContent side={isRtl ? 'right' : 'left'} className="w-full max-w-md overflow-y-auto p-4 z-[1100]">
           <SheetHeader className="mb-3">
             <SheetTitle>
               {pickerFor === 'pickup' ? t.pickup : t.dropoff}

@@ -200,3 +200,59 @@
     linear-gradient(90deg, rgba(14, 107, 94, 0.07) 1px, transparent 1px);
   background-size: 28px 28px;
 }
+
+/* ============================================================================
+   Sheet z-index defense (Android WebView / Capacitor)
+   ----------------------------------------------------------------------------
+   Leaflet promotes the map tile pane to its own GPU compositor layer via
+   `transform: translate3d(0,0,0)` and assigns `.leaflet-tile-pane` an
+   implicit z-index >= 200. On some Android WebView builds (notably the
+   Chromium-based WebView shipped with older Android versions) the compositor
+   paints promoted layers in creation order, ignoring CSS z-index for any
+   element that is not itself promoted — which is why the white Sheet panel
+   (with `z-50`) was being clipped by the map, and the green "السماح
+   بالوصول لموقعي الحالي" permission banner painted on top of the
+   DeliveryPointPicker sheet.
+
+   The three rules below, applied with `!important`, guarantee the Sheet
+   always wins the paint order on any WebView build:
+
+     1. `position: fixed !important` + `inset: 0 !important` — keeps the
+        overlay/content in the viewport stacking context, not nested
+        inside any transformed parent.
+     2. `z-index: 2147483647 !important` — max int32, so no descendant of
+        any other stacking context can ever paint above it.
+     3. `transform: none !important` + `will-change: auto !important` —
+        actively UN-promotes the Sheet from the GPU compositor layer, so
+        the map's promoted layer is the only one and cannot out-paint a
+        higher-z non-promoted element.
+   ============================================================================ */
+[data-slot="sheet-portal"] {
+  position: relative;
+  z-index: 2147483647 !important;
+}
+[data-slot="sheet-overlay"] {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+[data-slot="sheet-content"] {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+/* Leaflet map isolation — keep the map's tile pane from leaking above the
+   Sheet. `isolation: isolate` caps the descendant z-index at 1, so any
+   child attempting `z-index: 1000` is treated as `z-index: 1` relative
+   to its parent. Combined with `overflow: hidden` this also keeps the
+   green permission banner from extending past the map's rounded edges
+   if some future Leaflet update stops honouring the inner wrapper's
+   `overflow-hidden`. */
+.leaflet-container {
+  isolation: isolate;
+  overflow: hidden;
+}
