@@ -1,9 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet';
+import type { LatLng } from 'leaflet';
 import L from 'leaflet';
-import { Crosshair, MapPin, Search, X } from 'lucide-react';
+import { Crosshair, MapPin, Navigation, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GUERRARA_CENTER, GUERRARA_COORDS, GUERRARA_LOCATIONS } from '@/lib/wassilha-data';
 
@@ -66,6 +74,14 @@ const USER_LOCATION_HTML =
   '<div style="position:relative;width:14px;height:14px;border-radius:50%;background:#0E6B5E;border:2.5px solid #fff;box-sizing:border-box;"></div>' +
   '</div>';
 
+// Slightly larger variant of the user dot so it's easy to see when the user
+// has set their location by tapping the map (no GPS halo to avoid confusion
+// with the live GPS marker).
+const MANUAL_LOCATION_HTML =
+  '<div style="position:relative;width:22px;height:22px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 4px rgba(14,107,94,0.55));">' +
+  '<div style="position:relative;width:18px;height:18px;border-radius:50%;background:#0E6B5E;border:3px solid #fff;box-sizing:border-box;"></div>' +
+  '</div>';
+
 function useLeafletIcons() {
   // Lazily construct icons on the client. `useState` initialiser runs only
   // on the client (because the component is hydrated after the static HTML
@@ -74,6 +90,7 @@ function useLeafletIcons() {
     dropoff: L.Icon;
     pickup: L.DivIcon;
     user: L.DivIcon;
+    manual: L.DivIcon;
   } | null>(null);
 
   useEffect(() => {
@@ -101,6 +118,12 @@ function useLeafletIcons() {
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       }),
+      manual: L.divIcon({
+        className: 'wassilha-manual-location',
+        html: MANUAL_LOCATION_HTML,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      }),
     });
   }, [icons]);
 
@@ -115,11 +138,13 @@ function useLeafletIcons() {
 function MapController({
   flyTo,
   userLocation,
+  manualLocation,
   pickup,
   dropoff,
 }: {
   flyTo: { lat: number; lng: number; zoom?: number } | null;
   userLocation: { lat: number; lng: number } | null;
+  manualLocation: { lat: number; lng: number } | null;
   pickup: { lat: number; lng: number } | null;
   dropoff: { lat: number; lng: number } | null;
 }) {
@@ -132,17 +157,26 @@ function MapController({
       easeLinearity: 0.25,
     });
   }, [flyTo, map]);
-  // Fly to user location the first time we get a fix.
-  const lastUserLoc = useRef<{ lat: number; lng: number } | null>(null);
+  // Fly to the user's location the first time we get *any* fix. Priority is
+  // live GPS (`userLocation`) over manual pick (`manualLocation`) so a fresh
+  // GPS update always wins over a stale tap. We use a single ref that stores
+  // the last lat/lng we flew to regardless of which source produced it.
+  const lastFlownLoc = useRef<{ lat: number; lng: number } | null>(null);
   useEffect(() => {
-    if (!userLocation) return;
-    if (lastUserLoc.current) return; // Only auto-fly on first fix
-    lastUserLoc.current = userLocation;
-    map.flyTo([userLocation.lat, userLocation.lng], 15, {
+    const target = userLocation ?? manualLocation;
+    if (!target) return;
+    if (lastFlownLoc.current) {
+      const last = lastFlownLoc.current;
+      if (Math.abs(last.lat - target.lat) < 1e-5 && Math.abs(last.lng - target.lng) < 1e-5) {
+        return; // Already centred on this exact point
+      }
+    }
+    lastFlownLoc.current = target;
+    map.flyTo([target.lat, target.lng], 15, {
       duration: 0.8,
       easeLinearity: 0.25,
     });
-  }, [userLocation, map]);
+  }, [userLocation, manualLocation, map]);
   // Fit bounds when pickup/dropoff both change.
   const lastFitKey = useRef<string>('');
   useEffect(() => {
@@ -156,6 +190,20 @@ function MapController({
     ]);
     map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
   }, [pickup, dropoff, map]);
+  return null;
+}
+
+/**
+ * Internal helper that captures clicks anywhere on the map and forwards the
+ * LatLng up to the parent via the supplied callback. Used to let the user
+ * pick their location manually as a fallback when GPS permission is denied.
+ */
+function MapClickHandler({ onClick }: { onClick: (latlng: LatLng) => void }) {
+  useMapEvents({
+    click(e) {
+      onClick(e.latlng);
+    },
+  });
   return null;
 }
 
@@ -193,8 +241,22 @@ export function InteractiveMap({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
+  // When the user explicitly denies/can't grant location, we offer a manual
+  // fallback: tapping the map sets this. Display order is `userLocation` →
+  // `manualLocation` (a live GPS fix always wins over a stale manual pick).
+  const [manualLocation, setManualLocation] = useState<{ lat: number; lng: number } | null>(
+    null,
+  );
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
+  // Lightweight success toast when the user picks a location by tapping the
+  // map. Lives in a separate slot from `locateError` so the two colours
+  // (rose vs. teal) don't fight each other.
+  const [manualToast, setManualToast] = useState<string | null>(null);
+  // When the user has successfully set *some* location (GPS or manual) we
+  // stop nagging them with the permission prompt. Resetting happens
+  // implicitly when they tap the GPS button again.
+  const [hasAnyLocation, setHasAnyLocation] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   // Leaflet icons are constructed lazily on the client to avoid touching
@@ -220,31 +282,54 @@ export function InteractiveMap({
 
   const handleLocateMe = () => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
-      setLocateError('GPS غير متاح');
-      window.setTimeout(() => setLocateError(null), 2500);
+      setLocateError('GPS غير متاح — انقر على الخريطة لتحديد موقعك يدوياً');
+      window.setTimeout(() => setLocateError(null), 3500);
       return;
     }
     setLocating(true);
     setLocateError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setUserLocation(coords);
-        setLocating(false);
-      },
-      (err) => {
-        setLocating(false);
-        const msg =
-          err.code === err.PERMISSION_DENIED
-            ? 'تم رفض إذن الموقع'
-            : err.code === err.POSITION_UNAVAILABLE
-              ? 'الموقع غير متاح'
-              : 'تعذر تحديد الموقع';
-        setLocateError(msg);
-        window.setTimeout(() => setLocateError(null), 2500);
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
-    );
+    // Some embedded WebViews (notably older Android WebViews when the
+    // platform location service is disabled) throw synchronously instead of
+    // calling the error callback. Wrap the call so we still surface a clear
+    // message rather than crashing the component.
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUserLocation(coords);
+          setHasAnyLocation(true);
+          setLocating(false);
+        },
+        (err) => {
+          setLocating(false);
+          // Provide actionable copy in every case. The user can still tap
+          // the map to pick a location manually if GPS refuses.
+          const msg =
+            err.code === err.PERMISSION_DENIED
+              ? 'تم رفض إذن الموقع — انقر على الخريطة لتحديد موقعك'
+              : err.code === err.POSITION_UNAVAILABLE
+                ? 'الموقع غير متاح — شغّل GPS أو انقر على الخريطة'
+                : 'تعذر تحديد الموقع — انقر على الخريطة للمحاولة يدوياً';
+          setLocateError(msg);
+          window.setTimeout(() => setLocateError(null), 3500);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
+    } catch {
+      setLocating(false);
+      setLocateError('خدمة الموقع غير متوفرة — انقر على الخريطة لتحديد موقعك');
+      window.setTimeout(() => setLocateError(null), 3500);
+    }
+  };
+
+  const handleMapClick = (latlng: LatLng) => {
+    const coords = { lat: latlng.lat, lng: latlng.lng };
+    setManualLocation(coords);
+    setHasAnyLocation(true);
+    // Reset any lingering GPS error toast — the user found a workaround.
+    setLocateError(null);
+    setManualToast('تم تحديد موقعك يدوياً');
+    window.setTimeout(() => setManualToast(null), 2500);
   };
 
   const clearSearch = () => {
@@ -304,13 +389,50 @@ export function InteractiveMap({
             <Popup>موقعي الحالي</Popup>
           </Marker>
         ) : null}
+        {/* Manual pin: shown only when the user picked a spot on the map and
+            we don't already have a live GPS fix. The marker uses a slightly
+            different dot (no pulse) so the two states are visually distinct. */}
+        {!userLocation && manualLocation && icons ? (
+          <Marker
+            position={[manualLocation.lat, manualLocation.lng]}
+            icon={icons.manual}
+          >
+            <Popup>موقعك المحدد يدوياً</Popup>
+          </Marker>
+        ) : null}
+        <MapClickHandler onClick={handleMapClick} />
         <MapController
           flyTo={flyTo}
           userLocation={userLocation}
+          manualLocation={manualLocation}
           pickup={pickupCoords}
           dropoff={dropoffCoords}
         />
       </MapContainer>
+
+      {/* Permission prompt banner — shown only when the user has neither a
+          live GPS fix nor a manual pick. It's intentionally prominent and
+          tappable: pressing it triggers the native browser permission
+          dialog, and (if granted) immediately asks `getCurrentPosition` for
+          a fix. If the user denies, the same banner stays up but the
+          in-app error toast will tell them they can tap the map instead. */}
+      {!hasAnyLocation ? (
+        <button
+          type="button"
+          onClick={handleLocateMe}
+          disabled={locating}
+          data-testid="wassilha-permission-button"
+          className={cn(
+            'pointer-events-auto absolute inset-x-0 top-0 z-[550] flex items-center justify-center gap-2 border-b border-emerald-600/30 bg-emerald-600/95 px-3 py-2 text-xs font-bold text-white shadow-md backdrop-blur transition active:scale-[0.99] hover:bg-emerald-600',
+            'dark:bg-emerald-500/95 dark:border-emerald-300/30',
+            locating && 'animate-pulse opacity-90',
+          )}
+          aria-label="allow-location"
+        >
+          <Navigation size={14} className={locating ? 'animate-spin' : ''} />
+          <span>السماح بالوصول لموقعي الحالي</span>
+        </button>
+      ) : null}
 
       {/* Top overlay: search bar (right) + GPS button (left) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[500] flex items-center justify-between gap-2 p-2.5">
@@ -383,6 +505,16 @@ export function InteractiveMap({
         <div className="pointer-events-none absolute inset-x-0 top-14 z-[500] flex justify-center">
           <div className="rounded-full bg-rose-600/95 px-3 py-1 text-[10px] font-bold text-white shadow-lg">
             {locateError}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Manual-pick success toast (in-map). Distinct teal colour so the
+          user knows their tap was registered. */}
+      {manualToast ? (
+        <div className="pointer-events-none absolute inset-x-0 top-14 z-[500] flex justify-center">
+          <div className="rounded-full bg-emerald-600/95 px-3 py-1 text-[10px] font-bold text-white shadow-lg">
+            {manualToast}
           </div>
         </div>
       ) : null}
