@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
   MapPin, Flag, Settings2, Check,
@@ -13,7 +14,18 @@ import {
 } from '@/lib/wassilha-data';
 import { emitOrderCreated } from '@/lib/realtime';
 import { useNavStore } from '@/lib/store';
-import { GuerraraMap } from '../guerrara-map';
+// InteractiveMap is dynamically imported with ssr:false because Leaflet
+// touches `window` at module init. The bundled component is loaded only
+// on the client; during SSR a lightweight placeholder div is rendered.
+const InteractiveMap = dynamic(
+  () => import('../interactive-map').then((m) => m.InteractiveMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-52 w-full animate-pulse rounded-2xl border border-border bg-emerald-50/40 dark:bg-emerald-950/20" />
+    ),
+  },
+);
 import { CargoIcon } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -126,9 +138,13 @@ export function CustomerHome() {
   return (
     <div className="space-y-4">
       {/* Map preview */}
-      <GuerraraMap
-        pickupLabel={pickupPoint?.nameAr ?? (isAr ? 'حدد نقطة الاستلام' : 'Choisir pickup')}
-        dropoffLabel={dropoffPoint?.nameAr ?? (isAr ? 'حدد نقطة التوصيل' : 'Choisir dropoff')}
+      <InteractiveMap
+        pickupCoords={pickupPoint?.coords ?? null}
+        dropoffCoords={dropoffPoint?.coords ?? null}
+        pickupLabel={pickupPoint?.nameAr ?? (isAr ? 'حدد نقطة الاستلام' : 'Pickup')}
+        dropoffLabel={dropoffPoint?.nameAr ?? (isAr ? 'حدد نقطة التوصيل' : 'Dropoff')}
+        defaultCenter={GUERRARA_CENTER}
+        defaultZoom={14}
         height="h-52"
       />
 
