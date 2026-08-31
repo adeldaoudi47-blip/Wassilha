@@ -34,6 +34,7 @@ model User {
   ratingsRecv  Rating[]  @relation("Ratee")
   driver       Driver?
   sessions     Session[]
+  pushTokens   PushToken[]
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
@@ -287,4 +288,21 @@ model DeliveryPoint {
   @@index([isActive])
   @@index([type])
   @@index([latitude, longitude])
+}
+/// FCM (Firebase Cloud Messaging) push token bound to a single device of a user.
+/// One row per (user, device). On reinstall / re-login the same token may
+/// appear under a different user — the UNIQUE constraint on `token` guarantees
+/// a single owner, and re-registering from the new account simply reassigns
+/// the row (we update userId + updatedAt on the existing record instead of
+/// creating a duplicate).
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String   // 'android' | 'ios' | 'web'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }

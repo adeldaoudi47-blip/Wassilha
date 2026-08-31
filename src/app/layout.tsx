@@ -7,6 +7,7 @@ import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { PushPermissionBootstrap } from "@/components/wassilha/push-permission-bootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -84,6 +85,10 @@ export default function RootLayout({
             Its display component was never mounted, so every toast was invisible. */}
         <SonnerToaster position="top-center" richColors closeButton />
         <Toaster />
+        {/* FCM bootstrap: wires up push listeners and, once the user is
+            signed in, requests notification permission + registers the
+            device token with our backend. No-op on the web. */}
+        <PushPermissionBootstrap />
       </body>
     </html>
   );

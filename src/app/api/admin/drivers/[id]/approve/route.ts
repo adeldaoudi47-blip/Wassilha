@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
+import { sendPushNotification } from '@/lib/firebase-admin';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -49,6 +50,16 @@ export async function PATCH(_req, { params }) {
       });
       return driverRow;
     });
+    // Best-effort push notification to the newly-approved driver. Runs
+    // fire-and-forget (sendPushNotification is itself non-throwing) and
+    // never affects the HTTP response — if FCM is not configured or fails,
+    // the driver is still approved in the database.
+    void sendPushNotification(
+      updated.userId,
+      'Application Approved · تمت الموافقة على طلبك',
+      'مرحباً بك في وَصِّلها! يمكنك الآن تسجيل الدخول والبدء في استقبال الطلبات.',
+      { type: 'driver_approved', driverId: updated.id }
+    );
     return NextResponse.json(toDriverProfile(updated));
   } catch (e) {
     console.error('[WASSILHA APPROVE-DRIVER] Server error:', e);
