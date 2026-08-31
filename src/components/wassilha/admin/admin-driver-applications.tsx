@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useT } from '../use-t';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { ListSkeleton } from '../skeleton';
 
 type VehicleRegistration = {
   id: string;
@@ -81,8 +82,17 @@ export function AdminDriverApplications() {
 
   if (loading && apps.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="flex items-center gap-1.5 text-lg font-black text-foreground">
+            <ShieldCheck size={18} className="text-amber-600" />
+            {t.driverApplications}
+          </h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+            {t.loading}
+          </span>
+        </div>
+        <ListSkeleton count={3} />
       </div>
     );
   }

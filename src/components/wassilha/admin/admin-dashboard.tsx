@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useNavStore } from '@/lib/store';
 import type { AdminStats } from '@/lib/types';
+import { KpiSkeletonGrid, Skeleton } from '../skeleton';
 
 const PIE_COLORS = ['#0E6B5E', '#FF7A00', '#0EA5E9', '#8B5CF6', '#10B981', '#EC4899', '#F59E0B', '#64748B'];
 const STATUS_COLORS: Record<string, string> = {
@@ -47,7 +48,30 @@ export function AdminDashboard() {
   }, []);
 
   if (loading || !stats) {
-    return <div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-lg font-black text-foreground">{t.dashboard}</h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+            {t.loading}
+          </span>
+        </div>
+        <KpiSkeletonGrid />
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              aria-hidden
+              className="rounded-2xl border border-border bg-card p-2.5"
+            >
+              <Skeleton className="mx-auto h-3.5 w-3.5 rounded-full" />
+              <Skeleton className="mx-auto mt-1.5 h-4 w-10" />
+              <Skeleton className="mx-auto mt-1 h-2 w-14" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

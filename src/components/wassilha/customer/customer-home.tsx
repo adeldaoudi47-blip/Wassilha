@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
-  Settings2, Check,
+  Settings2, Check, Loader2, Crosshair, Navigation, MapPin,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -83,6 +83,12 @@ export function CustomerHome() {
   const [submitting, setSubmitting] = useState(false);
   const [showPricingSheet, setShowPricingSheet] = useState(false);
   const [pickerFor, setPickerFor] = useState<'pickup' | 'dropoff' | null>(null);
+  // "Use my location" state — when non-null, the InteractiveMap renders
+  // a pickup marker at these coordinates. The `locating` flag drives the
+  // spinner on the GPS button.
+  const [userLocation, setUserLocation] =
+    useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     api.getPricing().then(setPricing).catch(() => toast.error(isAr ? 'تعذر تحميل التسعير' : 'Tarifs indisponibles'));
@@ -126,6 +132,89 @@ export function CustomerHome() {
     }
   };
 
+  // "Use my location" — fetches GPS coords via the browser Geolocation API,
+  // reverse-geocodes them with Nominatim (OpenStreetMap) to a human-readable
+  // address, then populates the pickup field and drops a marker on the map.
+  //
+  // Privacy: nothing is sent to a third-party server until the user taps
+  // the button. Nominatim's usage policy allows ~1 req/sec, which is fine
+  // for a one-shot user action.
+  const handleUseMyLocation = () => {
+    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+      toast.error(t.locationUnavailable);
+      return;
+    }
+    if (locating) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        // Reverse-geocode to a human-readable address. We try Arabic first
+        // (since the app's primary locale is AR) and fall back to the
+        // default locale string if Nominatim doesn't return an Arabic
+        // display name. If the network call fails entirely we still set
+        // the marker + a coords string so the user can see *something*
+        // on the map and adjust manually.
+        try {
+          const url =
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2` +
+            `&lat=${latitude}&lon=${longitude}` +
+            `&accept-language=${isAr ? 'ar' : 'fr'}`;
+          const res = await fetch(url, {
+            headers: { 'Accept': 'application/json' },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const label: string | undefined = data?.display_name;
+            if (label) {
+              setPickupText(label);
+              toast.success(t.locationFound);
+            } else {
+              setPickupText(
+                isAr
+                  ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+                  : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+              );
+              toast.info(t.locationAddressNotFound);
+            }
+          } else {
+            setPickupText(
+              `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+            );
+            toast.info(t.locationAddressNotFound);
+          }
+        } catch {
+          // Network error — coords are still set, marker still drops, but
+          // the user sees a soft warning and can type the address manually.
+          setPickupText(
+            `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+          );
+          toast.info(t.locationAddressNotFound);
+        } finally {
+          setLocating(false);
+        }
+      },
+      (err) => {
+        setLocating(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          toast.error(t.locationDenied);
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          toast.error(t.locationUnavailable);
+        } else if (err.code === err.TIMEOUT) {
+          toast.error(t.locationTimeout);
+        } else {
+          toast.error(t.locationUnavailable);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      },
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Map preview.
@@ -163,7 +252,7 @@ export function CustomerHome() {
       >
       <InteractiveMap
         hidden={showPricingSheet || pickerFor !== null}
-        pickupCoords={null}
+        pickupCoords={userLocation}
         dropoffCoords={null}
         pickupLabel={pickupText || (isAr ? 'عنوان الاستلام' : 'Pickup')}
         dropoffLabel={dropoffText || (isAr ? 'عنوان التوصيل' : 'Dropoff')}
@@ -180,6 +269,36 @@ export function CustomerHome() {
       </div>
 
       {/* Pickup / dropoff selection (careem-style) */}
+      {/* "Use my location" button — sits directly above the pickup row
+          so the affordance is obvious. When tapped, fills the pickup
+          field via GPS + reverse-geocoding and drops a marker. */}
+      <button
+        type="button"
+        onClick={handleUseMyLocation}
+        disabled={locating}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-start transition',
+          'hover:bg-primary/10 active:scale-[0.99]',
+          'disabled:cursor-not-allowed disabled:opacity-70',
+        )}
+        aria-label={t.useMyLocation}
+      >
+        <span className="flex items-center gap-2 text-xs font-bold text-primary">
+          {locating ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Crosshair size={14} />
+          )}
+          <Navigation size={12} className="opacity-60" />
+          {locating ? t.locating : t.useMyLocation}
+        </span>
+        {userLocation && !locating ? (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <MapPin size={10} />
+            {userLocation.lat.toFixed(3)}, {userLocation.lng.toFixed(3)}
+          </span>
+        ) : null}
+      </button>
       <Card className="divide-y overflow-hidden p-0">
         <DeliveryLocationInput
           label={t.pickup}

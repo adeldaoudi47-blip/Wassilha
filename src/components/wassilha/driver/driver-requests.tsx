@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { formatDzd } from '@/lib/wassilha-data';
 import type { DriverProfile, Order } from '@/lib/types';
+import { ListSkeleton, Skeleton } from '../skeleton';
 
 export function DriverRequests() {
   const { t, isAr } = useT();
@@ -111,7 +112,23 @@ export function DriverRequests() {
   };
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
+    return (
+      <div className="space-y-3">
+        {/* Online toggle skeleton */}
+        <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-3">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-2 w-24" />
+            </div>
+          </div>
+          <Skeleton className="h-5 w-10 rounded-full" />
+        </div>
+        {/* Incoming requests skeleton (3 cards) */}
+        <ListSkeleton count={3} />
+      </div>
+    );
   }
 
   const online = profile?.isOnline ?? false;
