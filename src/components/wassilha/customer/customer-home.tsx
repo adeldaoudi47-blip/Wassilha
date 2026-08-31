@@ -4,15 +4,16 @@ import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
-  MapPin, Flag, Settings2, Check,
+  Settings2, Check,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
-  CARGO_TYPES, GUERRARA_CENTER, haversineKm, calcPrice, formatDzd,
+  CARGO_TYPES, GUERRARA_CENTER, calcPrice, formatDzd,
 } from '@/lib/wassilha-data';
 import { emitOrderCreated } from '@/lib/realtime';
+import type { DeliveryAreaOption, DeliveryPointOption, DeliveryCoords } from '../delivery-point-picker';
 import { useNavStore } from '@/lib/store';
 // InteractiveMap is dynamically imported with ssr:false because Leaflet
 // touches `window` at module init. The bundled component is loaded only
@@ -29,21 +30,15 @@ const InteractiveMap = dynamic(
 import { CargoIcon } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { CargoKey, PricingConfig } from '@/lib/types';
-import {
-  DeliveryPointPicker,
-  type DeliveryAreaOption,
-  type DeliveryPointOption,
-  type DeliveryCoords,
-} from '../delivery-point-picker';
+import { DeliveryPointPicker } from '../delivery-point-picker';
 import { deliveryAreas, deliveryPoints } from '@/lib/delivery-data';
-
-type PickDropoffPoint = DeliveryPointOption & { coords: DeliveryCoords };
 
 // Pre-bake the picker data: the local const arrays are tuples, the picker
 // wants a richer shape (id, nameAr, nameFr, type, areaId). Slugs become
@@ -81,8 +76,8 @@ export function CustomerHome() {
 
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   const [selectedCargo, setSelectedCargo] = useState<CargoKey>('parcel');
-  const [pickupPoint, setPickupPoint] = useState<PickDropoffPoint | null>(null);
-  const [dropoffPoint, setDropoffPoint] = useState<PickDropoffPoint | null>(null);
+  const [pickupText, setPickupText] = useState('');
+  const [dropoffText, setDropoffText] = useState('');
   const [weight, setWeight] = useState(20);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -93,10 +88,8 @@ export function CustomerHome() {
     api.getPricing().then(setPricing).catch(() => toast.error(isAr ? 'تعذر تحميل التسعير' : 'Tarifs indisponibles'));
   }, [isAr]);
 
-  const distance = useMemo(() => {
-    if (!pickupPoint || !dropoffPoint) return 0.8;
-    return Math.max(0.8, haversineKm(pickupPoint.coords, dropoffPoint.coords));
-  }, [pickupPoint, dropoffPoint]);
+  // Free-text inputs have no coords, so distance falls back to the default.
+  const distance = useMemo(() => 0.8, []);
 
   const estimatedPrice = useMemo(() => {
     if (!pricing) return 0;
@@ -105,24 +98,22 @@ export function CustomerHome() {
   }, [pricing, selectedCargo, distance]);
 
   const handleRequest = async () => {
-    if (!pickupPoint || !dropoffPoint) {
-      toast.error(isAr ? 'اختر نقطة الاستلام ونقطة التوصيل' : 'Choisissez les deux points');
+    const pickupTrimmed = pickupText.trim();
+    const dropoffTrimmed = dropoffText.trim();
+    if (!pickupTrimmed || !dropoffTrimmed) {
+      toast.error(isAr ? 'أدخل عنوان الاستلام وعنوان التوصيل' : 'Saisissez les deux adresses');
       return;
     }
     setSubmitting(true);
     try {
       const order = await api.createOrder({
         cargoType: selectedCargo,
-        pickup: pickupPoint.nameAr,
-        dropoff: dropoffPoint.nameAr,
+        pickup: pickupTrimmed,
+        dropoff: dropoffTrimmed,
         weight,
         distance,
         price: estimatedPrice,
         notes: notes || undefined,
-        pickupLat: pickupPoint.coords.lat,
-        pickupLng: pickupPoint.coords.lng,
-        dropoffLat: dropoffPoint.coords.lat,
-        dropoffLng: dropoffPoint.coords.lng,
       });
       emitOrderCreated(order);
       setActiveOrderId(order.id);
@@ -172,10 +163,10 @@ export function CustomerHome() {
       >
       <InteractiveMap
         hidden={showPricingSheet || pickerFor !== null}
-        pickupCoords={pickupPoint?.coords ?? null}
-        dropoffCoords={dropoffPoint?.coords ?? null}
-        pickupLabel={pickupPoint?.nameAr ?? (isAr ? 'حدد نقطة الاستلام' : 'Pickup')}
-        dropoffLabel={dropoffPoint?.nameAr ?? (isAr ? 'حدد نقطة التوصيل' : 'Dropoff')}
+        pickupCoords={null}
+        dropoffCoords={null}
+        pickupLabel={pickupText || (isAr ? 'عنوان الاستلام' : 'Pickup')}
+        dropoffLabel={dropoffText || (isAr ? 'عنوان التوصيل' : 'Dropoff')}
         defaultCenter={GUERRARA_CENTER}
         // Zoom 13 (was 14): keeps the El Guerrara city outline comfortably
         // framed in a 176px-tall card while avoiding the very-close zoom
@@ -190,19 +181,23 @@ export function CustomerHome() {
 
       {/* Pickup / dropoff selection (careem-style) */}
       <Card className="divide-y overflow-hidden p-0">
-        <DeliveryLocationRow
-          icon={<MapPin size={16} className="text-primary" />}
+        <DeliveryLocationInput
           label={t.pickup}
-          value={pickupPoint?.nameAr ?? ''}
-          placeholder={isAr ? 'اختر نقطة الاستلام' : 'Choisir un point de ramassage'}
-          onPress={() => setPickerFor('pickup')}
+          value={pickupText}
+          onChange={setPickupText}
+          placeholder={t.pickupPlaceholder}
+          accentClass="text-primary"
+          isAr={isAr}
+          onOpenPicker={() => setPickerFor('pickup')}
         />
-        <DeliveryLocationRow
-          icon={<Flag size={16} className="text-[#FF7A00]" />}
+        <DeliveryLocationInput
           label={t.dropoff}
-          value={dropoffPoint?.nameAr ?? ''}
-          placeholder={isAr ? 'اختر نقطة التوصيل' : 'Choisir un point de livraison'}
-          onPress={() => setPickerFor('dropoff')}
+          value={dropoffText}
+          onChange={setDropoffText}
+          placeholder={t.dropoffPlaceholder}
+          accentClass="text-[#FF7A00]"
+          isAr={isAr}
+          onOpenPicker={() => setPickerFor('dropoff')}
         />
       </Card>
 
@@ -308,7 +303,7 @@ export function CustomerHome() {
 
       <Button
         onClick={handleRequest}
-        disabled={submitting || !pickupPoint || !dropoffPoint}
+        disabled={submitting || !pickupText.trim() || !dropoffText.trim()}
         size="lg"
         className="h-14 w-full rounded-2xl bg-primary text-base font-bold shadow-xl"
       >
@@ -375,12 +370,12 @@ export function CustomerHome() {
             fallbackCoords={GUERRARA_CENTER as DeliveryCoords}
             coordsForArea={COORDS_FOR_AREA}
             isRtl={isRtl}
-            onSelect={(point, coords) => {
-              const enriched = { ...point, coords };
+            onSelect={(point) => {
+              const label = isAr ? point.nameAr : (point.nameFr ?? point.nameAr);
               if (pickerFor === 'pickup') {
-                setPickupPoint(enriched);
+                setPickupText(label);
               } else if (pickerFor === 'dropoff') {
-                setDropoffPoint(enriched);
+                setDropoffText(label);
               }
               setPickerFor(null);
             }}
@@ -391,40 +386,52 @@ export function CustomerHome() {
   );
 }
 
-function DeliveryLocationRow({
-  icon,
+function DeliveryLocationInput({
   label,
   value,
+  onChange,
   placeholder,
-  onPress,
+  accentClass,
+  isAr,
+  onOpenPicker,
 }: {
-  icon: React.ReactNode;
   label: string;
   value: string;
+  onChange: (v: string) => void;
   placeholder: string;
-  onPress: () => void;
+  accentClass: string;
+  isAr: boolean;
+  onOpenPicker: () => void;
 }) {
-  const hasValue = value.length > 0;
+  // Free-text input with an inline fallback button that re-opens the
+  // DeliveryPointPicker sheet. The picker still works as a quick way to
+  // pick a known delivery point; whatever it returns is dropped into
+  // the same text field (localized: Arabic in AR locale, French in FR).
+  const hasValue = value.trim().length > 0;
   return (
-    <button
-      type="button"
-      onClick={onPress}
-      className="flex w-full items-center gap-3 p-3.5 text-right transition hover:bg-muted/40"
-    >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">{icon}</div>
-      <div className="min-w-0 flex-1 text-right">
-        <p className="text-[11px] font-semibold text-muted-foreground">{label}</p>
-        <p
-          className={cn(
-            'truncate text-sm font-bold',
-            hasValue ? 'text-foreground' : 'text-muted-foreground',
-          )}
-        >
-          {hasValue ? value : placeholder}
-        </p>
+    <div className="flex items-center gap-3 p-3.5">
+      <div className="min-w-0 flex-1">
+        <label className={cn('mb-1 block text-[11px] font-semibold', accentClass)}>
+          {label}
+        </label>
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          dir={isAr ? 'rtl' : 'ltr'}
+          className="h-9 border-0 bg-transparent p-0 text-sm font-bold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        />
       </div>
-      <span className="text-xs font-semibold text-primary">غيّر</span>
-    </button>
+      <button
+        type="button"
+        onClick={onOpenPicker}
+        aria-label={label}
+        className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:bg-muted"
+      >
+        <span aria-hidden>📍</span>
+        <span>{hasValue ? (isAr ? 'غيّر' : 'Changer') : (isAr ? 'اختر' : 'Choisir')}</span>
+      </button>
+    </div>
   );
 }
 
