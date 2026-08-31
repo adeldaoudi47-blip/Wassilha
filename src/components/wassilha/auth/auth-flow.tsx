@@ -55,6 +55,12 @@ export function AuthFlow() {
   const [forgotPhone, setForgotPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  // In-flight guard for OTP verification. Prevents double-submit where a
+  // first call (e.g. from a fast double-tap or auto-confirm) succeeds and
+  // deletes the code from the DB, and the second call then fails with
+  // `codeNotFound` even though the user is actually logged in / routed
+  // correctly. Set true at the start of handleVerify, false in finally.
+  const [verifying, setVerifying] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   // When true, the user came from "Devenir chauffeur" and should be
   // routed to the driver form on a fresh account instead of customer signup.
@@ -267,6 +273,13 @@ export function AuthFlow() {
       return;
     }
 
+    // Double-submit guard: if a previous verify-otp call is still in
+    // flight (e.g. user double-tapped, or auto-advance fired twice),
+    // silently drop the second one. Otherwise the first call would
+    // succeed and delete the code, and this one would error out with
+    // `codeNotFound` even though the user is in fact logged in.
+    if (verifying) return;
+    setVerifying(true);
     setLoading(true);
 
     try {
@@ -362,6 +375,7 @@ export function AuthFlow() {
 
       toast.error(isAr ? ar : fr);
     } finally {
+      setVerifying(false);
       setLoading(false);
     }
   };
@@ -550,6 +564,9 @@ export function AuthFlow() {
 
   const handleVerifyForgotOtp = async () => {
     if (otp.length !== OTP_LENGTH) return;
+    // Double-submit guard (same rationale as handleVerify above).
+    if (verifying) return;
+    setVerifying(true);
     setLoading(true);
     try {
       const result = await api.verifyOtp(forgotPhone, otp);
@@ -594,6 +611,7 @@ export function AuthFlow() {
       }
       toast.error(isAr ? ar : fr);
     } finally {
+      setVerifying(false);
       setLoading(false);
     }
   };
