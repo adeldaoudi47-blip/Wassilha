@@ -101,10 +101,21 @@ export function AuthFlow() {
         if (pendingSignup && verifiedPhone) {
           setPhone(verifiedPhone);
           setStep('signup');
-          // FIX: a previously-saved driver intent should never bleed
-          // into a recovered customer signup. Clear the flag whenever
-          // we auto-restore a pending signup.
-          setIntendsDriver(false);
+          // DIAG: a previously-saved driver intent should never bleed
+          // into a recovered customer signup. We no longer force-reset
+          // intendsDriver here because:
+          //   1) The flag is a *client UX* intent captured at button press,
+          //      not a server-side state.
+          //   2) handleVerify branches on `intendsDriver` *at the moment
+          //      of OTP verification*, not on this mount-time restore.
+          //   3) Resetting it here was the only place the flag could be
+          //      silently cleared between two consecutive registrations,
+          //      which is the exact scenario the driver flow hits.
+          //
+          // If a future product decision is to ALWAYS route recovered
+          // pending signups to the customer flow, do that explicitly at
+          // the call site (e.g. inside handleSendOtp), not here.
+          console.log('[AUTH FLOW] pendingSignup restored for phone:', verifiedPhone, '(intendsDriver preserved:', intendsDriver, ')');
         }
       })
       .catch(() => {});
@@ -120,6 +131,12 @@ export function AuthFlow() {
 
     return () => clearTimeout(id);
   }, [resendTimer]);
+
+  // DIAG: log every step change so we can trace the auth flow end-to-end
+  // and see exactly when/why the UI transitions to a particular step.
+  useEffect(() => {
+    console.log('[AUTH FLOW] step CHANGED to:', step, '| intendsDriver=', intendsDriver, '| otp.length=', otp.length);
+  }, [step, intendsDriver]);
 
   const handleSendOtp = async () => {
     // FIX: explicit reset — entering the customer path must clear any
@@ -301,6 +318,18 @@ export function AuthFlow() {
         name || undefined
       );
 
+      // DIAG: log every result so we can tell whether the failure to
+      // advance to driver-form is a missing flag, a wrong response shape,
+      // or a successful route that did not propagate to setStep().
+      console.log('[AUTH FLOW] handleVerify result', {
+        requiresSignup: result.requiresSignup,
+        driverApplicationPending: result.driverApplicationPending,
+        driverApplicationRejected: result.driverApplicationRejected,
+        hasUser: !!result.user,
+        intendsDriver,
+        userPhone: result.user?.phone,
+      });
+
       if (result.requiresSignup) {
         // Fresh account: pick the right next step based on user intent.
         // The server doesn't know about `intendsDriver` (it's a client-only
@@ -311,6 +340,7 @@ export function AuthFlow() {
         //
         // Stale `intendsDriver=true` is prevented by the explicit reset
         // added at the top of handleSendOtp and at the OTP back-button.
+        console.log('[AUTH FLOW] requiresSignup=true; branching on intendsDriver=', intendsDriver);
         if (intendsDriver) {
           // DIAG: confirm the router picked the driver branch (vs. the
           // customer one) so we can tell whether the user landed in
@@ -318,7 +348,9 @@ export function AuthFlow() {
           console.log('[Driver Flow] OTP verified, moving to driver-form');
           setOtp('');
           setStep('driver-form');
+          console.log('[AUTH FLOW] >>> setStep(\'driver-form\') called');
         } else {
+          console.log('[AUTH FLOW] >>> setStep(\'signup\') called (customer branch)');
           setOtp('');
           setStep('signup');
         }
@@ -347,6 +379,9 @@ export function AuthFlow() {
           : `Bienvenue ${result.user.name ?? ''}`
       );
     } catch (error) {
+      // Clear the OTP boxes after any verify-otp failure so the user
+      // can re-enter a fresh code without leftover digits confusing the UI.
+      setOtp('');
       console.error('VERIFY OTP ERROR:', error);
 
       // Map each backend error code to a specific user-facing message so the
@@ -1310,7 +1345,20 @@ export function AuthFlow() {
             </p>
           ) : (
             <button
-              onClick={handleSendOtp}
+              onClick={() => {
+                // FIX: route the resend through the same path the user
+                // originally took. If they started the driver flow
+                // ("Devenir chauffeur"), `intendsDriver=true` and we must
+                // keep it that way — calling `handleSendOtp` here would
+                // silently reset the flag to false and the post-OTP router
+                // in handleVerify would dump the user into customer signup.
+                if (intendsDriver) {
+                  console.log('[Driver Flow] Resending OTP via driver handler');
+                  handleSendOtpAsDriver();
+                } else {
+                  handleSendOtp();
+                }
+              }}
               className="text-xs font-bold text-primary hover:underline"
             >
               {t.resend}
