@@ -1227,6 +1227,7 @@ export function AuthFlow() {
   // OTP
   // =========================
 
+  if (step === 'otp') {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="flex items-center justify-between p-5">
@@ -1380,6 +1381,7 @@ export function AuthFlow() {
       </div>
     </div>
   );
+  }
 
   if (step === 'driver-form') {
     return (
