@@ -1,4 +1,4 @@
-﻿// POST /api/auth/apply-driver
+// POST /api/auth/apply-driver
 //
 // Self-registration endpoint for prospective drivers. The body MUST include
 // the phone-verification cookie (issued by /api/auth/verify-otp after the
@@ -33,6 +33,13 @@ interface ApplyDriverBody {
   marque?: unknown;
   type?: unknown;
   anneePremiereMiseCirculation?: unknown;
+  // Carte grise extended fields (all optional, except validation below).
+  datePremiereMiseEnCirculation?: unknown;
+  adresse?: unknown;
+  ptac?: unknown;
+  poidsAVide?: unknown;
+  energie?: unknown;
+  puissance?: unknown;
 }
 
 function badRequest(error: string) {
@@ -135,6 +142,33 @@ export async function POST(req: NextRequest) {
         ? body.type.trim()
         : null;
 
+    // ---- Carte grise extended fields (all optional strings) ----
+    // Helper: normalize an optional string field. Returns null when the
+    // client omits it, sends null, or sends a blank string. Otherwise
+    // returns the trimmed value, capped at 128 chars to avoid DB abuse.
+    const OPTIONAL_STR_MAX = 128;
+    const optStr = (v) => {
+      if (v === undefined || v === null) return null;
+      if (typeof v !== 'string') return null;
+      const t = v.trim();
+      if (t.length === 0) return null;
+      return t.length > OPTIONAL_STR_MAX ? t.slice(0, OPTIONAL_STR_MAX) : t;
+    };
+    const datePremiereMiseEnCirculation = optStr(body.datePremiereMiseEnCirculation);
+    const adresse = optStr(body.adresse);
+    const ptac = optStr(body.ptac);
+    const poidsAVide = optStr(body.poidsAVide);
+    const energie = optStr(body.energie);
+    const puissance = optStr(body.puissance);
+    // Restrict `energie` to a known short list so admins don't see garbage
+    // in the dashboard. Empty / null is allowed (optional).
+    if (energie !== null) {
+      const allowed = new Set(['Benzine', 'Diesel', 'GPL', 'Electrique', 'Hybride']);
+      if (!allowed.has(energie)) {
+        return badRequest('invalidEnergie');
+      }
+    }
+
     if (
       typeof body.anneePremiereMiseCirculation !== 'number' ||
       !Number.isInteger(body.anneePremiereMiseCirculation)
@@ -221,6 +255,12 @@ export async function POST(req: NextRequest) {
               marque,
               type: typeStr,
               anneePremiereMiseCirculation: year,
+              datePremiereMiseEnCirculation,
+              adresse,
+              ptac,
+              poidsAVide,
+              energie,
+              puissance,
             },
           });
           return tx.driver.update({
@@ -278,6 +318,12 @@ export async function POST(req: NextRequest) {
           marque,
           type: typeStr,
           anneePremiereMiseCirculation: year,
+          datePremiereMiseEnCirculation,
+          adresse,
+          ptac,
+          poidsAVide,
+          energie,
+          puissance,
         },
       });
       return tx.driver.create({

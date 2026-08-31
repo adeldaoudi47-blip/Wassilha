@@ -187,6 +187,13 @@ export const api = {
     marque: string;
     type?: string;
     anneePremiereMiseCirculation: number;
+    // Carte grise extended fields (all optional).
+    datePremiereMiseEnCirculation?: string;
+    adresse?: string;
+    ptac?: string;
+    poidsAVide?: string;
+    energie?: string;
+    puissance?: string;
   }) =>
     req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
       method: 'POST',
@@ -213,6 +220,13 @@ export const api = {
           marque: string;
           type: string | null;
           anneePremiereMiseCirculation: number;
+          // Carte grise extended fields (all nullable).
+          datePremiereMiseEnCirculation: string | null;
+          adresse: string | null;
+          ptac: string | null;
+          poidsAVide: string | null;
+          energie: string | null;
+          puissance: string | null;
         } | null;
       }[]
     >('/api/admin/driver-applications'),

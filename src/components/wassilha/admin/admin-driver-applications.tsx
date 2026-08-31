@@ -20,6 +20,13 @@ type VehicleRegistration = {
   marque: string;
   type: string | null;
   anneePremiereMiseCirculation: number;
+  // Carte grise extended fields (nullable; legacy rows don't have them).
+  datePremiereMiseEnCirculation: string | null;
+  adresse: string | null;
+  ptac: string | null;
+  poidsAVide: string | null;
+  energie: string | null;
+  puissance: string | null;
 };
 
 type Application = {
@@ -133,28 +140,64 @@ export function AdminDriverApplications() {
                   <Phone size={11} /> {a.phone}
                 </p>
                 {a.vehicleRegistration ? (
-                  <div className="mt-2 space-y-0.5 rounded-lg bg-muted/40 p-2 text-[11px]">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary">
-                      {isAr ? 'البطاقة الرمادية' : 'Carte grise'}
-                    </p>
-                    <p className="font-semibold text-foreground" dir="ltr">
-                      {a.vehicleRegistration.numeroImmatriculation}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {a.vehicleRegistration.marque}
-                      {a.vehicleRegistration.type
-                        ? ` · ${a.vehicleRegistration.type}`
-                        : ''}
-                      {' · '}
-                      {a.vehicleRegistration.anneePremiereMiseCirculation}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {a.vehicleRegistration.typeProprietaire === 'PERSONNE_PHYSIQUE'
-                        ? `${a.vehicleRegistration.prenom ?? ''} ${a.vehicleRegistration.nom ?? ''}`.trim() ||
-                          (isAr ? 'مالك' : 'Proprietaire')
-                        : a.vehicleRegistration.raisonSociale ||
-                          (isAr ? 'شركة' : 'Societe')}
-                    </p>
+                  <div className="mt-2 space-y-2 rounded-lg bg-muted/40 p-2 text-[11px]">
+                    {/* Section: vehicle data */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-primary">
+                        {t.vehicleData}
+                      </p>
+                      <p className="font-semibold text-foreground" dir="ltr">
+                        {a.vehicleRegistration.numeroImmatriculation}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {a.vehicleRegistration.marque}
+                        {a.vehicleRegistration.type
+                          ? ` · ${a.vehicleRegistration.type}`
+                          : ''}
+                        {' · '}
+                        {a.vehicleRegistration.anneePremiereMiseCirculation}
+                      </p>
+                      {a.vehicleRegistration.energie ? (
+                        <p className="text-muted-foreground">
+                          <span className="font-semibold">{t.energy}: </span>
+                          {a.vehicleRegistration.energie}
+                          {a.vehicleRegistration.puissance ? ` · ${t.power}: ${a.vehicleRegistration.puissance}` : ''}
+                        </p>
+                      ) : null}
+                      {(a.vehicleRegistration.ptac || a.vehicleRegistration.poidsAVide) ? (
+                        <p className="text-muted-foreground" dir="ltr">
+                          {a.vehicleRegistration.ptac ? `${t.ptac}: ${a.vehicleRegistration.ptac}` : ''}
+                          {a.vehicleRegistration.ptac && a.vehicleRegistration.poidsAVide ? ' · ' : ''}
+                          {a.vehicleRegistration.poidsAVide ? `${t.emptyWeight}: ${a.vehicleRegistration.poidsAVide}` : ''}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {/* Section: carte grise (owner) */}
+                    <div className="border-t border-border/50 pt-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-primary">
+                        {t.carteGriseData}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {a.vehicleRegistration.typeProprietaire === 'PERSONNE_PHYSIQUE'
+                          ? `${a.vehicleRegistration.prenom ?? ''} ${a.vehicleRegistration.nom ?? ''}`.trim() ||
+                            (isAr ? 'مالك' : 'Proprietaire')
+                          : a.vehicleRegistration.raisonSociale ||
+                            (isAr ? 'شركة' : 'Societe')}
+                      </p>
+                      {a.vehicleRegistration.datePremiereMiseEnCirculation ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          <span className="font-semibold">{t.firstCirculationDate}: </span>
+                          <span dir="ltr">{a.vehicleRegistration.datePremiereMiseEnCirculation}</span>
+                        </p>
+                      ) : null}
+                      {a.vehicleRegistration.adresse ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          <span className="font-semibold">{t.address}: </span>
+                          {a.vehicleRegistration.adresse}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
                 <p className="mt-1 text-[10px] text-muted-foreground">

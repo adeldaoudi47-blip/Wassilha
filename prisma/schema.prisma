@@ -117,6 +117,19 @@ model VehicleRegistration {
   type                           String?
   // Year the vehicle was first put into service (e.g. 2021).
   anneePremiereMiseCirculation   Int
+  // Carte-grisse — full date (or free-form text) when the vehicle was
+  // first put into service. Optional, complements `anneePremiereMiseCirculation`.
+  datePremiereMiseEnCirculation  String?
+  // Carte-grisse — current residential address of the vehicle owner.
+  adresse                        String?
+  // Carte-grisse — F.2: poids total autorisé en charge (PTAC, kg).
+  ptac                           String?
+  // Carte-grisse — G.1: poids à vide (kg).
+  poidsAVide                     String?
+  // Carte-grisse — P.3: type d'énergie / fuel type (Benzine, Diesel, GPL).
+  energie                        String?
+  // Carte-grisse — P.2: puissance administrative / fiscale (CV).
+  puissance                      String?
   // Chassis / serial number fields are intentionally NOT exposed in the
   // driver-facing form (privacy + verification happens off-platform). They
   // are kept in the schema for future use.
@@ -229,7 +242,7 @@ enum DeliveryPointType {
   OTHER
 }
 
-/// A neighbourhood (��) of El Guerrara. Slugs are unique and used by the
+/// A neighbourhood (��) of El Guerrara. Slugs are unique and used by the
 /// admin UI to deep-link to a specific area. The relation to DeliveryPoint
 /// uses onDelete: Cascade so that dropping an area also drops its points.
 model DeliveryArea {

@@ -39,6 +39,14 @@ export async function GET() {
               type: d.vehicleRegistration.type,
               anneePremiereMiseCirculation:
                 d.vehicleRegistration.anneePremiereMiseCirculation,
+              // Carte grise extended fields (all nullable).
+              datePremiereMiseEnCirculation:
+                d.vehicleRegistration.datePremiereMiseEnCirculation,
+              adresse: d.vehicleRegistration.adresse,
+              ptac: d.vehicleRegistration.ptac,
+              poidsAVide: d.vehicleRegistration.poidsAVide,
+              energie: d.vehicleRegistration.energie,
+              puissance: d.vehicleRegistration.puissance,
             }
           : null,
       }))

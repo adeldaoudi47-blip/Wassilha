@@ -21,6 +21,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   InputOTP,
   InputOTPGroup,
@@ -85,6 +86,12 @@ export function AuthFlow() {
     marque: '',
     type: '',
     anneePremiereMiseCirculation: '',
+    datePremiereMiseEnCirculation: '',
+    adresse: '',
+    ptac: '',
+    poidsAVide: '',
+    energie: '',
+    puissance: '',
   });
   const updateVehicleRegistration = (
     field: keyof typeof vehicleRegistration,
@@ -493,6 +500,26 @@ export function AuthFlow() {
       toast.error(isAr ? 'أدخل ماركة المركبة' : 'Entrez la marque du vehicule');
       return;
     }
+    if (!vr.datePremiereMiseEnCirculation.trim()) {
+      toast.error(
+        isAr
+          ? 'أدخل تاريخ أول وضع للسير'
+          : 'Entrez la date de première mise en circulation'
+      );
+      return;
+    }
+    if (!vr.adresse.trim()) {
+      toast.error(
+        isAr ? 'أدخل عنوان المالك' : 'Entrez l’adresse du proprietaire'
+      );
+      return;
+    }
+    if (!vr.energie.trim()) {
+      toast.error(
+        isAr ? 'اختر نوع الطاقة' : 'Selectionnez le type d’energie'
+      );
+      return;
+    }
     const year = parseInt(vr.anneePremiereMiseCirculation, 10);
     const currentYear = new Date().getFullYear();
     if (
@@ -522,6 +549,13 @@ export function AuthFlow() {
         marque: vr.marque.trim(),
         type: vr.type.trim() || undefined,
         anneePremiereMiseCirculation: year,
+        // Carte grise extended fields.
+        datePremiereMiseEnCirculation: vr.datePremiereMiseEnCirculation.trim(),
+        adresse: vr.adresse.trim(),
+        ptac: vr.ptac.trim() || undefined,
+        poidsAVide: vr.poidsAVide.trim() || undefined,
+        energie: vr.energie.trim() || undefined,
+        puissance: vr.puissance.trim() || undefined,
       };
       console.log('[Driver Flow] Submitting driver application:', submitPayload);
       const result = await api.applyDriver(submitPayload);
@@ -1561,7 +1595,97 @@ export function AuthFlow() {
                     onChange={(e) =>
                       updateVehicleRegistration('anneePremiereMiseCirculation', e.target.value)
                     }
-                    placeholder={isAr ? 'مثال: 2021' : 'ex: 2021'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.firstCirculationDate}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Input
+                    type="date"
+                    value={vehicleRegistration.datePremiereMiseEnCirculation}
+                    onChange={(e) =>
+                      updateVehicleRegistration('datePremiereMiseEnCirculation', e.target.value)
+                    }
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.address}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.adresse}
+                    onChange={(e) => updateVehicleRegistration('adresse', e.target.value)}
+                    placeholder={isAr ? 'مثال: القرارة - غرداية' : 'ex: El Guerrara - Ghardaia'}
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.energy}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Select
+                    value={vehicleRegistration.energie || undefined}
+                    onValueChange={(v) => updateVehicleRegistration('energie', v)}
+                  >
+                    <SelectTrigger className="h-12 rounded-xl">
+                      <SelectValue placeholder={isAr ? 'اختر الطاقة' : 'Selectionnez l’energie'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Benzine">{isAr ? 'بنزين' : 'Benzine'}</SelectItem>
+                      <SelectItem value="Diesel">{isAr ? 'مازوت / ديزل' : 'Diesel'}</SelectItem>
+                      <SelectItem value="GPL">{isAr ? 'غاز ميمع سيرغاز GPL' : 'GPL'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.ptac}
+                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.ptac}
+                    onChange={(e) => updateVehicleRegistration('ptac', e.target.value)}
+                    placeholder={isAr ? 'الحمولة الإجمالية بالكيلوغرام' : 'PTAC (kg)'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.emptyWeight}
+                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.poidsAVide}
+                    onChange={(e) => updateVehicleRegistration('poidsAVide', e.target.value)}
+                    placeholder={isAr ? 'الوزن فارغ بالكيلوغرام' : 'Poids a vide (kg)'}
+                    className="h-12 rounded-xl"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.power}
+                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
+                  </label>
+                  <Input
+                    value={vehicleRegistration.puissance}
+                    onChange={(e) => updateVehicleRegistration('puissance', e.target.value)}
+                    placeholder={isAr ? 'القوة بالحصان (CV)' : 'Puissance (CV)'}
                     className="h-12 rounded-xl"
                     dir="ltr"
                   />
