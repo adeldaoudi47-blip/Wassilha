@@ -41,6 +41,9 @@ function badRequest(error: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // DIAG: trace every driver-application attempt so we can correlate
+    // it with the client-side `[Driver Flow]` logs.
+    console.log('[Apply Driver API] Received request');
     // SECURITY: per-IP cap on driver-application submissions.
     const ipCheck = await rateLimit(
       `applydriver:${clientIp(req)}`,
@@ -58,11 +61,16 @@ export async function POST(req: NextRequest) {
     // the customer signup uses, so attackers cannot bypass OTP.
     const phone = await getVerifiedPhone();
     if (!phone) {
+      // DIAG: most "submit doesn't work" complaints we get are actually
+      // a stale or missing OTP cookie. Log this loud and clear so we
+      // can tell at a glance whether the user completed the OTP step.
+      console.error('[Apply Driver API] No verified phone cookie! Rejecting.');
       return NextResponse.json(
         { error: 'phoneVerificationRequired' },
         { status: 403 }
       );
     }
+    console.log('[Apply Driver API] Phone verified:', phone);
 
     const body = (await req.json().catch(() => ({}))) as ApplyDriverBody;
 
@@ -239,6 +247,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // DIAG: log the exact data we're about to persist so we can confirm
+    // the request body made it through validation AND the cookie gate.
+    console.log('[Apply Driver API] Creating driver with data:', {
+      name: body.name,
+      numeroImmatriculation: immat,
+      typeProprietaire,
+      marque,
+      year,
+    });
+
     const driver = await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -281,10 +299,21 @@ export async function POST(req: NextRequest) {
       { ok: true, status: 'pending', driverId: driver.id },
       { status: 201 }
     );
-  } catch (e) {
-    console.error('[WASSILHA APPLY-DRIVER] Server error:', e);
+  } catch (e: any) {
+    // DIAG: forward the full error (including Prisma `code` like P2002
+    // for unique-constraint violations) to both the server log and the
+    // client response. The previous response shape was
+    //   { error: 'serverError', detail: String(e) }
+    // which already worked, but adding `code` lets the client surface a
+    // more specific toast (e.g. "phone already registered") without an
+    // extra round-trip.
+    console.error('[Apply Driver API] Error:', e);
     return NextResponse.json(
-      { error: 'serverError', detail: String(e) },
+      {
+        error: 'serverError',
+        detail: String(e?.message ?? e),
+        code: e?.code,
+      },
       { status: 500 }
     );
   }

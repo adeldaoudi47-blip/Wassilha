@@ -189,6 +189,7 @@ export function AuthFlow() {
   const handleSendOtpAsDriver = async () => {
     const clean = normalizeAlgerianPhone(phone);
     if (!clean) {
+      console.warn('[Driver Flow] Invalid Algerian phone, aborting:', phone);
       toast.error(
         isAr
           ? 'أدخل رقم هاتف جزائري صحيح'
@@ -196,6 +197,10 @@ export function AuthFlow() {
       );
       return;
     }
+    // DIAG: trace driver-flow entry so we can confirm the user actually
+    // pressed the driver button (vs. the customer one) and follow the
+    // request all the way to the server.
+    console.log('[Driver Flow] Sending OTP as driver for phone:', clean);
     setLoading(true);
     // FIX: move the name-clearing *inside* this handler so it always
     // happens (regardless of which UI entry point calls it) and so the
@@ -204,6 +209,7 @@ export function AuthFlow() {
     setIntendsDriver(true);
     try {
       const result = await api.sendOtp(clean);
+      console.log('[Driver Flow] OTP sent successfully, devOtp=', result.devOtp);
       setPhone(clean);
       setOtp('');
       setStep('otp');
@@ -216,7 +222,7 @@ export function AuthFlow() {
         );
       }
     } catch (error) {
-      console.error('SEND OTP (DRIVER) ERROR:', error);
+      console.error('[Driver Flow] Failed to send OTP:', error);
       // Same error-code mapping as the customer flow (see handleSendOtp).
       const code = error instanceof Error ? error.message : '';
       let ar = 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.';
@@ -239,7 +245,13 @@ export function AuthFlow() {
           fr = 'Envoi du code impossible, verifiez votre connexion et reessayez.';
           break;
       }
-      toast.error(isAr ? ar : fr);
+      // DIAG: also surface the raw error code in the toast so the user
+      // (and on-call support) can tell exactly which server-side failure
+      // triggered it — without having to crack open the browser console.
+      const surfaced = isAr
+        ? `${ar} (الرمز: ${code || 'غير معروف'})`
+        : `${fr} (code: ${code || 'inconnu'})`;
+      toast.error(surfaced);
     } finally {
       setLoading(false);
     }
@@ -275,6 +287,10 @@ export function AuthFlow() {
         // Stale `intendsDriver=true` is prevented by the explicit reset
         // added at the top of handleSendOtp and at the OTP back-button.
         if (intendsDriver) {
+          // DIAG: confirm the router picked the driver branch (vs. the
+          // customer one) so we can tell whether the user landed in
+          // the right place even if a later step silently fails.
+          console.log('[Driver Flow] OTP verified, moving to driver-form');
           setStep('driver-form');
         } else {
           setStep('signup');
@@ -429,7 +445,10 @@ export function AuthFlow() {
     }
     setLoading(true);
     try {
-      await api.applyDriver({
+      // DIAG: log the exact payload we're about to POST so we can confirm
+      // the form values reached the wire (and aren't, say, silently wiped
+      // by a stale closure). Trim-sensitive fields are shown trimmed.
+      const submitPayload = {
         name: name.trim(),
         numeroImmatriculation: vr.numeroImmatriculation.trim(),
         typeProprietaire: vr.typeProprietaire,
@@ -439,7 +458,10 @@ export function AuthFlow() {
         marque: vr.marque.trim(),
         type: vr.type.trim() || undefined,
         anneePremiereMiseCirculation: year,
-      });
+      };
+      console.log('[Driver Flow] Submitting driver application:', submitPayload);
+      const result = await api.applyDriver(submitPayload);
+      console.log('[Driver Flow] Application submitted successfully:', result);
       toast.success(
         isAr
           ? 'أرسل طلبك. سيتم المراجعة من طرف المدير.'
@@ -447,13 +469,15 @@ export function AuthFlow() {
       );
       setStep('driver-pending');
     } catch (error) {
-      console.error('APPLY DRIVER ERROR:', error);
+      // DIAG: surface the full error (including stack) and forward the
+      // server's error code to the toast so the user + support can see
+      // *why* the application failed without opening devtools.
+      console.error('[Driver Flow] Failed to submit application:', error);
       const msg = error instanceof Error ? error.message : '';
       toast.error(
-        msg ||
-          (isAr
-            ? 'تعذّر إرسال الطلب. حاول مرة أخرى.'
-            : 'Impossible d\u2019envoyer la demande. Réessayez.')
+        isAr
+          ? `فشل إرسال الطلب: ${msg || 'خطأ غير معروف'}`
+          : `Échec de l'envoi : ${msg || 'erreur inconnue'}`
       );
     } finally {
       setLoading(false);
