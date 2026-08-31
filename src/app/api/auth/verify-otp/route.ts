@@ -9,6 +9,11 @@ export async function POST(req: NextRequest) {
   try {
     const { phone: rawPhone, code, name } = await req.json();
 
+    // DIAG: trace every verify-otp attempt so we can correlate it with the
+    // client-side [Driver Flow] / [Verify OTP] logs and see whether a second
+    // call is firing after the first one already consumed the code.
+    console.log('[Verify OTP API] Received request', { rawPhone, codeLen: typeof code === 'string' ? code.length : 0 });
+
     // SECURITY + UX: identical normalization to send-otp / frontend, so both
     // sides always agree and the stored code always maps to one canonical
     // phone per user.
@@ -76,6 +81,10 @@ export async function POST(req: NextRequest) {
     // failed silently). Distinct from "expired" so the UI can guide the user
     // to re-request instead of just calling the code wrong.
     if (!otp) {
+      // DIAG: distinct from codeExpired/invalidOtp so we can tell whether the
+      // code was never created OR was already consumed by a prior successful
+      // call. The latter is the smoking gun for a double-submit race.
+      console.warn('[Verify OTP API] Code not found or already consumed for phone:', phone);
       return NextResponse.json(
         { error: 'codeNotFound' },
         { status: 400 }

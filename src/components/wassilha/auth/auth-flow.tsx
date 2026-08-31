@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Phone,
   ArrowLeft,
@@ -61,6 +61,14 @@ export function AuthFlow() {
   // `codeNotFound` even though the user is actually logged in / routed
   // correctly. Set true at the start of handleVerify, false in finally.
   const [verifying, setVerifying] = useState(false);
+  // Synchronous lock for handleVerify. Unlike the erifying state above,
+  // useRef updates instantly and reads are immediately visible across
+  // the same event loop - so even if React batches two click events
+  // (fast double-tap, Enter key + onClick, etc.) the second call sees
+  // erifyingRef.current === true and bails out *before* dispatching
+  // the second verify-otp request that would otherwise fail with
+  // codeNotFound because the server already consumed the OTP.
+  const verifyingRef = useRef(false);
   const [resendTimer, setResendTimer] = useState(0);
   // When true, the user came from "Devenir chauffeur" and should be
   // routed to the driver form on a fresh account instead of customer signup.
@@ -273,12 +281,16 @@ export function AuthFlow() {
       return;
     }
 
-    // Double-submit guard: if a previous verify-otp call is still in
-    // flight (e.g. user double-tapped, or auto-advance fired twice),
-    // silently drop the second one. Otherwise the first call would
-    // succeed and delete the code, and this one would error out with
-    // `codeNotFound` even though the user is in fact logged in.
-    if (verifying) return;
+    // Double-submit guard (useRef-backed). Unlike a `verifying` state,
+    // `verifyingRef.current` updates synchronously and reads are
+    // immediately visible across the same event loop, so two click
+    // events fired in rapid succession (double-tap, Enter + onClick,
+    // onPaste + auto-submit) both see the lock held on the second
+    // entry, and only the first verify-otp request is actually
+    // dispatched. The state-based `verifying` is still set so the
+    // button's `disabled` prop reflects the busy state to the user.
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
     setVerifying(true);
     setLoading(true);
 
@@ -304,8 +316,10 @@ export function AuthFlow() {
           // customer one) so we can tell whether the user landed in
           // the right place even if a later step silently fails.
           console.log('[Driver Flow] OTP verified, moving to driver-form');
+          setOtp('');
           setStep('driver-form');
         } else {
+          setOtp('');
           setStep('signup');
         }
         return;
@@ -375,6 +389,7 @@ export function AuthFlow() {
 
       toast.error(isAr ? ar : fr);
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
       setLoading(false);
     }
@@ -564,8 +579,9 @@ export function AuthFlow() {
 
   const handleVerifyForgotOtp = async () => {
     if (otp.length !== OTP_LENGTH) return;
-    // Double-submit guard (same rationale as handleVerify above).
-    if (verifying) return;
+    // Double-submit guard (useRef-backed). See handleVerify for details.
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
     setVerifying(true);
     setLoading(true);
     try {
@@ -575,6 +591,7 @@ export function AuthFlow() {
         return;
       }
       if (!result.user) throw new Error('Missing user');
+      setOtp('');
       setStep('forgot-reset');
       setPassword('');
       setConfirmPassword('');
@@ -611,6 +628,7 @@ export function AuthFlow() {
       }
       toast.error(isAr ? ar : fr);
     } finally {
+      verifyingRef.current = false;
       setVerifying(false);
       setLoading(false);
     }
@@ -1033,7 +1051,7 @@ export function AuthFlow() {
               </InputOTPGroup>
             </InputOTP>
           </div>
-          <Button onClick={handleVerifyForgotOtp} disabled={loading || otp.length !== OTP_LENGTH} size="lg" className="mt-8 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
+          <Button onClick={handleVerifyForgotOtp} disabled={loading || verifyingRef.current || otp.length !== OTP_LENGTH} size="lg" className="mt-8 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg">
             {loading ? <Sparkles className="animate-spin" size={18} /> : null}
             {isAr ? 'تحقق' : 'Verifier'}
           </Button>
@@ -1269,7 +1287,7 @@ export function AuthFlow() {
         <Button
           onClick={handleVerify}
           disabled={
-            loading || otp.length !== OTP_LENGTH
+            loading || verifyingRef.current || otp.length !== OTP_LENGTH
           }
           size="lg"
           className="mt-8 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg"
