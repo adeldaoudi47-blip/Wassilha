@@ -87,6 +87,10 @@ export function AuthFlow() {
         if (pendingSignup && verifiedPhone) {
           setPhone(verifiedPhone);
           setStep('signup');
+          // FIX: a previously-saved driver intent should never bleed
+          // into a recovered customer signup. Clear the flag whenever
+          // we auto-restore a pending signup.
+          setIntendsDriver(false);
         }
       })
       .catch(() => {});
@@ -104,6 +108,10 @@ export function AuthFlow() {
   }, [resendTimer]);
 
   const handleSendOtp = async () => {
+    // FIX: explicit reset — entering the customer path must clear any
+    // previous "intends driver" state so the post-OTP router can't send
+    // a customer into the driver form by accident.
+    setIntendsDriver(false);
     // SECURITY + UX: single normalizer shared with the API €” accepts local,
     // international (+213), 00213 forms, spaces/dashes/invisible marks.
     const clean = normalizeAlgerianPhone(phone);
@@ -189,6 +197,10 @@ export function AuthFlow() {
       return;
     }
     setLoading(true);
+    // FIX: move the name-clearing *inside* this handler so it always
+    // happens (regardless of which UI entry point calls it) and so the
+    // customer name is never silently wiped from the wrong flow.
+    setName('');
     setIntendsDriver(true);
     try {
       const result = await api.sendOtp(clean);
@@ -254,6 +266,14 @@ export function AuthFlow() {
 
       if (result.requiresSignup) {
         // Fresh account: pick the right next step based on user intent.
+        // The server doesn't know about `intendsDriver` (it's a client-only
+        // UX flag), so for *fresh* accounts the only way to honour the
+        // driver's intent is to trust the client flag and route them to
+        // the driver form. The server will create the driver application
+        // on the subsequent /api/auth/apply-driver call.
+        //
+        // Stale `intendsDriver=true` is prevented by the explicit reset
+        // added at the top of handleSendOtp and at the OTP back-button.
         if (intendsDriver) {
           setStep('driver-form');
         } else {
@@ -852,13 +872,14 @@ export function AuthFlow() {
                 // once verified, the server will route the user to the driver
                 // form (since role=driver + accountStatus=pending drivers
                 // don't get a session and surface the "pending" state).
-                setName('');
+                // setName('') is now handled inside handleSendOtpAsDriver
+                // so any future entry point gets the same cleanup.
                 await handleSendOtpAsDriver();
               }}
               disabled={loading}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 py-2.5 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50"
+              className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-primary bg-primary/5 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-primary/10 disabled:opacity-50"
             >
-              <Bike size={16} />
+              <Bike size={18} className="shrink-0" />
               {isAr ? 'أريد التسجيل كسائق' : 'Devenir chauffeur'}
             </button>
           </div>
@@ -1118,6 +1139,12 @@ export function AuthFlow() {
           onClick={() => {
             setStep('phone');
             setOtp('');
+            // FIX: also clear the "intends driver" flag when the user
+            // backs out of the OTP screen. Without this, going back
+            // and re-entering the customer path would still keep
+            // intendsDriver=true (now handled in handleSendOtp too,
+            // but defense in depth).
+            setIntendsDriver(false);
           }}
           className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
         >
@@ -1135,6 +1162,18 @@ export function AuthFlow() {
         <div className="mb-8 mt-4">
           <BrandLogo size={56} showText />
         </div>
+
+        {intendsDriver && (
+          <div
+            className="mb-4 flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-bold text-primary"
+            role="status"
+          >
+            <Bike size={14} className="shrink-0" />
+            {isAr
+              ? 'مسار التسجيل كسائق'
+              : 'Inscription en tant que chauffeur'}
+          </div>
+        )}
 
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
           <ShieldCheck
