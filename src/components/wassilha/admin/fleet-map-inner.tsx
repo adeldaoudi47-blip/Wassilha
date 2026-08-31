@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 
 import type { AdminDriverLocation } from "@/lib/types";
+import { telHref } from "@/lib/phone";
 
 // Marker icon for live (recent fix) drivers - green bike
 const liveIcon = new L.DivIcon({
@@ -109,7 +110,7 @@ export function FleetMapInner({ drivers, staleAfterS, labels }: FleetMapInnerPro
                     {d.name}
                   </div>
                   <div style={{ fontSize: 11, color: "#64748B", marginBottom: 6 }}>
-                    {labels.phone}: {d.phone}
+                    {labels.phone}: {`<a href={telHref(d.phone) || '#'} style={{ color: "10B981", textDecoration: "underline"}}>{d.phone}</a>`}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 8px", fontSize: 11 }}>
                     <span style={{ color: "#64748B" }}>{labels.rating}:</span>

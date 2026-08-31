@@ -54,3 +54,28 @@ export const ALGERIAN_PHONE_RE = /^0[567]\d{8}$/;
 export function isValidAlgerianPhone(input: unknown): boolean {
   return normalizeAlgerianPhone(input) !== null;
 }
+/**
+ * Build a `tel:` href from any phone value the API may emit.
+ * - Delegates to `normalizeAlgerianPhone` so all cleanup rules
+ *   (spaces / NBSP / dashes / Arabic-Indic digits / country-code variants)
+ *   are applied in a single place.
+ * - Emits the international form `tel:+213XXXXXXXXX` (drops the leading 0).
+ * - Returns `null` for invalid input so the caller can hide the icon
+ *   instead of emitting a broken `tel:undefined` / `tel:` link.
+ */
+export function telHref(phone: string | null | undefined): string | null {
+  const clean = normalizeAlgerianPhone(phone);
+  if (!clean) return null;
+  // Canonical local form is 0XXXXXXXXX; international form omits the 0.
+  return `tel:+213${clean.slice(1)}`;
+}
+
+/**
+ * Build an `sms:` href (no body -- the user types the message).
+ * Same normalization contract as `telHref`.
+ */
+export function smsHref(phone: string | null | undefined): string | null {
+  const clean = normalizeAlgerianPhone(phone);
+  if (!clean) return null;
+  return `sms:+213${clean.slice(1)}`;
+}

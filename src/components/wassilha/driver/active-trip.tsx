@@ -10,6 +10,7 @@ import { useDriverLocation } from "../use-driver-location";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDzd, haversineKm } from "@/lib/wassilha-data";
+import { telHref, smsHref } from "@/lib/phone";
 import type { Order, OrderStatus } from "@/lib/types";
 
 // Leaflet touches window at module init so the map is loaded only on the
@@ -138,25 +139,54 @@ export function ActiveTrip({
         />
 
         {/* Customer info */}
-        {active.customer && (
-          <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-              {active.customer.name.charAt(0)}
+        {active.customer && (() => {
+          const callHref = telHref(active.customer.phone);
+          const textHref = smsHref(active.customer.phone);
+          // Guard: if the customer phone is missing or unparseable, don't
+          // render broken tel:/sms: links. The name/phone text stays visible.
+          if (!callHref || !textHref) {
+            return (
+              <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                  {active.customer.name.charAt(0)}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-foreground">{active.customer.name}</p>
+                  <p className="text-xs text-muted-foreground" dir="ltr">+213 {active.customer.phone}</p>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                {active.customer.name.charAt(0)}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-foreground">{active.customer.name}</p>
+                <p className="text-xs text-muted-foreground" dir="ltr">+213 {active.customer.phone}</p>
+              </div>
+              <div className="flex gap-1.5">
+                <a
+                  href={callHref}
+                  aria-label={t.call}
+                  title={t.call}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white shadow select-none touch-manipulation"
+                >
+                  <Phone size={15} />
+                </a>
+                <a
+                  href={textHref}
+                  aria-label={t.chat}
+                  title={t.chat}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-white shadow select-none touch-manipulation"
+                >
+                  <MessageCircle size={15} />
+                </a>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-foreground">{active.customer.name}</p>
-              <p className="text-xs text-muted-foreground" dir="ltr">+213 {active.customer.phone}</p>
-            </div>
-            <div className="flex gap-1.5">
-              <button className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white shadow" type="button">
-                <Phone size={15} />
-              </button>
-              <button className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-white shadow" type="button">
-                <MessageCircle size={15} />
-              </button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Route summary */}
         <div className="space-y-2">

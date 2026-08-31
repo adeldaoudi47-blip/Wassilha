@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
+import { telHref, smsHref } from '@/lib/phone';
 import { toast } from 'sonner';
 import { useNavStore } from '@/lib/store';
 import { onOrderStatus, onDriverLocation, subscribeToOrder, unsubscribeFromOrder } from '@/lib/realtime';
@@ -276,26 +277,56 @@ export function CustomerTrack() {
               <p className="text-xs text-muted-foreground">{t.searchingDriverSub}</p>
             </div>
           </div>
-        ) : showDriver && order.driver ? (
-          <div className="flex items-center gap-3 p-4">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-              {driverName?.charAt(0)}
-              <span className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-500" />
+        ) : showDriver && order.driver ? (() => {
+          const callHref = telHref(order.driver?.phone);
+          const textHref = smsHref(order.driver?.phone);
+          // Guard: if the driver phone is missing or unparseable, don't
+          // render broken tel:/sms: links. The name stays visible.
+          if (!callHref || !textHref) {
+            return (
+              <div className="flex items-center gap-3 p-4">
+                <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
+                  {driverName?.charAt(0)}
+                  <span className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-foreground">{driverName}</p>
+                  <p className="text-xs text-muted-foreground">⭐ 4.9 · Triporteur 125cc</p>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center gap-3 p-4">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
+                {driverName?.charAt(0)}
+                <span className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-card bg-emerald-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-foreground">{driverName}</p>
+                <p className="text-xs text-muted-foreground">⭐ 4.9 · Triporteur 125cc</p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={callHref}
+                  aria-label={t.call}
+                  title={t.call}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow select-none touch-manipulation"
+                >
+                  <Phone size={17} />
+                </a>
+                <a
+                  href={textHref}
+                  aria-label={t.chat}
+                  title={t.chat}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow select-none touch-manipulation"
+                >
+                  <MessageCircle size={17} />
+                </a>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-foreground">{driverName}</p>
-              <p className="text-xs text-muted-foreground">⭐ 4.9 · Triporteur 125cc</p>
-            </div>
-            <div className="flex gap-2">
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow">
-                <Phone size={17} />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow">
-                <MessageCircle size={17} />
-              </button>
-            </div>
-          </div>
-        ) : null}
+          );
+        })() : null}
       </Card>
 
       {/* Timeline */}
