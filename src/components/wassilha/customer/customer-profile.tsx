@@ -97,24 +97,26 @@ export function CustomerProfile() {
           flow (form, validation, API call, session revocation, logout
           + fall-through to auth flow) lives in
           ./upgrade-driver-dialog.tsx. */}
-      <Card className="overflow-hidden border-primary/30 bg-primary/5 p-4">
+      {/* UPGRADE_VISIBILITY_V2: high-contrast amber call-out so the
+          upgrade CTA reads as a primary action, not as decoration. */}
+      <Card className="overflow-hidden border-2 border-amber-300 bg-amber-50 p-4 shadow-md dark:border-amber-700 dark:bg-amber-950/20">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-            <Bike size={20} />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-200 text-amber-900 shadow-sm dark:bg-amber-900/30 dark:text-amber-200">
+            <Bike size={22} />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-black text-foreground">
+            <p className="text-base font-black text-amber-900 dark:text-amber-200">
               {isAr ? 'أصبح سائقاً' : 'Devenir chauffeur'}
             </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-[12px] leading-relaxed text-amber-800/90 dark:text-amber-300/80">
               {isAr
                 ? 'استخدم حسابك الحالي للتقديم كسائق. سيتم مراجعة طلبك من طرف المدير قبل التفعيل.'
                 : 'Utilisez votre compte actuel pour postuler comme chauffeur. Votre demande sera revue par l’administrateur avant activation.'}
             </p>
             <Button
               onClick={() => setShowUpgrade(true)}
-              className="mt-3 h-10 w-full rounded-xl bg-primary text-xs font-bold shadow"
-              size="sm"
+              className="mt-4 h-12 w-full rounded-xl bg-amber-500 text-sm font-black uppercase tracking-wide text-white shadow-lg hover:bg-amber-600 dark:bg-amber-500 dark:hover:bg-amber-400"
+              size="lg"
             >
               {isAr ? 'تقديم طلب / Postuler' : 'Postuler'}
             </Button>
