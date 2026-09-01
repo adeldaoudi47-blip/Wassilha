@@ -81,3 +81,7 @@ workspace-*
 build-out*.txt
 check-db.cjs
 wassilha-debug.apk
+# Android release keystore — NEVER commit (loses signing identity on Play Store).
+*.keystore
+keystore.properties
+signing.properties

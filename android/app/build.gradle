@@ -16,10 +16,38 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // Signing material lives in the android/app/ dir alongside this
+            // file. The store/key passwords are read from Gradle properties
+            // (signing.properties or -P flags) so that the keystore + creds
+            // never have to be hard-coded in the repository.
+            //
+            // Default values match the locally generated dev keystore; in
+            // CI / Vercel / a real release pipeline these should be
+            // overridden via:
+            //   echo "storeFile=wassilha-release.keystore"  > android/app/signing.properties
+            //   echo "storePassword=..."                    >> android/app/signing.properties
+            //   echo "keyAlias=wassilha"                    >> android/app/signing.properties
+            //   echo "keyPassword=..."                      >> android/app/signing.properties
+            // and the file should be excluded from VCS.
+            def signingProps = new Properties()
+            def signingPropsFile = file('signing.properties')
+            if (signingPropsFile.exists()) {
+                signingProps.load(new FileInputStream(signingPropsFile))
+            }
+            storeFile     file(signingProps.getProperty('storeFile',     'wassilha-release.keystore'))
+            storePassword signingProps.getProperty('storePassword', 'wassilha-release-2026')
+            keyAlias      signingProps.getProperty('keyAlias',      'wassilha')
+            keyPassword   signingProps.getProperty('keyPassword',   'wassilha-release-2026')
+        }
+    }
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }

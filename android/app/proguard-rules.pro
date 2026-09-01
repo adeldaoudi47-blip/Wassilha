@@ -19,3 +19,35 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ---------- Capacitor + AndroidX WebView keeps ----------
+# Capacitor bridges the WebView to native plugins via reflection. If we strip
+# the bridge classes the app will throw "ClassNotFoundException: com.getcapacitor.*"
+# at runtime. The rules below are the conservative, documented minimum for
+# Capacitor 4+ Android apps.
+
+-keep class com.getcapacitor.** { *; }
+-keep class com.getcapacitor.plugin.** { *; }
+-dontwarn com.getcapacitor.**
+
+# AndroidX WebView / WebViewCompat rely on JavaScript interface classes
+# addressed by name from JS; do not let R8 rename them.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
+# Play Services / FCM
+-keep class com.google.android.gms.** { *; }
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.android.gms.**
+-dontwarn com.google.firebase.**
+
+# Keep all native methods (JNI) intact.
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Keep source file + line number info so crash reports remain useful.
+-keepattributes SourceFile, LineNumberTable
+-renamesourcefileattribute SourceFile
