@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -67,6 +68,16 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
       }
     }
 
+    // Fire-and-forget: thank the customer and close the loop.
+    void sendPushNotification(
+      updated.customerId,
+      'اكتملت الرحلة',
+      'شكراً لاستخدامك وَصّلها. نأمل أن نراك مرة أخرى!',
+      { type: 'order_delivered', orderId: updated.id, orderCode: updated.code }
+    ).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/deliver] push failed:', e);
+    });
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json(

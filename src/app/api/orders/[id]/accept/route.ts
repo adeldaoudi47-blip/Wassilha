@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -40,6 +41,16 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         acceptedAt: new Date(),
       },
       include: { customer: true, driver: true },
+    });
+    // Fire-and-forget: tell the customer their order was accepted.
+    void sendPushNotification(
+      updated.customerId,
+      'تم قبول طلبك',
+      'السائق في طريقه إليك الآن.',
+      { type: 'order_accepted', orderId: updated.id, orderCode: updated.code }
+    ).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/accept] push failed:', e);
     });
     return NextResponse.json(updated);
   } catch (e) {

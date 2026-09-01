@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -34,6 +35,17 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         pickedAt: new Date(),
       },
       include: { customer: true, driver: true },
+    });
+    // Fire-and-forget: customer gets a heads-up that the driver has
+    // arrived at the pickup point.
+    void sendPushNotification(
+      updated.customerId,
+      'وصل السائق',
+      'لقد وصل السائق إلى نقطة الاستلام، يرجى التوجه إليه.',
+      { type: 'order_arrived', orderId: updated.id, orderCode: updated.code }
+    ).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/pickup] push failed:', e);
     });
     return NextResponse.json(updated);
   } catch (e) {

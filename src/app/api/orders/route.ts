@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode } from '@/lib/wassilha-data';
+import { sendPushNotification } from '@/lib/firebase-admin';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
 const VALID_CARGO: CargoKey[] = [
@@ -117,6 +118,36 @@ export async function POST(req: NextRequest) {
       include: { customer: true, driver: true },
     });
 
+    // Fire-and-forget: notify every online, verified, active driver that
+    // a new order is looking for a triporteur. The push helper itself
+    // never throws, but we still wrap the fan-out in try/catch so a FCM
+    // outage cannot leak an unhandled rejection from this handler.
+    void (async () => {
+      try {
+        const availableDrivers = await db.driver.findMany({
+          where: {
+            isOnline: true,
+            isVerified: true,
+            user: { accountStatus: 'active' },
+          },
+          select: { userId: true },
+        });
+        for (const d of availableDrivers) {
+          void sendPushNotification(
+            d.userId,
+            'طلب جديد',
+            'لديك طلب توصيل جديد، تحقق من التطبيق.',
+            { type: 'new_order', orderId: order.id, orderCode: order.code }
+          ).catch((e) => {
+            // eslint-disable-next-line no-console
+            console.warn('[orders] driver push failed:', e);
+          });
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[orders] driver fan-out notify failed:', e);
+      }
+    })();
     return NextResponse.json(order, { status: 201 });
   } catch (e) {
     return NextResponse.json(
