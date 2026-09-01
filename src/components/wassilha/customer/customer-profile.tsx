@@ -9,6 +9,7 @@ import { BrandLogo } from '../brand-logo';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
+import { UpgradeDriverDialog } from './upgrade-driver-dialog';
 import type { Order } from '@/lib/types';
 import { formatDzd } from '@/lib/wassilha-data';
 
@@ -17,6 +18,7 @@ export function CustomerProfile() {
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     api.listOrders({ role: 'customer' }).then(setOrders).catch(() => {});
@@ -90,7 +92,48 @@ export function CustomerProfile() {
         </p>
       </Card>
 
-      <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">
+            {/* UPGRADE_TO_DRIVER_BLOCK — Inline card that links a logged-in
+          customer into the "Devenir chauffeur" modal. The full upgrade
+          flow (form, validation, API call, session revocation, logout
+          + fall-through to auth flow) lives in
+          ./upgrade-driver-dialog.tsx. */}
+      <Card className="overflow-hidden border-primary/30 bg-primary/5 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <Bike size={20} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black text-foreground">
+              {isAr ? 'أصبح سائقاً' : 'Devenir chauffeur'}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {isAr
+                ? 'استخدم حسابك الحالي للتقديم كسائق. سيتم مراجعة طلبك من طرف المدير قبل التفعيل.'
+                : 'Utilisez votre compte actuel pour postuler comme chauffeur. Votre demande sera revue par l’administrateur avant activation.'}
+            </p>
+            <Button
+              onClick={() => setShowUpgrade(true)}
+              className="mt-3 h-10 w-full rounded-xl bg-primary text-xs font-bold shadow"
+              size="sm"
+            >
+              {isAr ? 'تقديم طلب / Postuler' : 'Postuler'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {showUpgrade && (
+        <UpgradeDriverDialog
+          isAr={isAr}
+          onClose={() => setShowUpgrade(false)}
+          onSuccess={() => {
+            setShowUpgrade(false);
+            setUser(null);
+          }}
+        />
+      )}
+
+<Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">
         {t.logout}
       </Button>
 

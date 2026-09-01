@@ -13,7 +13,7 @@
 // admin approves their application AND they pass OTP again.
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getVerifiedPhone, clearPhoneVerification } from '@/lib/auth';
+import { getVerifiedPhone, clearPhoneVerification, getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 import { OwnerType } from '@prisma/client';
@@ -64,20 +64,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // SECURITY: must come from a fresh OTP-verified phone cookie — same gate
-    // the customer signup uses, so attackers cannot bypass OTP.
-    const phone = await getVerifiedPhone();
-    if (!phone) {
-      // DIAG: most "submit doesn't work" complaints we get are actually
-      // a stale or missing OTP cookie. Log this loud and clear so we
-      // can tell at a glance whether the user completed the OTP step.
-      console.error('[Apply Driver API] No verified phone cookie! Rejecting.');
+    // SECURITY: two valid gates — pick the first that matches.
+    //
+    //   (A) fresh OTP-verified phone cookie: same path the new driver flow
+    //       has always used (phone is not yet tied to any account).
+    //   (B) an *active* customer session for the same phone, used by the
+    //       "upgrade to driver" flow on a profile screen. The session can
+    //       only exist if the user already passed OTP for that phone, so
+    //       the security guarantee is the same.
+    //
+    // Anything else (no cookie, no session, or a non-customer session) is
+    // rejected with 403 so an unauthenticated probe can never reach the
+    // DB write.
+    const otpPhone = await getVerifiedPhone();
+    const session = await getSession();
+    let phone: string | null = null;
+    let upgradeFromCustomer = false;
+    if (otpPhone) {
+      phone = otpPhone;
+    } else if (session && session.role === 'customer') {
+      phone = session.phone;
+      upgradeFromCustomer = true;
+    } else {
+      console.error('[Apply Driver API] No verified phone cookie AND no active customer session! Rejecting.');
       return NextResponse.json(
         { error: 'phoneVerificationRequired' },
         { status: 403 }
       );
     }
-    console.log('[Apply Driver API] Phone verified:', phone);
+    console.log(
+      '[Apply Driver API] Phone authorized:',
+      phone,
+      upgradeFromCustomer ? '(upgrade-from-customer via session)' : '(fresh OTP cookie)'
+    );
 
     const body = (await req.json().catch(() => ({}))) as ApplyDriverBody;
 
@@ -278,6 +297,92 @@ export async function POST(req: NextRequest) {
         await clearPhoneVerification();
         return NextResponse.json(
           { ok: true, status: 'pending', driverId: updated.id },
+          { status: 200 }
+        );
+      }
+      // UPGRADE FLOW: a logged-in customer on the same phone wants to apply
+      // to become a driver. We perform the mutation in a single transaction
+      // and revoke the customer's active sessions so they cannot keep
+      // browsing as a customer while their application is pending.
+      if (
+        upgradeFromCustomer &&
+        existing.role === 'customer' &&
+        existing.accountStatus === 'active'
+      ) {
+        const updated = await db.$transaction(async (tx) => {
+          // 1) Flip the existing user to a pending driver.
+          await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              // Keep the same id, phone, name; only the role + status move.
+              role: 'driver',
+              accountStatus: 'pending',
+            },
+          });
+          // 2) Create the new vehicle registration (carte grise).
+          const vr = await tx.vehicleRegistration.create({
+            data: {
+              numeroImmatriculation: immat,
+              typeProprietaire,
+              nom: ownerNom,
+              prenom: ownerPrenom,
+              raisonSociale: ownerRaisonSociale,
+              marque,
+              type: typeStr,
+              anneePremiereMiseCirculation: year,
+              datePremiereMiseEnCirculation,
+              adresse,
+              ptac,
+              poidsAVide,
+              energie,
+              puissance,
+            },
+          });
+          // 3) Create the Driver row linked to the same userId. If an old
+          //    Driver row exists (rare: a previous rejected application),
+          //    we overwrite it cleanly so the user does not end up with
+          //    two Driver rows for the same phone.
+          const driverRow = await tx.driver.upsert({
+            where: { userId: existing.id },
+            create: {
+              userId: existing.id,
+              vehicleRegistrationId: vr.id,
+              isOnline: false,
+              isVerified: false,
+              applicationStatus: 'pending',
+              appliedAt: new Date(),
+            },
+            update: {
+              vehicleRegistrationId: vr.id,
+              applicationStatus: 'pending',
+              appliedAt: new Date(),
+              reviewedAt: null,
+              isVerified: false,
+            },
+            include: { user: true },
+          });
+          // 4) Revoke every live session for this user — the upgrade
+          //    changes the role, so the existing cookies are no longer
+          //    safe to honor even on the same device. The customer is
+          //    forced to sign back in once the admin approves.
+          await tx.session.deleteMany({ where: { userId: existing.id } });
+          return driverRow;
+        });
+        await clearPhoneVerification();
+        // DIAG: record the upgrade so it shows up alongside regular driver
+        // applications in the admin review queue.
+        console.log(
+          '[Apply Driver API] Customer upgraded to driver (pending): userId=',
+          existing.id
+        );
+        return NextResponse.json(
+          {
+            ok: true,
+            status: 'pending',
+            driverId: updated.id,
+            upgraded: true,
+            requiresReauth: true,
+          },
           { status: 200 }
         );
       }
