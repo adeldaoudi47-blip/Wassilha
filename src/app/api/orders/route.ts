@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode } from '@/lib/wassilha-data';
 import { sendPushNotification } from '@/lib/firebase-admin';
+import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
 const VALID_CARGO: CargoKey[] = [
@@ -50,7 +51,11 @@ export async function GET(req: NextRequest) {
 
     const orders = await db.order.findMany({
       where,
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
       orderBy: { createdAt: 'desc' },
     });
     return NextResponse.json(orders);
@@ -115,7 +120,11 @@ export async function POST(req: NextRequest) {
         status: 'searching',
         notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
       },
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
     });
 
     // Fire-and-forget: notify every online, verified, active driver that

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -11,6 +12,9 @@ function startOfDay(d: Date): Date {
 }
 
 // GET /api/driver/earnings
+//
+// SECURITY: only the public subset of `User` fields is returned. Drivers
+// MUST NEVER see customer `passwordHash`, `email`, or `phoneVerified`.
 export async function GET() {
   try {
     const session = await getSession();
@@ -39,7 +43,11 @@ export async function GET() {
         driverId: session.id,
         status: 'delivered',
       },
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -71,7 +79,11 @@ export async function GET() {
     // recent: last 10 orders for this driver (any status, sorted desc).
     const recent = await db.order.findMany({
       where: { driverId: session.id },
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
       orderBy: { createdAt: 'desc' },
       take: 10,
     });

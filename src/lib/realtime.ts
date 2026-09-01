@@ -35,6 +35,10 @@ export function getSocket(): Socket {
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
       autoConnect: true,
+      // SECURITY: must be true so the browser sends the `wassilha_session`
+      // httpOnly cookie with the upgrade request. Without it, the realtime
+      // server cannot identify the user and disconnects the socket.
+      withCredentials: true,
     })
 
     if (typeof window !== 'undefined') {

@@ -116,16 +116,43 @@ export async function setSession(userId: string) {
 }
 
 /**
+ * Extract the raw session token from a cookie header string. Used by
+ * non-Next.js contexts (Socket.io upgrade handshake) where `cookies()` from
+ * next/headers is unavailable.
+ *
+ * SECURITY: This is the only path by which the realtime server validates
+ * identity. Without it, any client could join any user's room.
+ */
+function readTokenFromCookieHeader(cookieHeader: string): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(';')) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k === SESSION_COOKIE) return rest.join('=');
+  }
+  return null;
+}
+
+/**
  * Resolves the current session from the opaque cookie token. Revocation is
  * immediate: the token must match a live, unexpired row in the Session table.
  *
  * SECURITY: a user with accountStatus !== "active" (e.g. a "pending" or
  * "rejected" driver) cannot hold a session — even if a stale cookie exists
  * (e.g. set by verify-otp before the admin approval workflow existed).
+ *
+ * @param cookieString Optional raw `Cookie:` header. When omitted, reads
+ *   from `next/headers` (Next.js route handlers / server components only).
+ *   Pass a string when calling from the Socket.io server, which cannot
+ *   access Next.js cookies().
  */
-export async function getSession(): Promise<AuthUser | null> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
+export async function getSession(cookieString?: string): Promise<AuthUser | null> {
+  let token: string | null = null;
+  if (typeof cookieString === 'string') {
+    token = readTokenFromCookieHeader(cookieString);
+  } else {
+    const store = await cookies();
+    token = store.get(SESSION_COOKIE)?.value ?? null;
+  }
   if (!token) return null;
 
   const session = await db.session.findUnique({

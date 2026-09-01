@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
+import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/orders/:id/accept  (driver only)
+//
+// SECURITY: only the public subset of `User` fields is returned (no
+// `passwordHash`, `email`, `phoneVerified`, or `accountStatus`).
 export async function POST(_req: NextRequest, { params }: Ctx) {
   try {
     const session = await getSession();
@@ -40,7 +44,11 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         status: 'accepted',
         acceptedAt: new Date(),
       },
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
     });
     // Fire-and-forget: tell the customer their order was accepted.
     void sendPushNotification(

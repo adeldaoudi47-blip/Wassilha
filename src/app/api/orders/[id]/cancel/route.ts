@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/orders/:id/cancel  (customer owner or assigned driver)
+//
+// SECURITY: only the public subset of `User` fields is returned.
 export async function POST(_req: NextRequest, { params }: Ctx) {
   try {
     const session = await getSession();
@@ -35,7 +38,11 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         status: 'cancelled',
         cancelledAt: new Date(),
       },
-      include: { customer: true, driver: true },
+      select: {
+        ...publicOrderSelect,
+        customer: { select: publicUserSelect },
+        driver: { select: publicUserSelect },
+      },
     });
     return NextResponse.json(updated);
   } catch (e) {

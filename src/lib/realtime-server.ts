@@ -8,6 +8,7 @@
 
 import type { Server as IOServer, Socket } from 'socket.io';
 import type { Order } from './types';
+import { getSession, SESSION_COOKIE } from './auth';
 
 const REALTIME_PORT = 3003;
 
@@ -71,9 +72,29 @@ function startRealtime(): IOServer | null {
     res.end('Not found');
   });
 
+  // SECURITY: explicit CORS allowlist. Read from CORS_ALLOWED_ORIGINS env
+  // (comma-separated). Falls back to localhost dev origins. Never use '*'
+  // because we need `credentials: true` for the wassilha_session cookie.
+  const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS
+    ?? 'http://localhost:3000,http://localhost:3003'
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const io = new Server(httpServer, {
     path: '/',
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: {
+      origin: (origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) => {
+        // Same-origin / curl / server-to-server: no Origin header.
+        if (!origin) return cb(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+        console.warn(`[wassilha-realtime] CORS reject: ${origin}`);
+        return cb(new Error('CORS not allowed'), false);
+      },
+      methods: ['GET', 'POST'],
+      credentials: true, // required for the wassilha_session cookie
+    },
     pingTimeout: 60000,
     pingInterval: 25000,
   });
@@ -87,14 +108,44 @@ function startRealtime(): IOServer | null {
     io.to('role:admin').emit('presence:update', counts);
   };
 
-  io.on('connection', (socket: Socket) => {
-    console.log(`[wassilha-realtime] connected: ${socket.id}`);
+  io.on('connection', async (socket: Socket) => {
+    // SECURITY: validate the session cookie from the upgrade handshake.
+    // Without this, any client could emit `client:join` with any userId
+    // and subscribe to admin / driver rooms. We authenticate ONCE at
+    // connect-time, then auto-join the verified user/role rooms. The
+    // legacy `client:join` event is kept for backwards-compat but is
+    // now rejected unless it matches the verified identity.
+    const cookieHeader = socket.handshake.headers.cookie ?? '';
+    const session = await getSession(cookieHeader).catch(() => null);
 
-    socket.on('client:join', ({ userId, role }: { userId: string; role: string }) => {
-      sockets.set(socket.id, { userId, role });
-      socket.join(`role:${role}`);
-      socket.join(`user:${userId}`);
-      socket.emit('server:joined', { userId, role });
+    if (!session) {
+      console.warn(`[wassilha-realtime] rejected ${socket.id}: invalid session`);
+      socket.emit('server:error', { error: 'unauthorized' });
+      socket.disconnect(true);
+      return;
+    }
+
+    // Bind the verified identity to the socket immediately.
+    sockets.set(socket.id, { userId: session.id, role: session.role });
+    socket.data.userId = session.id;
+    socket.data.role = session.role;
+    socket.join(`user:${session.id}`);
+    socket.join(`role:${session.role}`);
+
+    console.log(`[wassilha-realtime] connected: ${socket.id} (user=${session.id} role=${session.role})`);
+
+    socket.on('client:join', (payload: { userId?: unknown; role?: unknown } | undefined) => {
+      // Defense in depth: any client-supplied userId/role MUST match
+      // the session-bound identity. This blocks header/cookie spoofing
+      // attempts even if the verifier above is bypassed in the future.
+      const claimedUserId = typeof payload?.userId === 'string' ? payload.userId : null;
+      const claimedRole = typeof payload?.role === 'string' ? payload.role : null;
+      if (claimedUserId !== session.id || claimedRole !== session.role) {
+        console.warn(`[wassilha-realtime] client:join mismatch on ${socket.id}: claimed=${claimedUserId}/${claimedRole} actual=${session.id}/${session.role}`);
+        socket.disconnect(true);
+        return;
+      }
+      socket.emit('server:joined', { userId: session.id, role: session.role });
       presence();
     });
 
