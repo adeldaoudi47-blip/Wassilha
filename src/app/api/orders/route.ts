@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode } from '@/lib/wassilha-data';
@@ -25,6 +26,34 @@ const VALID_STATUS: OrderStatus[] = [
   'delivered',
   'cancelled',
 ];
+
+// OWASP — API3:2023 (Broken Object Property Level Authorization) + API8
+// (Security Misconfiguration): strict input validation with Zod. The
+// previous hand-rolled type-checks silently accepted any garbage and
+// let the route fall through to default coordinates. Zod rejects
+// malformed / over-long / wrong-typed values with a single 400 and a
+// structured error list, so the client UI can highlight the bad field.
+const createOrderSchema = z.object({
+  cargoType: z.enum(VALID_CARGO as [CargoKey, ...CargoKey[]], {
+    message: 'invalidCargoType',
+  }),
+  pickup: z
+    .string()
+    .trim()
+    .min(2, 'pickupTooShort')
+    .max(200, 'pickupTooLong'),
+  dropoff: z
+    .string()
+    .trim()
+    .min(2, 'dropoffTooShort')
+    .max(200, 'dropoffTooLong'),
+  pickupLat: z.number().min(-90).max(90),
+  pickupLng: z.number().min(-180).max(180),
+  dropoffLat: z.number().min(-90).max(90),
+  dropoffLng: z.number().min(-180).max(180),
+  weight: z.number().min(0).max(50_000).optional(),
+  notes: z.string().trim().max(500).optional().nullable(),
+});
 
 // GET /api/orders?role=&status=
 export async function GET(req: NextRequest) {
@@ -80,31 +109,38 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const cargoType = body.cargoType;
-    if (!VALID_CARGO.includes(cargoType as CargoKey)) {
-      return NextResponse.json({ error: 'invalidCargoType' }, { status: 400 });
-    }
-    if (typeof body.pickup !== 'string' || typeof body.dropoff !== 'string') {
+    const parsed = createOrderSchema.safeParse(body);
+    if (!parsed.success) {
+      // Surface the FIRST error code so the client can match it against
+      // its translation table. The full list is also included for
+      // debugging but not used by the UI yet.
+      const first = parsed.error.issues[0];
       return NextResponse.json(
-        { error: 'invalidLocations' },
+        {
+          error: first?.message ?? 'invalidBody',
+          issues: parsed.error.issues.map((i) => ({
+            path: i.path,
+            message: i.message,
+          })),
+        },
         { status: 400 }
       );
     }
+    const data = parsed.data;
+    const cargoType = data.cargoType;
+    const pickup = data.pickup.trim();
+    const dropoff = data.dropoff.trim();
 
     // SECURITY (V7): the fare is ALWAYS recomputed server-side. We do
-    // not read or store any ody.price field; even if a client sends
-    // one, the actual price is derived from the active Pricing row and
-    // the pickup/dropoff coordinates. We also recompute distance from
-    // the same coordinates so the stored value cannot drift from the
-    // fare computation.
-    const pickupLat =
-      typeof body.pickupLat === 'number' ? body.pickupLat : 32.7833;
-    const pickupLng =
-      typeof body.pickupLng === 'number' ? body.pickupLng : 3.7667;
-    const dropoffLat =
-      typeof body.dropoffLat === 'number' ? body.dropoffLat : 32.79;
-    const dropoffLng =
-      typeof body.dropoffLng === 'number' ? body.dropoffLng : 3.78;
+    // not read or store any client-supplied price; even if a client
+    // sends one, the actual price is derived from the active Pricing
+    // row and the pickup/dropoff coordinates. We also recompute
+    // distance from the same coordinates so the stored value cannot
+    // drift from the fare computation.
+    const pickupLat = data.pickupLat;
+    const pickupLng = data.pickupLng;
+    const dropoffLat = data.dropoffLat;
+    const dropoffLng = data.dropoffLng;
     const { price, distanceKm } = await computeOrderPrice({
       pickupLat,
       pickupLng,
@@ -118,15 +154,15 @@ export async function POST(req: NextRequest) {
         code: generateOrderCode(),
         customerId: session.id,
         cargoType,
-        pickup: body.pickup,
-        dropoff: body.dropoff,
+        pickup,
+        dropoff,
         pickupLat,
         pickupLng,
         dropoffLat,
         dropoffLng,
         weight:
-          typeof body.weight === 'number' && body.weight >= 0
-            ? Math.round(body.weight)
+          typeof data.weight === 'number' && data.weight >= 0
+            ? Math.round(data.weight)
             : 20,
         // SECURITY (V7): server-computed; any client-supplied price is
         // ignored. The Prisma Order model has both distance and
@@ -134,7 +170,11 @@ export async function POST(req: NextRequest) {
         distance: distanceKm,
         price,
         status: 'searching',
-        notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+        notes:
+          typeof data.notes === 'string' && data.notes.trim()
+            ? data.notes.trim()
+            : null,
+
       },
       select: {
         ...publicOrderSelect,

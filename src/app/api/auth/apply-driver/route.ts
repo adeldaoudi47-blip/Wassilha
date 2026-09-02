@@ -12,6 +12,7 @@
 // The user is NOT logged in. They will only be granted a session after an
 // admin approves their application AND they pass OTP again.
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getVerifiedPhone, clearPhoneVerification, getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -42,8 +43,8 @@ interface ApplyDriverBody {
   puissance?: unknown;
 }
 
-function badRequest(error: string) {
-  return NextResponse.json({ error }, { status: 400 });
+function badRequest(error: string, issues?: unknown) {
+  return NextResponse.json({ error, issues }, { status: 400 });
 }
 
 export async function POST(req: NextRequest) {
@@ -100,10 +101,16 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as ApplyDriverBody;
 
-    // Driver identity (the user-facing full name).
-    if (typeof body.name !== 'string' || body.name.trim().length < 2) {
-      return badRequest('invalidName');
+    // OWASP — API3:2023: validate the user-facing name (the only free-text
+    // field on the public driver-application route) with Zod. Other
+    // fields on this body are constrained to fixed enums / patterns and
+    // are checked below with explicit type guards, so they stay readable.
+    const nameSchema = z.string().trim().min(2, 'invalidName').max(100, 'invalidName');
+    const nameParsed = nameSchema.safeParse(body.name);
+    if (!nameParsed.success) {
+      return badRequest('invalidName', nameParsed.error.issues);
     }
+    const name = nameParsed.data;
 
     // Carte grise fields.
     if (
@@ -254,7 +261,7 @@ export async function POST(req: NextRequest) {
           await tx.user.update({
             where: { id: existing.id },
             data: {
-              name: body.name!.toString().trim(),
+              name: name,
               accountStatus: 'pending',
             },
           });
@@ -395,7 +402,7 @@ export async function POST(req: NextRequest) {
     // DIAG: log the exact data we're about to persist so we can confirm
     // the request body made it through validation AND the cookie gate.
     console.log('[Apply Driver API] Creating driver with data:', {
-      name: body.name,
+      name: name,
       numeroImmatriculation: immat,
       typeProprietaire,
       marque,
@@ -406,7 +413,7 @@ export async function POST(req: NextRequest) {
       const user = await tx.user.create({
         data: {
           phone: canonicalPhone,
-          name: body.name!.toString().trim(),
+          name: name,
           // SECURITY: forced by the server, NEVER read from the body.
           role: 'driver',
           accountStatus: 'pending',

@@ -1,21 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { db } from '@/lib/db';
 import { clearPhoneVerification, getVerifiedPhone, hashPassword, setSession } from '@/lib/auth';
 import type { AuthUser, Role } from '@/lib/types';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+// OWASP — API3:2023 (Broken Object Property Level Authorization):
+// validate every body field with Zod before touching the DB. The hand-
+// rolled regexes below have been replaced with a single schema so the
+// client gets a structured 400 and a clear list of what is wrong.
+const completeSignupSchema = z
+  .object({
+    name: z.string().trim().min(2, 'invalidName').max(100, 'invalidName'),
+    email: z.string().trim().email('invalidEmail').max(254, 'invalidEmail'),
+    password: z
+      .string()
+      // Strong password: 8+ chars, at least one lowercase, one uppercase,
+      // one digit. This matches the previous hand-rolled rule and keeps
+      // the existing client-side UX the same.
+      .regex(
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/,
+        'weakPassword'
+      ),
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: 'passwordMismatch',
+    path: ['confirmPassword'],
+  });
+
+function badRequest(error: string, issues?: unknown) {
+  return NextResponse.json({ error, issues }, { status: 400 });
+}
 
 export async function POST(req: NextRequest) {
   try {
     const phone = await getVerifiedPhone();
     if (!phone) return NextResponse.json({ error: 'phoneVerificationRequired' }, { status: 403 });
-    const { name, email, password, confirmPassword } = await req.json();
-    if (typeof name !== 'string' || name.trim().length < 2) return NextResponse.json({ error: 'invalidName' }, { status: 400 });
-    if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) return NextResponse.json({ error: 'invalidEmail' }, { status: 400 });
-    if (typeof password !== 'string' || !PASSWORD_RE.test(password)) return NextResponse.json({ error: 'weakPassword' }, { status: 400 });
-    if (password !== confirmPassword) return NextResponse.json({ error: 'passwordMismatch' }, { status: 400 });
 
+    const raw = await req.json();
+    const parsed = completeSignupSchema.safeParse(raw);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      return badRequest(first?.message ?? 'invalidBody', parsed.error.issues);
+    }
+    const { name, email, password } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
     const existingPhone = await db.user.findUnique({ where: { phone } });
     if (existingPhone?.accountStatus === 'active') return NextResponse.json({ error: 'phoneAlreadyUsed' }, { status: 409 });
