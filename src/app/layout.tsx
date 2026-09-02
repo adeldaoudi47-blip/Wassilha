@@ -6,6 +6,7 @@ import "./globals.css";
 // <LiveMap />.
 import "leaflet/dist/leaflet.css";
 import { Toaster } from "@/components/ui/toaster";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { PushPermissionBootstrap } from "@/components/wassilha/push-permission-bootstrap";
 
@@ -80,7 +81,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
         {/* All app feedback flows through sonner (auth-flow, customer/driver/admin).
             Its display component was never mounted, so every toast was invisible. */}
         <SonnerToaster position="top-center" richColors closeButton />

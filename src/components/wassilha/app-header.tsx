@@ -3,6 +3,7 @@
 import { LogOut, RefreshCw, UserCog, Bike, User } from 'lucide-react';
 import { BrandLogo } from './brand-logo';
 import { LangToggle } from './lang-toggle';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { useT } from './use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -60,6 +61,7 @@ export function AppHeader({ title, subtitle, rightSlot }: AppHeaderProps) {
           {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
         </div>
         {rightSlot}
+        <ThemeToggle />
         <LangToggle />
         {user && (
           <DropdownMenu>
