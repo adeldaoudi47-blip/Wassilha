@@ -10,10 +10,37 @@ function parsePricing(row: {
   perKm: number;
   multipliers: string;
 }): PricingConfig {
+  // SECURITY (V11 — pricing API crash hardening): the `multipliers`
+  // column lives in the DB as a JSON string. If an admin (or a buggy
+  // migration) writes a malformed value, `JSON.parse` would throw and
+  // crash the route. We:
+  //   1. wrap the parse in try/catch,
+  //   2. validate the shape (must be a non-null object, not an array),
+  //   3. fall back to the built-in defaults when validation fails,
+  // so the public API never returns 500 for corrupt pricing data.
   let multipliers: Record<CargoKey, number>;
   try {
-    multipliers = JSON.parse(row.multipliers) as Record<CargoKey, number>;
-  } catch {
+    const parsed = JSON.parse(row.multipliers);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed)
+    ) {
+      multipliers = {
+        ...CARGO_MULTIPLIERS_DEFAULT,
+        ...(parsed as Partial<Record<CargoKey, number>>),
+      };
+    } else {
+      console.warn(
+        '[pricing] multipliers row is not a plain object, falling back to defaults'
+      );
+      multipliers = { ...CARGO_MULTIPLIERS_DEFAULT };
+    }
+  } catch (e) {
+    console.warn(
+      '[pricing] failed to parse multipliers JSON, falling back to defaults:',
+      e
+    );
     multipliers = { ...CARGO_MULTIPLIERS_DEFAULT };
   }
   return {

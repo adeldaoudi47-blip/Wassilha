@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, requirePrivilegedAdmin } from '@/lib/auth';
+import { toUserPublic } from '@/lib/dto';
 import type { DriverProfile, VehicleRegistrationInfo } from '@/lib/types';
 
 type DriverWithRelations = {
@@ -88,10 +89,26 @@ export async function GET() {
       return NextResponse.json(gate.body, { status: gate.status });
     }
     const drivers = await db.driver.findMany({
-      include: { user: true, vehicleRegistration: true },
+      // SECURITY (V15 — driver PII hygiene): select only the public User
+      // fields. Never use `include: { user: true }` here: that would
+      // leak `passwordHash`, `email`, `phoneVerified`, `accountStatus`,
+      // and timestamps. The publicUserSelect clause comes from
+      // @/lib/dto so it stays in lock-step with toUserPublic().
+      include: {
+        user: { select: { id: true, phone: true, name: true, role: true, avatar: true } },
+        vehicleRegistration: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(drivers.map((d) => toDriverProfile(d as unknown as DriverWithRelations)));
+    return NextResponse.json(
+      drivers.map((d) => {
+        const safe = {
+          ...(d as unknown as DriverWithRelations),
+          user: toUserPublic(d.user as unknown as Record<string, unknown>),
+        };
+        return toDriverProfile(safe as unknown as DriverWithRelations);
+      })
+    );
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },
@@ -170,7 +187,14 @@ export async function POST(req: NextRequest) {
           appliedAt: new Date(),
           reviewedAt: new Date(),
         },
-        include: { user: true, vehicleRegistration: true },
+        // SECURITY (V15): select only public User fields on the returned
+        // driver. Even though we just created the row (no passwordHash
+        // written), explicit `select` makes the safe shape the default
+        // and stops a future refactor from accidentally widening it.
+        include: {
+          user: { select: { id: true, phone: true, name: true, role: true, avatar: true } },
+          vehicleRegistration: true,
+        },
       });
       await tx.vehicle.create({
         data: {

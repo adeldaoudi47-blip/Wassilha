@@ -55,13 +55,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
 
     // Recompute the driver's average rating.
-    const ratings = await db.rating.findMany({
+    // PERFORMANCE (V12 — N+1 fix): the old implementation pulled every
+    // rating row for the driver into Node memory and summed them in JS.
+    // For a driver with thousands of ratings that is O(N) network bytes
+    // and O(N) JS work per rate event. `prisma.aggregate` computes the
+    // average in a single SQL `AVG(score)` query and is constant-time
+    // relative to the number of rows.
+    const agg = await db.rating.aggregate({
       where: { toId: order.driverId },
-      select: { score: true },
+      _avg: { score: true },
+      _count: { _all: true },
     });
-    if (ratings.length > 0) {
-      const sum = ratings.reduce((s, r) => s + r.score, 0);
-      const avg = Math.round((sum / ratings.length) * 10) / 10;
+    if ((agg._count._all ?? 0) > 0 && agg._avg.score !== null) {
+      const avg = Math.round(agg._avg.score * 10) / 10;
       await db.driver.update({
         where: { userId: order.driverId },
         data: { rating: avg },

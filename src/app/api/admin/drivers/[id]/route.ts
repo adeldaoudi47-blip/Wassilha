@@ -100,7 +100,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const updated = await db.driver.update({
       where: { id },
       data,
-      include: { user: true, vehicleRegistration: true },
+      // SECURITY (V15 — driver PII hygiene): select only the public
+      // User fields when joining. Using `include: { user: true }` would
+      // return passwordHash, email, phoneVerified, accountStatus, and
+      // timestamps. Defense in depth: toUserPublic() is also applied in
+      // the response mapper.
+      include: {
+        user: { select: { id: true, phone: true, name: true, role: true, avatar: true } },
+        vehicleRegistration: true,
+      },
     });
     return NextResponse.json(toDriverProfile(updated as unknown as DriverWithRelations));
   } catch (e) {

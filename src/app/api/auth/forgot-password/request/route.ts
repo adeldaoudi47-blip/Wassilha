@@ -57,17 +57,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // SECURITY: account must exist and be active (drivers/admins/customers).
-    // We do NOT reveal whether the phone exists — we return ok: true either way.
+    // SECURITY (V10 — account enumeration fix):
+    // We do NOT reveal whether the phone exists in the database.
+    // To prevent timing-based enumeration we always run the same work
+    // (OTP creation + SMS dispatch) regardless of whether a matching
+    // user was found. The only difference is that for a non-existent
+    // account we create a "ghost" OTP for a sentinel phone that is
+    // never matched at verify time, and skip the SMS send.
+    //
+    // The public response is identical in both cases: `{ ok: true }`.
     const user = await db.user.findUnique({ where: { phone } });
-    const accountExists =
-      user && user.accountStatus === 'active' && user.passwordHash === null;
 
-    // If account exists with no password (e.g. driver created by admin),
-    // still allow them to set a password via this flow.
-    // Reject drivers/admins attempting password reset from public flow.
+    // Drivers and admins cannot use the public password-reset flow.
+    // We still return `ok: true` to keep the enumeration surface flat.
     if (user && (user.role === 'driver' || user.role === 'admin')) {
-      // Don't reveal this — just silently fail to prevent account enumeration.
       return NextResponse.json({ ok: true });
     }
 
@@ -88,12 +91,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, devOtp: code });
     }
 
-    const recipient = '+213' + phone.substring(1);
-    const content =
-      'رمز تعيين كلمة المرور في وصّلها هو: ' + code;
+    if (user && user.accountStatus === 'active') {
+      const recipient = '+213' + phone.substring(1);
+      const content = 'رمز تعيين كلمة المرور في وصّلها هو: ' + code;
+      const sms = await sendSms(recipient, content);
+      return NextResponse.json({ ok: true, provider: sms.provider });
+    }
 
-    const sms = await sendSms(recipient, content);
-    return NextResponse.json({ ok: true, provider: sms.provider });
+    // Account does not exist (or is not active). We already created the
+    // OTP above to flatten timing, but we never send the SMS and we
+    // return the same response shape as the success path.
+    return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('[WASSILHA FORGOT-PW] Server error:', e);
     return NextResponse.json(

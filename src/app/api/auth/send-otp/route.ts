@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sendSms } from '@/lib/sms';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -57,6 +57,15 @@ if (!ipCheck.ok) {
 }
 
 const code = demoMode ? demoOtp : generateOtp();
+
+// DB HYGIENE (V13 — OTP table cleanup): wipe expired OTPs first so the
+// table does not grow unbounded with rows nobody can ever verify. This
+// runs on every OTP send and keeps the table small. A unique index on
+// (phone) where appropriate would also help; for now a single delete
+// statement is the simplest mitigation.
+await db.otpCode.deleteMany({
+  where: { expiresAt: { lt: new Date() } },
+});
 
 await db.otpCode.deleteMany({
   where: { phone },
