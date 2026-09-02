@@ -1,4 +1,4 @@
-// WASSILHA (وَصِّلها) — Local triporteur delivery platform for El Guerrara, Ghardaïa
+// WASSILHA (ظˆظژطµظگظ‘ظ„ظ‡ط§) â€” Local triporteur delivery platform for El Guerrara, Ghardaأ¯a
 // Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -18,27 +18,27 @@ model User {
   passwordHash  String?
   phoneVerified Boolean  @default(false)
   // accountStatus values:
-  //   "incomplete" — phone verified, signup form not yet completed (customer path)
-  //   "pending"    — driver self-registration submitted, awaiting admin approval
-  //   "active"     — fully usable account (customer, approved driver, admin)
-  //   "rejected"   — driver application was rejected by admin
+  //   "incomplete" â€” phone verified, signup form not yet completed (customer path)
+  //   "pending"    â€” driver self-registration submitted, awaiting admin approval
+  //   "active"     â€” fully usable account (customer, approved driver, admin)
+  //   "rejected"   â€” driver application was rejected by admin
   accountStatus String   @default("incomplete")
   role          String   @default("customer") // customer | driver | admin
   avatar        String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  orders       Order[]   @relation("CustomerOrders")
-  drivenOrders Order[]   @relation("DriverOrders")
-  ratingsGiven Rating[]  @relation("Rater")
-  ratingsRecv  Rating[]  @relation("Ratee")
+  orders       Order[]     @relation("CustomerOrders")
+  drivenOrders Order[]     @relation("DriverOrders")
+  ratingsGiven Rating[]    @relation("Rater")
+  ratingsRecv  Rating[]    @relation("Ratee")
   driver       Driver?
   sessions     Session[]
   pushTokens   PushToken[]
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
-/// persisted — the raw token lives exclusively in the user's httpOnly cookie.
+/// persisted â€” the raw token lives exclusively in the user's httpOnly cookie.
 model Session {
   id        String   @id @default(cuid())
   tokenHash String   @unique
@@ -58,38 +58,44 @@ model RateLimit {
 }
 
 model Driver {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String               @id @default(cuid())
+  userId                String               @unique
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   // One-to-One with the driver's vehicle registration (carte grise).
   // Kept optional so that admin-created drivers without a carte grise remain
   // valid (legacy rows preserved).
-  vehicleRegistrationId String? @unique
+  vehicleRegistrationId String?              @unique
   vehicleRegistration   VehicleRegistration? @relation(fields: [vehicleRegistrationId], references: [id], onDelete: SetNull)
-  isOnline      Boolean  @default(false)
-  isVerified    Boolean  @default(true)
+  isOnline              Boolean              @default(false)
+  isVerified            Boolean              @default(true)
   // Last known GPS position broadcasted by the driver's mobile/web app.
   // Persisted on the Driver row so that we have a current position to send
   // to customers (after a fresh page load) and to admin (fleet view) even
   // before the next socket.io tick arrives.
-  currentLat    Float?
-  currentLng    Float?
+  currentLat            Float?
+  currentLng            Float?
   // Timestamp of the last position fix. Stale rows (e.g. lastSeenAt > 60s ago)
   // should be treated as "offline" by the UI regardless of `isOnline`.
-  lastSeenAt    DateTime?
+  lastSeenAt            DateTime?
   // applicationStatus reflects the self-registration workflow:
-  //   "pending"  — driver submitted an application, awaiting admin approval
-  //   "active"   — admin approved the driver; full driver privileges
-  //   "rejected" — admin rejected the application
+  //   "pending"  â€” driver submitted an application, awaiting admin approval
+  //   "active"   â€” admin approved the driver; full driver privileges
+  //   "rejected" â€” admin rejected the application
   // Admin-created drivers continue to default to "active" (existing rows preserved).
-  applicationStatus String @default("active")
-  appliedAt         DateTime?
-  reviewedAt        DateTime?
-  rating        Float    @default(5.0)
-  totalTrips    Int      @default(0)
-  totalEarnings Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  applicationStatus     String               @default("active")
+  appliedAt             DateTime?
+  reviewedAt            DateTime?
+  rating                Float                @default(5.0)
+  totalTrips            Int                  @default(0)
+  totalEarnings         Int                  @default(0)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  // SECURITY (V14): isOnline/isVerified back the driver fan-out
+  // (`where: { isOnline: true, isVerified: true, ... }`).
+  @@index([isOnline])
+  @@index([isVerified])
+  @@index([isOnline, isVerified])
 }
 
 /// Carte grise (vehicle registration document) for a driver. The OwnerType
@@ -102,41 +108,41 @@ enum OwnerType {
 }
 
 model VehicleRegistration {
-  id                             String   @id @default(cuid())
+  id                            String    @id @default(cuid())
   // Algerian registration number (e.g. "12345-A-06"). Required, unique.
-  numeroImmatriculation          String   @unique
+  numeroImmatriculation         String    @unique
   // Type of legal owner of the vehicle.
-  typeProprietaire               OwnerType
+  typeProprietaire              OwnerType
   // Required for PERSONNE_PHYSIQUE, null for PERSONNE_MORALE.
-  nom                            String?
-  prenom                         String?
+  nom                           String?
+  prenom                        String?
   // Required for PERSONNE_MORALE, null for PERSONNE_PHYSIQUE.
-  raisonSociale                  String?
+  raisonSociale                 String?
   // Brand / make of the vehicle (e.g. "TVS", "Bajaj", "Piaggio").
-  marque                         String
+  marque                        String
   // Detailed vehicle type / model (free-form). Optional.
-  type                           String?
+  type                          String?
   // Year the vehicle was first put into service (e.g. 2021).
-  anneePremiereMiseCirculation   Int
-  // Carte-grisse — full date (or free-form text) when the vehicle was
+  anneePremiereMiseCirculation  Int
+  // Carte-grisse â€” full date (or free-form text) when the vehicle was
   // first put into service. Optional, complements `anneePremiereMiseCirculation`.
-  datePremiereMiseEnCirculation  String?
-  // Carte-grisse — current residential address of the vehicle owner.
-  adresse                        String?
-  // Carte-grisse — F.2: poids total autorisé en charge (PTAC, kg).
-  ptac                           String?
-  // Carte-grisse — G.1: poids à vide (kg).
-  poidsAVide                     String?
-  // Carte-grisse — P.3: type d'énergie / fuel type (Benzine, Diesel, GPL).
-  energie                        String?
-  // Carte-grisse — P.2: puissance administrative / fiscale (CV).
-  puissance                      String?
+  datePremiereMiseEnCirculation String?
+  // Carte-grisse â€” current residential address of the vehicle owner.
+  adresse                       String?
+  // Carte-grisse â€” F.2: poids total autorisأ© en charge (PTAC, kg).
+  ptac                          String?
+  // Carte-grisse â€” G.1: poids أ  vide (kg).
+  poidsAVide                    String?
+  // Carte-grisse â€” P.3: type d'أ©nergie / fuel type (Benzine, Diesel, GPL).
+  energie                       String?
+  // Carte-grisse â€” P.2: puissance administrative / fiscale (CV).
+  puissance                     String?
   // Chassis / serial number fields are intentionally NOT exposed in the
   // driver-facing form (privacy + verification happens off-platform). They
   // are kept in the schema for future use.
-  numeroSerie                    String?
-  createdAt                      DateTime @default(now())
-  updatedAt                      DateTime @updatedAt
+  numeroSerie                   String?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
   driver Driver?
 
@@ -180,6 +186,17 @@ model Order {
   cancelledAt DateTime?
 
   ratings Rating[]
+
+  // SECURITY (V14): indexes for hot queries. customerId/driverId are
+  // used by /api/orders GET to scope the listing. status and the
+  // (status, createdAt) compound back the driver fan-out query that
+  // picks the next available order. createdAt backs the dashboard
+  // ordering.
+  @@index([customerId])
+  @@index([driverId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model Pricing {
@@ -201,6 +218,13 @@ model Rating {
   score     Int // 1..5
   comment   String?
   createdAt DateTime @default(now())
+
+  // SECURITY (V14): toId is the primary key for the SQL aggregate
+  // in /api/orders/:id/deliver. orderId backs the per-order rating
+  // lookup. fromId backs the per-customer "ratings I gave" view.
+  @@index([toId])
+  @@index([orderId])
+  @@index([fromId])
 }
 
 model OtpCode {
@@ -212,8 +236,11 @@ model OtpCode {
   createdAt DateTime @default(now())
 
   @@index([phone])
+  // SECURITY (V14): expiresAt backs the cleanup cron (V13) that prunes
+  // expired OTPs. (phone, expiresAt) backs the latest-valid lookup.
+  @@index([expiresAt])
+  @@index([phone, expiresAt])
 }
-
 
 /// Geographic delivery taxonomy. Used by the new "neighbourhood + drop point"
 /// picker so that customers can pick a specific landmark (mosque, school,
@@ -243,7 +270,7 @@ enum DeliveryPointType {
   OTHER
 }
 
-/// A neighbourhood (��) of El Guerrara. Slugs are unique and used by the
+/// A neighbourhood (ï؟½ï؟½) of El Guerrara. Slugs are unique and used by the
 /// admin UI to deep-link to a specific area. The relation to DeliveryPoint
 /// uses onDelete: Cascade so that dropping an area also drops its points.
 model DeliveryArea {
@@ -268,30 +295,31 @@ model DeliveryArea {
 /// GUERRARA_CENTER (32.7833, 3.7667) so that the order can still be priced
 /// and dispatched.
 model DeliveryPoint {
-  id        String            @id @default(cuid())
-  areaId    String
-  area      DeliveryArea      @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  nameAr    String
-  nameFr    String?
-  type      DeliveryPointType
-  latitude  Decimal?          @db.Decimal(10, 7)
-  longitude Decimal?          @db.Decimal(10, 7)
-  plusCode  String?
-  addressAr String?
-  addressFr String?
-  isVerified Boolean          @default(false)
-  isActive  Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id         String            @id @default(cuid())
+  areaId     String
+  area       DeliveryArea      @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  nameAr     String
+  nameFr     String?
+  type       DeliveryPointType
+  latitude   Decimal?          @db.Decimal(10, 7)
+  longitude  Decimal?          @db.Decimal(10, 7)
+  plusCode   String?
+  addressAr  String?
+  addressFr  String?
+  isVerified Boolean           @default(false)
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
 
   @@index([areaId])
   @@index([isActive])
   @@index([type])
   @@index([latitude, longitude])
 }
+
 /// FCM (Firebase Cloud Messaging) push token bound to a single device of a user.
 /// One row per (user, device). On reinstall / re-login the same token may
-/// appear under a different user — the UNIQUE constraint on `token` guarantees
+/// appear under a different user â€” the UNIQUE constraint on `token` guarantees
 /// a single owner, and re-registering from the new account simply reassigns
 /// the row (we update userId + updatedAt on the existing record instead of
 /// creating a duplicate).
@@ -300,7 +328,7 @@ model PushToken {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String   @unique
-  platform  String   // 'android' | 'ios' | 'web'
+  platform  String // 'android' | 'ios' | 'web'
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

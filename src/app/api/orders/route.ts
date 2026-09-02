@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode } from '@/lib/wassilha-data';
+import { computeOrderPrice } from '@/lib/pricing';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import type { CargoKey, OrderStatus } from '@/lib/types';
@@ -90,6 +91,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // SECURITY (V7): the fare is ALWAYS recomputed server-side. We do
+    // not read or store any ody.price field; even if a client sends
+    // one, the actual price is derived from the active Pricing row and
+    // the pickup/dropoff coordinates. We also recompute distance from
+    // the same coordinates so the stored value cannot drift from the
+    // fare computation.
+    const pickupLat =
+      typeof body.pickupLat === 'number' ? body.pickupLat : 32.7833;
+    const pickupLng =
+      typeof body.pickupLng === 'number' ? body.pickupLng : 3.7667;
+    const dropoffLat =
+      typeof body.dropoffLat === 'number' ? body.dropoffLat : 32.79;
+    const dropoffLng =
+      typeof body.dropoffLng === 'number' ? body.dropoffLng : 3.78;
+    const { price, distanceKm } = await computeOrderPrice({
+      pickupLat,
+      pickupLng,
+      dropoffLat,
+      dropoffLng,
+      cargoType: cargoType as CargoKey,
+    });
+
     const order = await db.order.create({
       data: {
         code: generateOrderCode(),
@@ -97,26 +120,19 @@ export async function POST(req: NextRequest) {
         cargoType,
         pickup: body.pickup,
         dropoff: body.dropoff,
-        pickupLat:
-          typeof body.pickupLat === 'number' ? body.pickupLat : 32.7833,
-        pickupLng:
-          typeof body.pickupLng === 'number' ? body.pickupLng : 3.7667,
-        dropoffLat:
-          typeof body.dropoffLat === 'number' ? body.dropoffLat : 32.79,
-        dropoffLng:
-          typeof body.dropoffLng === 'number' ? body.dropoffLng : 3.78,
+        pickupLat,
+        pickupLng,
+        dropoffLat,
+        dropoffLng,
         weight:
           typeof body.weight === 'number' && body.weight >= 0
             ? Math.round(body.weight)
             : 20,
-        distance:
-          typeof body.distance === 'number' && body.distance >= 0
-            ? body.distance
-            : 3.0,
-        price:
-          typeof body.price === 'number' && body.price >= 0
-            ? Math.round(body.price)
-            : 300,
+        // SECURITY (V7): server-computed; any client-supplied price is
+        // ignored. The Prisma Order model has both distance and
+        // price columns, so we persist the recomputed values here.
+        distance: distanceKm,
+        price,
         status: 'searching',
         notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
       },

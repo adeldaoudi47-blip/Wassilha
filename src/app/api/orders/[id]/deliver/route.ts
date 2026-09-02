@@ -9,6 +9,14 @@ type Ctx = { params: Promise<{ id: string }> };
 // POST /api/orders/:id/deliver  (driver only)
 //
 // SECURITY: only the public subset of `User` fields is returned.
+//
+// SECURITY (V4): atomic status transition. A `picked -> delivered`
+// flip can only be performed by the assigned driver for a row still in
+// `picked` state; duplicate /deliver calls or racing drivers get 409.
+//
+// SECURITY (V12): driver rating is recomputed via a SQL `aggregate`
+// (single round-trip) instead of `findMany`+`reduce` in JS. The
+// previous N+1 pattern scaled O(n_ratings) per /deliver call.
 export async function POST(_req: NextRequest, { params }: Ctx) {
   try {
     const session = await getSession();
@@ -20,59 +28,48 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     }
 
     const { id } = await params;
-    const order = await db.order.findUnique({ where: { id } });
-    if (!order) {
-      return NextResponse.json({ error: 'notFound' }, { status: 404 });
-    }
-    if (order.driverId !== session.id) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
-    if (order.status !== 'picked') {
+    const now = new Date();
+    const claim = await db.order.updateMany({
+      where: { id, status: 'picked', driverId: session.id },
+      data: { status: 'delivered', deliveredAt: now },
+    });
+    if (claim.count === 0) {
       return NextResponse.json({ error: 'invalidStatus' }, { status: 409 });
     }
 
-    const now = new Date();
-    const updated = await db.order.update({
+    const updated = await db.order.findUnique({
       where: { id },
-      data: {
-        status: 'delivered',
-        deliveredAt: now,
-      },
       select: {
         ...publicOrderSelect,
         customer: { select: publicUserSelect },
         driver: { select: publicUserSelect },
       },
     });
+    if (!updated) {
+      return NextResponse.json({ error: 'notFound' }, { status: 404 });
+    }
 
-    // Update driver aggregates: totalTrips + 1, totalEarnings += price.
-    if (order.driverId) {
-      const driver = await db.driver.findUnique({
-        where: { userId: order.driverId },
+    // Update driver aggregates: totalTrips + 1, totalEarnings += price,
+    // and a fresh rating average via a single SQL aggregate (V12).
+    const driverId = updated.driverId;
+    if (driverId) {
+      const agg = await db.rating.aggregate({
+        where: { toId: driverId },
+        _avg: { score: true },
       });
-      if (driver) {
-        // Recompute rating average if the order had a rating.
-        let newRating = driver.rating;
-        if (order.rating) {
-          const allRatings = await db.rating.findMany({
-            where: { toId: order.driverId },
-            select: { score: true },
-          });
-          if (allRatings.length > 0) {
-            const sum = allRatings.reduce((s, r) => s + r.score, 0);
-            newRating =
-              Math.round((sum / allRatings.length) * 10) / 10;
-          }
-        }
-        await db.driver.update({
-          where: { userId: order.driverId },
-          data: {
-            totalTrips: { increment: 1 },
-            totalEarnings: { increment: order.price },
-            rating: newRating,
-          },
-        });
-      }
+      const newRating =
+        agg._avg.score !== null
+          ? Math.round(agg._avg.score * 10) / 10
+          : 0;
+
+      await db.driver.update({
+        where: { userId: driverId },
+        data: {
+          totalTrips: { increment: 1 },
+          totalEarnings: { increment: updated.price },
+          rating: newRating,
+        },
+      });
     }
 
     // Fire-and-forget: thank the customer and close the loop.
