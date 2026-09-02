@@ -66,6 +66,12 @@ export function DriverProfile() {
           <Stat label={t.rating} value={(profile?.rating ?? 5).toFixed(1)} icon={<Star size={11} className="text-amber-400" fill="currentColor" />} />
           <Stat label={t.earnings} value={formatDzd(profile?.totalEarnings ?? 0)} />
         </div>
+        {profile ? (
+          <p className="px-4 pb-3 text-center text-[11px] font-semibold text-muted-foreground">
+            <Star size={11} className="me-1 inline-block align-[-2px] text-amber-400" fill="currentColor" />
+            {(profile.rating ?? 5).toFixed(1)} · {profile.totalTrips} {t.ratings}
+          </p>
+        ) : null}
       </Card>
 
       {/* Online toggle */}

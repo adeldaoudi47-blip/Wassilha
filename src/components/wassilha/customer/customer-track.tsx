@@ -30,9 +30,7 @@ import { GuerraraMap } from '../guerrara-map';
 import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
+import { RatingDialog } from './rating-dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -63,7 +61,6 @@ export function CustomerTrack() {
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rateOpen, setRateOpen] = useState(false);
-  const [rating, setRating] = useState(5);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadOrder = useCallback(async () => {
@@ -189,16 +186,14 @@ export function CustomerTrack() {
     }
   };
 
-  const handleRate = async () => {
-    if (!order) return;
-    try {
-      await api.rateOrder(order.id, rating);
-      toast.success(t.thankYou);
-      setRateOpen(false);
-      setCustomerTab('history');
-    } catch {
-      toast.error(isAr ? 'فشل التقييم' : 'Échec');
-    }
+  // The actual rating is now posted by <RatingDialog/> itself (it owns the\n  // Zod-validated score and comment state). The dialog fires onSubmitted\n  // when the API responds 200; we just refresh the order so the "Thanks!"\  // state and the hidden rate-button render in the same tick.
+  // The handleRateSubmitted callback below receives the confirmation
+  // from <RatingDialog/>. The dialog has already posted the score via
+  // api.rateOrder (Zod-validated client-side), so we just need to
+  // flip the local order state so the "Thanks!" message replaces
+  // the rate-button on the next render.
+  const handleRateSubmitted = () => {
+    setOrder((o) => (o ? { ...o, rating: o.rating ?? 5 } : o));
   };
 
   if (loading) {
@@ -389,6 +384,29 @@ export function CustomerTrack() {
         </div>
       </Card>
 
+      {/* Post-rating thank-you card */}
+      {order.status === 'delivered' && order.rating ? (
+        <Card className="flex items-center gap-3 bg-emerald-50/60 p-3.5 dark:bg-emerald-950/20">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
+            <CheckCircle2 size={20} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-foreground">{t.thankYouForRating}</p>
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Star
+                  key={n}
+                  size={12}
+                  className={n <= (order.rating ?? 0) ? 'text-amber-400' : 'text-muted-foreground/30'}
+                  fill={n <= (order.rating ?? 0) ? 'currentColor' : 'none'}
+                />
+              ))}
+              <span className="ms-1 font-semibold text-foreground">{(order.rating ?? 0)}/5</span>
+            </p>
+          </div>
+        </Card>
+      ) : null}
+
       {/* Actions */}
       <div className="flex gap-2">
         {order.status === 'delivered' && !order.rating && (
@@ -424,31 +442,14 @@ export function CustomerTrack() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rate dialog */}
-      <Dialog open={rateOpen} onOpenChange={setRateOpen}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>{t.rateDriver}</DialogTitle>
-            <DialogDescription>{t.rateHint}</DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-center gap-2 py-4">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                onClick={() => setRating(n)}
-                className={cn('transition-transform hover:scale-110', n <= rating ? 'text-amber-400' : 'text-muted')}
-              >
-                <Star size={32} fill={n <= rating ? 'currentColor' : 'none'} />
-              </button>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button onClick={handleRate} className="w-full bg-primary">
-              {t.confirm}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Rate dialog (Zod-validated, accessible) */}
+      <RatingDialog
+        open={rateOpen}
+        onOpenChange={setRateOpen}
+        orderId={order.id}
+        driverName={order.driver?.name ?? null}
+        onSubmitted={handleRateSubmitted}
+      />
     </div>
   );
 }
