@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Package, MapPin, Flag, User, Bike } from 'lucide-react';
+import { MapPin, Flag, User, Bike, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { formatDzd } from '@/lib/wassilha-data';
 import { cn } from '@/lib/utils';
@@ -15,16 +17,48 @@ export function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | OrderStatus>('all');
+  // Order id pending deletion confirmation. `null` means dialog closed.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // `true` while the DELETE request is in flight, disables both
+  // buttons and the auto-close behavior in ConfirmDialog.
+  const [deleting, setDeleting] = useState(false);
+
+  const refresh = () => api.adminOrders().then(setOrders).catch(() => {});
 
   useEffect(() => {
-    api.adminOrders().then(setOrders).catch(() => {}).finally(() => setLoading(false));
-    const id = setInterval(() => api.adminOrders().then(setOrders).catch(() => {}), 6000);
+    refresh().finally(() => setLoading(false));
+    const id = setInterval(refresh, 6000);
     return () => clearInterval(id);
   }, []);
 
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
   const statusLabel = (s: OrderStatus) =>
     (t as unknown as Record<string, string>)[s === 'searching' ? 'pending' : s === 'accepted' ? 'accepted' : s === 'picked' ? 'inTransit' : s === 'delivered' ? 'delivered' : 'cancelled'];
+
+  // Admin may delete ANY order, regardless of status. The server
+  // enforces the privileged-admin gate; on the client we just expose
+  // the trash button unconditionally.
+  const handleDeleteClick = (o: Order) => {
+    setDeletingId(o.id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingId) return;
+    setDeleting(true);
+    try {
+      await api.deleteOrder(deletingId);
+      // Optimistic local remove; the next 6s poll will reconcile
+      // either way.
+      setOrders((prev) => prev.filter((o) => o.id !== deletingId));
+      toast.success(t.orderDeleted);
+    } catch (err) {
+      toast.error(isAr ? 'فشل الحذف' : 'Échec de la suppression');
+      refresh();
+    } finally {
+      setDeleting(false);
+      setDeletingId(null);
+    }
+  };
 
   const filters: ('all' | OrderStatus)[] = ['all', 'searching', 'accepted', 'picked', 'delivered', 'cancelled'];
 
@@ -88,16 +122,42 @@ export function AdminOrders() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-end">
+                <div className="flex flex-col items-end gap-1">
                   <span className="text-sm font-black text-primary">{formatDzd(o.price)}</span>
                   <span className="text-[9px] text-muted-foreground">{t.dzd}</span>
                   <span className="text-[9px] text-muted-foreground">{o.distance} {t.km}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteClick(o);
+                    }}
+                    aria-label={t.deleteOrder}
+                    title={t.deleteOrder}
+                    className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive active:scale-95"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deletingId !== null}
+        title={t.deleteOrder}
+        description={t.confirmDeleteOrder}
+        confirmLabel={t.deleteOrder}
+        cancelLabel={isAr ? 'إلغاء' : 'Annuler'}
+        destructive
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          if (!deleting) setDeletingId(null);
+        }}
+      />
     </div>
   );
 }

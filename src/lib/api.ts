@@ -159,6 +159,11 @@ export const api = {
   adminDriverLocations: () =>
     req<AdminDriverLocation[]>('/api/admin/drivers/locations'),
   adminOrders: () => req<Order[]>('/api/admin/orders'),
+  // Delete an order. The same endpoint is reused for both customer
+  // and admin paths; authorization is enforced server-side per the
+  // role-aware logic in /api/orders/[id]/route.ts.
+  deleteOrder: (id: string) =>
+    req<{ ok: true }>(`/api/orders/${id}`, { method: 'DELETE' }),
   addDriver: (data: {
     name: string;
     phone: string;

@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Package, ChevronRight, ChevronLeft, MapPin, Flag } from 'lucide-react';
+import { Package, ChevronRight, ChevronLeft, MapPin, Flag, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { useNavStore } from '@/lib/store';
 import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatDzd } from '@/lib/wassilha-data';
 import { cn } from '@/lib/utils';
 import type { Order, OrderStatus } from '@/lib/types';
@@ -18,6 +20,11 @@ export function CustomerHistory() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | OrderStatus>('all');
+  // Order id pending deletion confirmation. `null` means no dialog open.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // `true` while the DELETE request is in flight, disables the confirm
+  // button so the user can't double-fire.
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api.listOrders({ role: 'customer' })
@@ -35,6 +42,41 @@ export function CustomerHistory() {
   const openOrder = (o: Order) => {
     setActiveOrderId(o.id);
     setCustomerTab('track');
+  };
+
+  // Customers may only delete terminal-state orders (delivered or
+  // cancelled). The server enforces the same rule, but we hide the
+  // trash icon for non-terminal states to keep the UI honest.
+  const isDeletable = (o: Order) =>
+    o.status === 'delivered' || o.status === 'cancelled';
+
+  // Stop propagation so clicking the trash doesn't bubble to the
+  // surrounding Card and open the order tracking view.
+  const handleDeleteClick = (e: React.MouseEvent, o: Order) => {
+    e.stopPropagation();
+    setDeletingId(o.id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingId) return;
+    setDeleting(true);
+    try {
+      await api.deleteOrder(deletingId);
+      // Optimistic local remove — the server already deleted the row.
+      setOrders((prev) => prev.filter((o) => o.id !== deletingId));
+      toast.success(t.orderDeleted);
+    } catch (err) {
+      // 409 -> order is no longer in a deletable state (race with a
+      // driver deliver/cancel landing between the render and the
+      // request). Reload to reconcile.
+      toast.error(isAr ? 'فشل الحذف' : 'Échec de la suppression');
+      api.listOrders({ role: 'customer' })
+        .then(setOrders)
+        .catch(() => {});
+    } finally {
+      setDeleting(false);
+      setDeletingId(null);
+    }
   };
 
   const filters: ('all' | OrderStatus)[] = ['all', 'searching', 'accepted', 'picked', 'delivered', 'cancelled'];
@@ -102,13 +144,40 @@ export function CustomerHistory() {
                 <div className="flex flex-col items-end gap-1">
                   <span className="text-sm font-black text-primary">{formatDzd(o.price)}</span>
                   <span className="text-[10px] text-muted-foreground">{t.dzd}</span>
-                  <Chevron size={16} className="text-muted-foreground" />
+                  <div className="flex items-center gap-1">
+                    {isDeletable(o) && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteClick(e, o)}
+                        aria-label={t.deleteOrder}
+                        title={t.deleteOrder}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive active:scale-95"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <Chevron size={16} className="text-muted-foreground" />
+                  </div>
                 </div>
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deletingId !== null}
+        title={t.deleteOrder}
+        description={t.confirmDeleteOrder}
+        confirmLabel={t.deleteOrder}
+        cancelLabel={isAr ? 'إلغاء' : 'Annuler'}
+        destructive
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          if (!deleting) setDeletingId(null);
+        }}
+      />
     </div>
   );
 }
