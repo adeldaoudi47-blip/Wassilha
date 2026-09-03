@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { generateOrderCode } from '@/lib/wassilha-data';
+import { generateOrderCode, GUERRARA_CENTER } from '@/lib/wassilha-data';
 import { computeOrderPrice } from '@/lib/pricing';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
@@ -47,15 +47,42 @@ const createOrderSchema = z.object({
     .trim()
     .min(2, 'dropoffTooShort')
     .max(200, 'dropoffTooLong'),
-  pickupLat: z.number().min(-90).max(90),
-  pickupLng: z.number().min(-180).max(180),
-  dropoffLat: z.number().min(-90).max(90),
-  dropoffLng: z.number().min(-180).max(180),
+  // OWASP API3 (BOPLA) -- defensive nullable coords. The customer-home
+  // UI allows free-text addresses (no map pin), in which case the
+  // client omits the coord fields entirely. We still want to reject
+  // out-of-range numeric values, so we keep the .min/.max bounds but
+  // allow `null` (legacy clients) and `undefined` (omitted). Server-
+
+  // side fallback to GUERRARA_CENTER is applied below, *after* parsing.
+  pickupLat: z.number().min(-90).max(90).nullable().optional(),
+  pickupLng: z.number().min(-180).max(180).nullable().optional(),
+  dropoffLat: z.number().min(-90).max(90).nullable().optional(),
+  dropoffLng: z.number().min(-180).max(180).nullable().optional(),
   weight: z.number().min(0).max(50_000).optional(),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
 // GET /api/orders?role=&status=
+// Resolve a coord field that may be `null` (legacy client) or
+// `undefined` (omitted because the customer typed the address as
+// free text). Both cases fall back to the El Guerrara centroid so
+// the order can be created with a sane (lat, lng) pair. The Prisma
+// `Order.pickupLat` column is non-nullable with a default centroid,
+// so persisting `null` would otherwise throw a PrismaClientValidationError.
+//
+// SECURITY: this is a *display* fallback only -- it does NOT
+// silently coerce out-of-range numerics, because Zod already
+// rejected those at the schema layer with a 400.
+
+function resolveCoord(
+  value: number | null | undefined,
+  axis: 'lat' | 'lng',
+): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  return axis === 'lat' ? GUERRARA_CENTER.lat : GUERRARA_CENTER.lng;
+}
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
@@ -137,10 +164,13 @@ export async function POST(req: NextRequest) {
     // row and the pickup/dropoff coordinates. We also recompute
     // distance from the same coordinates so the stored value cannot
     // drift from the fare computation.
-    const pickupLat = data.pickupLat;
-    const pickupLng = data.pickupLng;
-    const dropoffLat = data.dropoffLat;
-    const dropoffLng = data.dropoffLng;
+    // Apply the centroid fallback for free-text addresses. Zod has
+    // already rejected out-of-range numerics, so any surviving
+    // value is either a valid number or null/undefined (free text).
+    const pickupLat = resolveCoord(data.pickupLat, 'lat');
+    const pickupLng = resolveCoord(data.pickupLng, 'lng');
+    const dropoffLat = resolveCoord(data.dropoffLat, 'lat');
+    const dropoffLng = resolveCoord(data.dropoffLng, 'lng');
     const { price, distanceKm } = await computeOrderPrice({
       pickupLat,
       pickupLng,
