@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode, GUERRARA_CENTER } from '@/lib/wassilha-data';
 import { computeOrderPrice } from '@/lib/pricing';
-import { sendPushNotification } from '@/lib/firebase-admin';
+import { sendPushNotification, sendPushNotificationBatch } from '@/lib/firebase-admin';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
@@ -258,17 +258,19 @@ export async function POST(req: NextRequest) {
           },
           select: { userId: true },
         });
-        for (const d of availableDrivers) {
-          void sendPushNotification(
-            d.userId,
-            'طلب جديد',
-            'لديك طلب توصيل جديد، تحقق من التطبيق.',
-            { type: 'new_order', orderId: order.id, orderCode: order.code }
-          ).catch((e) => {
-            // eslint-disable-next-line no-console
-            console.warn('[orders] driver push failed:', e);
-          });
-        }
+        if (availableDrivers.length === 0) return;
+        // One Prisma call + one FCM call regardless of fleet size.
+        // The batch helper also handles the 5s timeout and dead-token
+        // pruning internally.
+        void sendPushNotificationBatch(
+          availableDrivers.map((d) => d.userId),
+          'طلب جديد',
+          'لديك طلب توصيل جديد، تحقق من التطبيق.',
+          { type: 'new_order', orderId: order.id, orderCode: order.code }
+        ).catch((e) => {
+          // eslint-disable-next-line no-console
+          console.warn('[orders] driver push batch failed:', e);
+        });
       } catch (e) {
         // eslint-disable-next-line no-console
         console.warn('[orders] driver fan-out notify failed:', e);

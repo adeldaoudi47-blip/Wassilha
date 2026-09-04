@@ -1,7 +1,7 @@
 // Server-side Firebase Admin SDK wrapper.
 //
 // Initializes the Admin SDK exactly once per Node process from environment
-// variables. Service-account credentials must NEVER be hard-coded here —
+// variables. Service-account credentials must NEVER be hard-coded here --
 // they belong in Vercel / hosting environment variables:
 //
 //   FIREBASE_PROJECT_ID         (e.g. "wassilha-18b81")
@@ -80,6 +80,13 @@ type SendResult = {
   reason?: string;
 };
 
+// Hard ceiling for any single FCM round-trip. Vercel Pro gives 60s for
+// serverless functions but in practice we want every push helper to
+// return *well* before that -- a slow FCM should not block the parent
+// API route. 5s is generous for sendEachForMulticast on ~500 tokens
+// and still fits inside the order-creation critical path.
+const FCM_TIMEOUT_MS = 5000;
+
 /**
  * Send a single FCM notification to every registered device of the given
  * user. Best-effort: never throws, never blocks the caller on network
@@ -114,8 +121,11 @@ export async function sendPushNotification(
     }
 
     const fcmTokens = tokens.map((t) => t.token);
-    // sendMulticast: a single API call delivers to all of the user's devices.
-    const res = await admin.messaging.sendEachForMulticast({
+    // sendEachForMulticast (replaces the deprecated sendMulticast in
+    // Firebase Admin SDK v12+): a single API call delivers to every
+    // device of the user. Wrapped in a hard 5s ceiling so a slow FCM
+    // response can never hang the calling Vercel function.
+    const sendPromise = admin.messaging.sendEachForMulticast({
       tokens: fcmTokens,
       notification: { title, body },
       // data values must be strings per FCM contract.
@@ -128,11 +138,35 @@ export async function sendPushNotification(
         priority: 'high',
         notification: {
           channelId: 'wassilha_default',
-          // Click action resolves in MainActivity; for now we rely on
-          // the app-shell to handle deep links via app state.
+        },
+      },
+      // iOS payload: sound + badge so the system shows the notification
+      // with audio + bumps the app icon counter. Without this block FCM
+      // still delivers, but the notification is silent and the badge
+      // never updates -- which is why iOS users appeared not to receive
+      // any push at all on early tests.
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
         },
       },
     });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error('fcm-timeout')),
+        FCM_TIMEOUT_MS
+      );
+    });
+    let res: Awaited<typeof sendPromise>;
+    try {
+      res = await Promise.race([sendPromise, timeoutPromise]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
 
     // Prune tokens the FCM backend has marked as permanently invalid, so
     // we don't keep paying for dead tokens on every future dispatch.
@@ -173,5 +207,153 @@ export async function sendPushNotification(
       e instanceof Error ? e.message : String(e)
     );
     return { attempted: 0, successCount: 0, failureCount: 0, skipped: true, reason: 'error' };
+  }
+}
+
+type BatchSendResult = {
+  attempted: number;
+  userCount: number;
+  successCount: number;
+  failureCount: number;
+  skipped: boolean;
+  reason?: string;
+};
+
+/**
+ * Send ONE FCM notification to every device of every user in userIds.
+ *
+ * Use this for fan-out scenarios (e.g. a new order needs to ping all
+ * eligible drivers). The previous implementation called
+ * sendPushNotification once per driver in a or...of loop, which
+ * multiplied FCM round-trips by the number of online drivers (100
+ * drivers = 100 separate FCM calls). This helper collapses the fan-out
+ * to a single sendEachForMulticast against all collected tokens --
+ * FCM accepts up to 500 tokens per call, so 100 drivers with ~1 device
+ * each fit comfortably.
+ *
+ * Best-effort: never throws; prunes dead tokens the same way the
+ * single-user helper does. Subject to the same 5s ceiling.
+ */
+export async function sendPushNotificationBatch(
+  userIds: string[],
+  title: string,
+  body: string,
+  data?: Record<string, string>
+): Promise<BatchSendResult> {
+  const empty: BatchSendResult = {
+    attempted: 0,
+    userCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    skipped: false,
+  };
+  if (userIds.length === 0) return empty;
+
+  try {
+    const rows = await db.pushToken.findMany({
+      where: { userId: { in: userIds } },
+      select: { token: true },
+    });
+    if (rows.length === 0) {
+      return { ...empty, userCount: userIds.length };
+    }
+
+    const admin = initAdmin();
+    if (!admin.messaging) {
+      return {
+        attempted: rows.length,
+        userCount: userIds.length,
+        successCount: 0,
+        failureCount: 0,
+        skipped: true,
+        reason: admin.reason,
+      };
+    }
+
+    const fcmTokens = rows.map((r) => r.token);
+    // FCM caps a single sendEachForMulticast at 500 tokens. If we ever
+    // exceed that, chunk the array and run sequentially. For the
+    // current El Guerrara fleet this branch is unreachable, but the
+    // guard keeps the helper safe if the city/region expands.
+    let totalSuccess = 0;
+    let totalFailure = 0;
+    const deadTokenValues: string[] = [];
+    for (let i = 0; i < fcmTokens.length; i += 500) {
+      const chunk = fcmTokens.slice(i, i + 500);
+      const sendPromise = admin.messaging.sendEachForMulticast({
+        tokens: chunk,
+        notification: { title, body },
+        data: data
+          ? Object.fromEntries(
+              Object.entries(data).map(([k, v]) => [k, String(v)])
+            )
+          : undefined,
+        android: {
+          priority: 'high',
+          notification: { channelId: 'wassilha_default' },
+        },
+        apns: {
+          payload: { aps: { sound: 'default', badge: 1 } },
+        },
+      });
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('fcm-timeout')),
+          FCM_TIMEOUT_MS
+        );
+      });
+      let res: Awaited<ReturnType<Messaging["sendEachForMulticast"]>>;
+      try {
+        res = await Promise.race([sendPromise, timeoutPromise]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      totalSuccess += res.successCount;
+      totalFailure += res.failureCount;
+      res.responses.forEach((r, idx) => {
+        if (!r.success && r.error) {
+          const code = r.error.code;
+          if (
+            code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/invalid-argument'
+          ) {
+            deadTokenValues.push(chunk[idx]);
+          }
+        }
+      });
+    }
+
+    if (deadTokenValues.length > 0) {
+      db.pushToken
+        .deleteMany({ where: { token: { in: deadTokenValues } } })
+        .catch((e) => {
+          // eslint-disable-next-line no-console
+          console.warn('[firebase-admin] failed to prune dead tokens:', e);
+        });
+    }
+
+    return {
+      attempted: fcmTokens.length,
+      userCount: userIds.length,
+      successCount: totalSuccess,
+      failureCount: totalFailure,
+      skipped: false,
+    };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[firebase-admin] sendPushNotificationBatch failed:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return {
+      attempted: 0,
+      userCount: userIds.length,
+      successCount: 0,
+      failureCount: 0,
+      skipped: true,
+      reason: 'error',
+    };
   }
 }
