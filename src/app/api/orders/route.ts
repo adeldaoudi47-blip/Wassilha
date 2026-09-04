@@ -222,13 +222,39 @@ export async function POST(req: NextRequest) {
     // a new order is looking for a triporteur. The push helper itself
     // never throws, but we still wrap the fan-out in try/catch so a FCM
     // outage cannot leak an unhandled rejection from this handler.
+    //
+    // Service-type filter (V2): drivers opt into the kinds of orders
+    // they want to receive by setting `Driver.serviceType` to one of
+    // "CARGO" / "TAXI" / "BOTH" at registration time. The fan-out
+    // below translates the order's cargoType into the requested
+    // service category ("taxi" -> "TAXI", everything else -> "CARGO")
+    // and then matches on `serviceType IN { "BOTH", requested }`.
+    // A cargo-only driver therefore never receives a taxi ping, and
+    // a taxi-only driver never receives a cargo ping. The compound
+    // index @@index([isOnline, isVerified, serviceType]) keeps the
+    // query cheap as the fleet grows.
     void (async () => {
       try {
+        // Map Order.cargoType to the Driver.serviceType category the
+        // order is requesting. The Order column is a free String so
+        // an unknown cargo value (e.g. a future "HEAVY") still falls
+        // through to the cargo fan-out rather than blowing up here.
+        const requestedService: 'CARGO' | 'TAXI' =
+          cargoType === 'taxi' ? 'TAXI' : 'CARGO';
         const availableDrivers = await db.driver.findMany({
           where: {
             isOnline: true,
             isVerified: true,
             user: { accountStatus: 'active' },
+            // The `OR` shape lets a single Prisma query hit both the
+            // specialists (serviceType = requestedService) and the
+            // generalists (serviceType = "BOTH"). A driver whose
+            // serviceType is the *opposite* of the requested one is
+            // excluded automatically.
+            OR: [
+              { serviceType: 'BOTH' },
+              { serviceType: requestedService },
+            ],
           },
           select: { userId: true },
         });

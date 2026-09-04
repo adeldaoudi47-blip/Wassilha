@@ -284,6 +284,19 @@ export const translations = {
     pickupLocation: 'موقع الركوب',
     dropoffLocation: 'وجهة الوصول',
     requestTaxi: 'اطلب تكسي الآن',
+    // === Driver service-type registration (V2) =========================
+    // Shown on the new-driver form (auth-flow.tsx) and the customer
+    // "upgrade to driver" dialog. The driver picks one of:
+    //   - cargoService : "توصيل بضائع" — the original triporteur flow
+    //   - taxiService  : "نقل ركاب / تكسي" — Yassir-like
+    //   - bothServices : "كلاهما" — accept both kinds of orders
+    // The selected value is sent to /api/auth/apply-driver as
+    // `serviceType` and persisted in the Driver row, then used by the
+    // order fan-out in POST /api/orders to filter who gets the push.
+    driverService: 'الخدمة المقدمة',
+    cargoService: 'توصيل بضائع',
+    taxiService: 'نقل ركاب / تكسي',
+    bothServices: 'كلاهما',
   },
   fr: {
     dir: 'ltr' as const,
@@ -563,6 +576,12 @@ export const translations = {
     pickupLocation: 'Lieu de prise en charge',
     dropoffLocation: 'Destination',
     requestTaxi: 'Commander un taxi',
+    // === Driver service-type registration (V2) =========================
+    // French mirrors of the Arabic keys added in the `ar` block.
+    driverService: 'Service proposé',
+    cargoService: 'Livraison de marchandises',
+    taxiService: 'Transport de passagers / Taxi',
+    bothServices: 'Les deux',
   },
 };
 

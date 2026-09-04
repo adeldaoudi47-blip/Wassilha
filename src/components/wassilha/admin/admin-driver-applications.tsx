@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck, CheckCircle2, XCircle, Bike, Phone } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, XCircle, Bike, Phone, Car, Package, Layers } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -38,6 +38,12 @@ type Application = {
   appliedAt: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  // Service type the driver applied for (CARGO / TAXI / BOTH). The
+  // server returns "CARGO" by default for pre-V2 rows. Rendered as a
+  // small icon next to the driver name so reviewers can see whether
+  // the application is for goods delivery, passenger transport, or
+  // both at a glance.
+  serviceType?: string | null;
   vehicleRegistration: VehicleRegistration | null;
 };
 
@@ -135,7 +141,17 @@ export function AdminDriverApplications() {
                 <Bike size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-foreground">{a.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-sm font-bold text-foreground">{a.name}</p>
+                  {/* Driver service-type icon (mirrors the one in the
+                      approved-drivers list). Reviewers see at a glance
+                      whether the application is for goods delivery,
+                      passenger transport, or both — important because
+                      the carte-grise vehicle class needs to match the
+                      service (e.g. a triporteur can not serve a taxi
+                      order). */}
+                  <DriverServiceIcon serviceType={a.serviceType} />
+                </div>
                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground" dir="ltr">
                   <Phone size={11} /> {a.phone}
                 </p>
@@ -245,5 +261,47 @@ export function AdminDriverApplications() {
         ))
       )}
     </div>
+  );
+}
+
+
+// Tiny inline icon shown next to the driver name in the application
+// card. Same visual contract as the one in admin-drivers.tsx so the
+// two screens are immediately recognisable as "the same driver" —
+//   "CARGO" -> Package (primary green)
+//   "TAXI"  -> Car       (yellow accent, Yassir-like)
+//   "BOTH"  -> Layers    (primary green)
+// Anything else falls back to a muted Package so unknown legacy
+// values never break the row.
+function DriverServiceIcon({ serviceType }: { serviceType?: string | null }) {
+  const st = (serviceType ?? 'CARGO').toUpperCase();
+  if (st === 'TAXI') {
+    return (
+      <span
+        title='Taxi'
+        className='flex h-4 w-4 shrink-0 items-center justify-center rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300'
+      >
+        <Car size={10} />
+      </span>
+    );
+  }
+  if (st === 'BOTH') {
+    return (
+      <span
+        title='Cargo + Taxi'
+        className='flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary'
+      >
+        <Layers size={10} />
+      </span>
+    );
+  }
+  // Default: CARGO (or unknown -> fall back to a green Package icon).
+  return (
+    <span
+      title='Cargo'
+      className='flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary'
+    >
+      <Package size={10} />
+    </span>
   );
 }

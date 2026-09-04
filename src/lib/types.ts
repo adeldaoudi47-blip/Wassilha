@@ -44,6 +44,15 @@ export interface DriverProfile {
   userId: string;
   isOnline: boolean;
   isVerified: boolean;
+  // Service type — which kinds of orders this driver is willing to
+  // accept. Free String (not Prisma enum) so the column can be
+  // extended without a migration. Admin panel renders a small
+  // icon next to the driver name based on this value.
+  //   "CARGO" → goods / parcels / furniture
+  //   "TAXI"  → passenger transport (Yassir-like)
+  //   "BOTH"  → accepts both kinds of orders
+  // Defaults to "CARGO" for every pre-V2 driver.
+  serviceType?: 'CARGO' | 'TAXI' | 'BOTH' | string;
   rating: number;
   totalTrips: number;
   totalEarnings: number;

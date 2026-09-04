@@ -2,7 +2,7 @@
 //
 // Self-registration endpoint for prospective drivers. The body MUST include
 // the phone-verification cookie (issued by /api/auth/verify-otp after the
-// driver passed OTP) — the server then creates a User + Driver pair in a
+// driver passed OTP) â€” the server then creates a User + Driver pair in a
 // forced `pending` state. The client cannot influence role or accountStatus:
 //   - role             = "driver"   (forced server-side)
 //   - accountStatus    = "pending"  (forced server-side)
@@ -24,6 +24,26 @@ const OWNER_TYPES: ReadonlySet<string> = new Set([
   OwnerType.PERSONNE_MORALE,
 ]);
 
+// `serviceType` decides which orders the driver will receive once
+// approved. Allowed values are a strict allow-list (free String column
+// in the DB, so the API layer is the only enforcement point):
+//   "CARGO"  -> original triporteur flow
+//   "TAXI"   -> passenger transport (Yassir-like)
+//   "BOTH"   -> both
+// We use a free String for the column (not a Prisma enum) so that
+// adding more service types later (e.g. "HEAVY", "PHARMACY") would
+// not require a migration. Anything outside the allow-list falls
+// back to "CARGO" (legacy behaviour) instead of being rejected with
+// 400, so a misbehaving client cannot break the registration.
+const ALLOWED_SERVICE_TYPES = new Set(['CARGO', 'TAXI', 'BOTH']);
+
+function normalizeServiceType(raw: unknown): 'CARGO' | 'TAXI' | 'BOTH' {
+  if (typeof raw === 'string' && ALLOWED_SERVICE_TYPES.has(raw)) {
+    return raw as 'CARGO' | 'TAXI' | 'BOTH';
+  }
+  return 'CARGO';
+}
+
 interface ApplyDriverBody {
   name?: unknown;
   numeroImmatriculation?: unknown;
@@ -41,6 +61,13 @@ interface ApplyDriverBody {
   poidsAVide?: unknown;
   energie?: unknown;
   puissance?: unknown;
+  // `serviceType` decides which orders the driver will receive after
+  // admin approval. Persisted in `Driver.serviceType`. Allowed values
+  // are restricted by `normalizeServiceType` below; anything outside
+  // the allow-list falls back to "CARGO" (legacy behaviour) instead
+  // of being rejected with 400, so a misbehaving client cannot break
+  // the registration.
+  serviceType?: unknown;
 }
 
 function badRequest(error: string, issues?: unknown) {
@@ -65,7 +92,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // SECURITY: two valid gates — pick the first that matches.
+    // SECURITY: two valid gates â€” pick the first that matches.
     //
     //   (A) fresh OTP-verified phone cookie: same path the new driver flow
     //       has always used (phone is not yet tied to any account).
@@ -101,7 +128,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as ApplyDriverBody;
 
-    // OWASP — API3:2023: validate the user-facing name (the only free-text
+    // OWASP â€” API3:2023: validate the user-facing name (the only free-text
     // field on the public driver-application route) with Zod. Other
     // fields on this body are constrained to fixed enums / patterns and
     // are checked below with explicit type guards, so they stay readable.
@@ -186,6 +213,12 @@ export async function POST(req: NextRequest) {
     const poidsAVide = optStr(body.poidsAVide);
     const energie = optStr(body.energie);
     const puissance = optStr(body.puissance);
+    // Normalize the service type with an allow-list. Anything outside
+    // "CARGO" / "TAXI" / "BOTH" falls back to "CARGO" so a typo on
+    // the client (or a future value) never causes a 500. The result
+    // is persisted in `Driver.serviceType` and used by the order
+    // fan-out in `POST /api/orders` to filter who gets the push.
+    const serviceType = normalizeServiceType(body.serviceType);
     // Restrict `energie` to a known short list so admins don't see garbage
     // in the dashboard. Empty / null is allowed (optional).
     if (energie !== null) {
@@ -256,7 +289,7 @@ export async function POST(req: NextRequest) {
       ) {
         // Re-submission after a rejection: rebuild the carte grise and
         // reset the application lifecycle. The previous VehicleRegistration
-        // is deleted (not cascaded — we own the lifecycle here).
+        // is deleted (not cascaded â€” we own the lifecycle here).
         const updated = await db.$transaction(async (tx) => {
           await tx.user.update({
             where: { id: existing.id },
@@ -297,6 +330,11 @@ export async function POST(req: NextRequest) {
               appliedAt: new Date(),
               reviewedAt: null,
               isVerified: false,
+              // Persist the re-applied service type (the driver may have
+              // changed their mind between rejections: cargo → taxi etc.).
+              // The server already coerced the value to one of the three
+              // allowed values via normalizeServiceType() above.
+              serviceType,
             },
             include: { user: true },
           });
@@ -368,7 +406,7 @@ export async function POST(req: NextRequest) {
             },
             include: { user: true },
           });
-          // 4) Revoke every live session for this user — the upgrade
+          // 4) Revoke every live session for this user â€” the upgrade
           //    changes the role, so the existing cookies are no longer
           //    safe to honor even on the same device. The customer is
           //    forced to sign back in once the admin approves.
@@ -446,6 +484,12 @@ export async function POST(req: NextRequest) {
           isVerified: false,
           applicationStatus: 'pending',
           appliedAt: new Date(),
+          // serviceType comes from the client, coerced server-side via
+          // normalizeServiceType() so it is always one of CARGO/TAXI/BOTH.
+          // Defaults to "CARGO" for any client that omits the field,
+          // matching the pre-taxi behaviour (every legacy driver
+          // continues to receive the existing cargo order fan-out).
+          serviceType,
         },
         include: { user: true },
       });

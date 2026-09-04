@@ -9,6 +9,10 @@ type DriverWithRelations = {
   userId: string;
   isOnline: boolean;
   isVerified: boolean;
+  // Service type — surfaced in the admin list so reviewers know which
+  // kind of orders the driver will receive. Defaults to "CARGO" for
+  // legacy rows (pre-V2).
+  serviceType: string;
   rating: number;
   totalTrips: number;
   totalEarnings: number;
@@ -54,6 +58,11 @@ function toDriverProfile(driver: DriverWithRelations): DriverProfile {
     userId: driver.userId,
     isOnline: driver.isOnline,
     isVerified: driver.isVerified,
+    // Service type — free String in the DB, forwarded as-is. The admin
+    // UI renders a Cargo / Taxi / Both icon next to the driver name
+    // based on this value, so reviewers can see at a glance whether
+    // the driver will receive cargo orders, taxi orders, or both.
+    serviceType: driver.serviceType,
     rating: driver.rating,
     totalTrips: driver.totalTrips,
     totalEarnings: driver.totalEarnings,

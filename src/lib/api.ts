@@ -210,6 +210,14 @@ export const api = {
     poidsAVide?: string;
     energie?: string;
     puissance?: string;
+    // Service type — the driver picks which kind(s) of orders they
+    // want to receive once approved:
+    //   "CARGO"  → original triporteur flow
+    //   "TAXI"   → passenger transport (Yassir-like)
+    //   "BOTH"   → both
+    // Server-side allowed-list coerces unknown values to "CARGO" so
+    // a misbehaving client never breaks the registration.
+    serviceType?: 'CARGO' | 'TAXI' | 'BOTH';
   }) =>
     req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
       method: 'POST',

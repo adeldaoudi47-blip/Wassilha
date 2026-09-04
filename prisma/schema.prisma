@@ -83,6 +83,19 @@ model Driver {
   //   "rejected" â€” admin rejected the application
   // Admin-created drivers continue to default to "active" (existing rows preserved).
   applicationStatus     String               @default("active")
+  // Service type — which kinds of orders this driver is willing to
+  // accept. Stored as a free String to avoid a Prisma enum (which
+  // would require a migration on every change). Allowed values:
+  //   "CARGO"  → goods / parcels / furniture / ... (the original
+  //              triporteur-only flow)
+  //   "TAXI"   → passenger transport (Yassir-like)
+  //   "BOTH"   → driver wants both kinds of orders
+  // Old rows default to "CARGO" so the post-migration state matches
+  // the pre-migration behavior (everyone gets the legacy cargo fan-out).
+  // The order-fan-out query in `POST /api/orders` filters drivers by
+  // this column so a cargo driver never receives a taxi ping and a
+  // taxi driver never receives a cargo ping.
+  serviceType           String               @default("CARGO")
   appliedAt             DateTime?
   reviewedAt            DateTime?
   rating                Float                @default(5.0)
@@ -96,6 +109,12 @@ model Driver {
   @@index([isOnline])
   @@index([isVerified])
   @@index([isOnline, isVerified])
+  // Service-type filter: the order POST handler uses
+  // `serviceType IN ('BOTH', <request-type>)` to exclude drivers who
+  // don't serve a given category (e.g. cargo-only drivers never
+  // receive a `taxi` ping). A compound index with the two flags
+  // keeps the fan-out cheap even as the driver pool grows.
+  @@index([isOnline, isVerified, serviceType])
 }
 
 /// Carte grise (vehicle registration document) for a driver. The OwnerType

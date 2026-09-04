@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff, Car, Package, Layers } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -116,6 +116,14 @@ export function AdminDrivers() {
                     ) : (
                       <ShieldOff size={13} className="shrink-0 text-amber-500" />
                     )}
+                    {/* Driver service-type icon — the driver picked
+                        CARGO / TAXI / BOTH at registration. The icon
+                        matches the order fan-out in /api/orders, so
+                        reviewers can spot a taxi-only driver at a
+                        glance. Falls back to the Bike icon for legacy
+                        rows whose serviceType column defaulted to
+                        "CARGO" or is missing. */}
+                    <DriverServiceIcon serviceType={d.serviceType} />
                   </div>
                   <p className="flex items-center gap-1 text-xs text-muted-foreground" dir="ltr">
                     <Phone size={10} /> +213 {d.user.phone}
@@ -210,5 +218,48 @@ export function AdminDrivers() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// Tiny inline icon used next to the driver name in the admin list.
+// Renders the lucide icon that matches `serviceType`:
+//   "CARGO" → Package (box icon, primary green)
+//   "TAXI"  → Car       (yellow accent, Yassir-style)
+//   "BOTH"  → Layers    (overlapping squares, primary green)
+// Anything else (undefined / null / unknown legacy value) falls back
+// to a muted Bike so the row stays visually consistent. Hovering
+// surfaces a localised title that explains the service.
+function DriverServiceIcon({ serviceType }: { serviceType?: string | null }) {
+  const st = (serviceType ?? 'CARGO').toUpperCase();
+  if (st === 'TAXI') {
+    return (
+      <span
+        title="Taxi"
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300"
+      >
+        <Car size={10} />
+      </span>
+    );
+  }
+  if (st === 'BOTH') {
+    return (
+      <span
+        title="Cargo + Taxi"
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"
+      >
+        <Layers size={10} />
+      </span>
+    );
+  }
+  // Default: CARGO (or unknown → fall back to Bike for visual continuity
+  // with the rest of the admin list, which still uses Bike for legacy
+  // drivers).
+  return (
+    <span
+      title="Cargo"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"
+    >
+      <Package size={10} />
+    </span>
   );
 }

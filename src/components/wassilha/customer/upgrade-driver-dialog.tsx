@@ -5,6 +5,7 @@ import { X, Bike, ShieldCheck, AlertCircle, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -18,6 +19,13 @@ interface UpgradeDriverDialogProps {
 // screen. It only collects the strictly required carte-grise fields; the
 // server re-validates everything so this form is best-effort UX.
 export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverDialogProps) {
+  // `t` is the i18n bag so the new "Service proposé" select can render
+  // its labels from the same dictionary as the rest of the app, instead
+  // of duplicating the AR/FR strings inline (the dialog already passed
+  // `isAr` in for older strings, but we now need the translation
+  // function for the new driverService / cargoService / taxiService /
+  // bothServices keys).
+  const { t } = useT();
   const [name, setName] = useState('');
   const [numeroImmatriculation, setNumeroImmatriculation] = useState('');
   const [typeProprietaire, setTypeProprietaire] = useState<'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE'>('PERSONNE_PHYSIQUE');
@@ -28,6 +36,12 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
   const [datePremiereMiseEnCirculation, setDate] = useState('');
   const [adresse, setAdresse] = useState('');
   const [energie, setEnergie] = useState('');
+  // `serviceType` is sent to the server alongside the rest of the
+  // carte-grise data and persisted in `Driver.serviceType`. Once
+  // approved, the driver will only receive orders matching this
+  // service category (cargo / taxi / both). Defaults to "CARGO" so
+  // existing flows keep working without forcing the user to pick.
+  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -72,6 +86,9 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
         datePremiereMiseEnCirculation: datePremiereMiseEnCirculation.trim(),
         adresse: adresse.trim(),
         energie: energie.trim(),
+        // Persisted in Driver.serviceType and used by the order fan-out
+        // in POST /api/orders to filter which drivers get the push.
+        serviceType,
       });
       toast.success(
         isAr
@@ -204,6 +221,25 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
                 <SelectItem value="Benzine">{isAr ? 'بنزين' : 'Benzine'}</SelectItem>
                 <SelectItem value="Diesel">{isAr ? 'مازوت' : 'Diesel'}</SelectItem>
                 <SelectItem value="GPL">GPL</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {/* Driver service type — must be picked before the upgrade is
+              accepted. Tells the order fan-out which drivers are eligible
+              for the order (cargo / taxi / both). Rendered right after
+              the energie select so it sits in the required-fields block. */}
+          <Field label={t.driverService} required>
+            <Select
+              value={serviceType}
+              onValueChange={(v) => setServiceType(v as 'CARGO' | 'TAXI' | 'BOTH')}
+            >
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CARGO">{t.cargoService}</SelectItem>
+                <SelectItem value="TAXI">{t.taxiService}</SelectItem>
+                <SelectItem value="BOTH">{t.bothServices}</SelectItem>
               </SelectContent>
             </Select>
           </Field>

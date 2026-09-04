@@ -92,6 +92,13 @@ export function AuthFlow() {
     poidsAVide: '',
     energie: '',
     puissance: '',
+    // Driver picks which service(s) they want to provide. Persisted
+    // in `Driver.serviceType` and used by the order fan-out query in
+    // `POST /api/orders` so a cargo-only driver never receives a
+    // `taxi` ping (and vice-versa). Defaults to "CARGO" for full
+    // backward compat with the pre-taxi fleet: every existing driver
+    // continues to receive cargo orders exactly as before.
+    serviceType: 'CARGO' as 'CARGO' | 'TAXI' | 'BOTH',
   });
   const updateVehicleRegistration = (
     field: keyof typeof vehicleRegistration,
@@ -556,6 +563,12 @@ export function AuthFlow() {
         poidsAVide: vr.poidsAVide.trim() || undefined,
         energie: vr.energie.trim() || undefined,
         puissance: vr.puissance.trim() || undefined,
+        // `serviceType` decides which orders this driver will receive
+        // once approved: "CARGO" (parcels / furniture), "TAXI" (passenger
+        // transport, Yassir-like) or "BOTH" (default fallback on the
+        // server if the client omits it). The server validates the
+        // value against an allow-list and rejects anything else.
+        serviceType: vr.serviceType,
       };
       console.log('[Driver Flow] Submitting driver application:', submitPayload);
       const result = await api.applyDriver(submitPayload);
@@ -1661,6 +1674,37 @@ export function AuthFlow() {
                     className="h-12 rounded-xl"
                     dir="ltr"
                   />
+                </div>
+
+                {/* Driver service type — decides which orders this driver
+                    will receive after admin approval. Rendered between
+                    the required carte-grise fields and the optional
+                    PTAC/PUISSANCE block so the form reads top-to-bottom
+                    in order of importance. Default "CARGO" matches the
+                    pre-taxi fleet, so legacy behaviour is preserved. */}
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.driverService}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <Select
+                    value={vehicleRegistration.serviceType}
+                    onValueChange={(v) =>
+                      updateVehicleRegistration(
+                        'serviceType',
+                        v as 'CARGO' | 'TAXI' | 'BOTH'
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-12 rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CARGO">{t.cargoService}</SelectItem>
+                      <SelectItem value="TAXI">{t.taxiService}</SelectItem>
+                      <SelectItem value="BOTH">{t.bothServices}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div>
