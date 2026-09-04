@@ -35,6 +35,11 @@ export function cargoColor(cargo: CargoKey): string {
 }
 
 const STATUS_STYLES: Record<OrderStatus, { bg: string; text: string; dot: string; key: string }> = {
+  // SCHEDULED BOOKINGS: scheduled orders get a distinct indigo
+  // palette (still close to the existing tailwind set, so the
+  // StatusBadge component blends in with the rest of the UI). The
+  // `key` reuses the i18n string `scheduled` we added in i18n.ts.
+  scheduled: { bg: 'bg-indigo-100 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500', key: 'scheduled' },
   searching: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500', key: 'pending' },
   accepted: { bg: 'bg-sky-100 dark:bg-sky-950/40', text: 'text-sky-700 dark:text-sky-300', dot: 'bg-sky-500', key: 'accepted' },
   picked: { bg: 'bg-violet-100 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500', key: 'inTransit' },

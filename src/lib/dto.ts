@@ -91,4 +91,8 @@ export const publicOrderSelect = {
   pickedAt: true,
   deliveredAt: true,
   cancelledAt: true,
+  // SCHEDULED BOOKINGS: ISO timestamp for future reservations, null
+  // for immediate orders. The frontend (customer track + driver
+  // requests) reads this to render the booking time.
+  scheduledAt: true,
 } as const;

@@ -17,7 +17,18 @@ export type CargoKey =
   // `Order.cargoType` is a free `String`, so no Prisma migration is
   // required — old rows are unaffected.
   | 'taxi';
-export type OrderStatus = 'searching' | 'accepted' | 'picked' | 'delivered' | 'cancelled';
+export type OrderStatus =
+  | 'searching'
+  // `scheduled` is the initial state of a future-dated booking. The
+  // dispatcher (or a cron-like job) flips it to `searching` when the
+  // scheduled time approaches, at which point the normal driver
+  // fan-out kicks in. Drivers see scheduled orders in their
+  // "incoming" feed so they can pre-accept them if they want.
+  | 'scheduled'
+  | 'accepted'
+  | 'picked'
+  | 'delivered'
+  | 'cancelled';
 
 export interface AuthUser {
   id: string;
@@ -120,6 +131,11 @@ export interface Order {
   pickedAt: string | null;
   deliveredAt: string | null;
   cancelledAt: string | null;
+  // SCHEDULED BOOKINGS: null = immediate order (the historical default).
+  // A future ISO timestamp = the customer reserved a triporteur / taxi
+  // for that moment; the server stores status='scheduled' until the
+  // dispatcher flips it to 'searching'.
+  scheduledAt?: string | null;
   customer?: AuthUser;
   driver?: AuthUser | null;
 }

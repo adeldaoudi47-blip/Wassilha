@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Bike, Wifi, WifiOff, Package, MapPin, Flag, Scale, Navigation,
-  Check, X, Bell, BellOff, Zap,
+  Check, X, Bell, BellOff, Zap, CalendarClock, Clock,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -206,11 +206,34 @@ export function DriverRequests() {
           <div className="space-y-2">
             {incoming.map((o) => (
               <Card key={o.id} className="overflow-hidden p-0 ring-2 ring-primary/20">
-                <div className="flex items-center justify-between bg-primary/5 p-2.5">
+                <div
+                  className={cn(
+                    'flex items-center justify-between p-2.5',
+                    // SCHEDULED BOOKINGS: scheduled orders get a
+                    // distinct amber header so the driver can spot
+                    // future-dated bookings at a glance. The same
+                    // ring around the card is preserved so the card
+                    // still feels "incoming" (i.e. actionable).
+                    o.status === 'scheduled'
+                      ? 'bg-amber-50 dark:bg-amber-950/30'
+                      : 'bg-primary/5',
+                  )}
+                >
                   <span className="font-mono text-xs font-bold text-primary">{o.code}</span>
-                  <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                    <Zap size={11} /> {isAr ? 'طلب جديد' : 'Nouveau'}
-                  </span>
+                  {o.status === 'scheduled' ? (
+                    // SCHEDULED BOOKINGS: replace the "new order" pill
+                    // with a "scheduled" pill that includes the
+                    // booking time. The time is rendered in the
+                    // driver's locale (ar-DZ / fr-DZ) so it matches
+                    // the customer's input.
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                      <CalendarClock size={11} /> {t.scheduled}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                      <Zap size={11} /> {isAr ? 'طلب جديد' : 'Nouveau'}
+                    </span>
+                  )}
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-3">
@@ -254,6 +277,28 @@ export function DriverRequests() {
                     <span className="text-xs font-semibold text-muted-foreground">{t.estimate}</span>
                     <span className="text-lg font-black text-primary">{formatDzd(o.price)} {t.dzd}</span>
                   </div>
+                  {/* SCHEDULED BOOKINGS: when the order has a future
+                      `scheduledAt`, render a dedicated row right
+                      above the action buttons so the driver sees the
+                      exact moment they need to be at the pickup
+                      point. The icon (Clock) and the date+time are
+                      localized to the driver's locale. We intentionally
+                      use `Date(...)` parsing because the API returns
+                      ISO-8601 strings regardless of the customer's
+                      timezone. */}
+                  {o.scheduledAt && (
+                    <div className="mt-2.5 flex items-center justify-between rounded-lg bg-amber-100/60 px-3 py-2 dark:bg-amber-950/40">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200">
+                        <Clock size={12} /> {t.scheduledAt}
+                      </span>
+                      <span className="text-sm font-black text-amber-900 dark:text-amber-100">
+                        {new Date(o.scheduledAt).toLocaleString(
+                          isAr ? 'ar-DZ' : 'fr-DZ',
+                          { dateStyle: 'short', timeStyle: 'short' },
+                        )}
+                      </span>
+                    </div>
+                  )}
                   <div className="mt-2.5 flex gap-2">
                     <Button
                       onClick={() => handleAccept(o)}

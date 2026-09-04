@@ -118,6 +118,12 @@ export const api = {
     pickupLng?: number;
     dropoffLat?: number;
     dropoffLng?: number;
+    // SCHEDULED BOOKINGS: ISO-8601 string. When omitted / null, the
+    // server treats the order as immediate (status='searching').
+    // When set to a future time, the server stores status='scheduled'
+    // and the order waits for the dispatcher to flip it to
+    // 'searching' at the appointed time.
+    scheduledAt?: string | null;
   }) =>
     req<Order>('/api/orders', {
       method: 'POST',

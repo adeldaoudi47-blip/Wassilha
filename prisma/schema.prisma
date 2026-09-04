@@ -195,7 +195,7 @@ model Order {
   weight      Int       @default(20)
   distance    Float     @default(3.0)
   price       Int       @default(300)
-  status      String    @default("searching") // searching | accepted | picked | delivered | cancelled
+  status      String    @default("searching") // searching | scheduled | accepted | picked | delivered | cancelled
   notes       String?
   rating      Int?
   createdAt   DateTime  @default(now())
@@ -203,6 +203,13 @@ model Order {
   pickedAt    DateTime?
   deliveredAt DateTime?
   cancelledAt DateTime?
+  // SCHEDULED BOOKINGS: when set, the order is a future reservation
+  // and the API should set status='scheduled' instead of 'searching'.
+  // Null = immediate order (the historical default). A future time
+  // = the customer wants a triporteur / taxi at a specific moment;
+  // the driver fan-out is delayed until the dispatcher flips it to
+  // 'searching' when the time approaches.
+  scheduledAt  DateTime?
 
   ratings Rating[]
 
@@ -216,6 +223,10 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
+  // Scheduled bookings: the dispatcher job (out of scope here) and
+  // the driver's "incoming scheduled" tab both filter by
+  // (scheduledAt ASC) when status='scheduled'.
+  @@index([scheduledAt])
 }
 
 model Pricing {

@@ -297,6 +297,16 @@ export const translations = {
     cargoService: 'توصيل بضائع',
     taxiService: 'نقل ركاب / تكسي',
     bothServices: 'كلاهما',
+    // === Scheduled bookings (future-dated orders) ======================
+    // The customer toggles between immediate (الآن) and scheduled
+    // (لموعد لاحق) at the top of the order form; the booking time
+    // picker is labelled `selectDateTime`; the driver list shows
+    // a "مجدول" pill and the booking time via `scheduledAt`.
+    scheduleForLater: 'حجز لموعد لاحق',
+    now: 'الآن',
+    scheduled: 'مجدول',
+    selectDateTime: 'اختر التاريخ والوقت',
+    scheduledAt: 'وقت الحجز',
   },
   fr: {
     dir: 'ltr' as const,
@@ -582,6 +592,17 @@ export const translations = {
     cargoService: 'Livraison de marchandises',
     taxiService: 'Transport de passagers / Taxi',
     bothServices: 'Les deux',
+    // === Scheduled bookings (future-dated orders) ======================
+    // The customer toggles between immediate (Maintenant) and
+    // scheduled (Pour plus tard); the booking time picker uses
+    // `selectDateTime`; the driver list labels scheduled orders
+    // with `scheduled` and shows the booking time via
+    // `scheduledAt`.
+    scheduleForLater: 'Réservation pour plus tard',
+    now: 'Maintenant',
+    scheduled: 'Programmé',
+    selectDateTime: 'Sélectionner la date et l\'heure',
+    scheduledAt: 'Heure de la réservation',
   },
 };
 

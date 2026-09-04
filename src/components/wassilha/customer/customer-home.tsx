@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
   Settings2, Check, Loader2, Crosshair, Navigation, MapPin, Car,
-  Package,
+  Package, Zap, CalendarClock,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -92,6 +92,14 @@ export function CustomerHome() {
   const [submitting, setSubmitting] = useState(false);
   const [showPricingSheet, setShowPricingSheet] = useState(false);
   const [pickerFor, setPickerFor] = useState<'pickup' | 'dropoff' | null>(null);
+  // SCHEDULED BOOKINGS: when `bookingMode === 'scheduled'`, the
+  // customer picks a future date+time via the `datetime-local` input
+  // (stored as a local-time string in `scheduledAt`). The form submit
+  // converts that string to an ISO timestamp and forwards it to the
+  // API. The mode is held across cargo/taxi toggles so flipping the
+  // service tab does not silently drop a scheduled booking.
+  const [bookingMode, setBookingMode] = useState<'now' | 'scheduled'>('now');
+  const [scheduledAt, setScheduledAt] = useState<string>('');
   // "Use my location" state — when non-null, the InteractiveMap renders
   // a pickup marker at these coordinates. The `locating` flag drives the
   // spinner on the GPS button.
@@ -124,6 +132,28 @@ export function CustomerHome() {
       toast.error(isAr ? 'أدخل عنوان الاستلام وعنوان التوصيل' : 'Saisissez les deux adresses');
       return;
     }
+    // SCHEDULED BOOKINGS: when the customer picked "Scheduled" but
+    // forgot to fill the datetime input, surface a localized error
+    // instead of silently sending `null` (which would create an
+    // immediate order and confuse the customer).
+    let scheduledIso: string | null = null;
+    if (bookingMode === 'scheduled') {
+      if (!scheduledAt) {
+        toast.error(isAr ? 'اختر التاريخ والوقت للحجز' : 'Choisissez la date et l\'heure');
+        return;
+      }
+      // `datetime-local` returns a local-time string (no timezone).
+      // `new Date('2025-09-05T08:00')` interprets it in the local
+      // timezone, which is exactly what the customer expects. We
+      // re-check that the resulting timestamp is in the future
+      // because the `min` attribute is a UX hint, not a hard gate.
+      const parsed = new Date(scheduledAt);
+      if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+        toast.error(isAr ? 'وقت الحجز يجب أن يكون في المستقبل' : 'L\'heure doit être dans le futur');
+        return;
+      }
+      scheduledIso = parsed.toISOString();
+    }
     setSubmitting(true);
     try {
       // `serviceMode === 'taxi'` flips the API payload so the order is
@@ -146,11 +176,29 @@ export function CustomerHome() {
         // etc.). For taxis the field is hidden in the UI; we still
         // pass an empty string so the server stores `null`.
         notes: isTaxi ? undefined : (notes || undefined),
+        // SCHEDULED BOOKINGS: forward the ISO timestamp to the API
+        // so the server can flip status to `scheduled` and skip
+        // the immediate driver fan-out. For immediate ("now")
+        // orders, we pass `null` (not `undefined`) so any
+        // future-proofing in the schema that distinguishes
+        // "explicitly not scheduled" from "not set" keeps working.
+        scheduledAt: scheduledIso,
       });
       emitOrderCreated(order);
       setActiveOrderId(order.id);
       setCustomerTab('track');
-      toast.success(t.orderCreated);
+      // Toast copy swaps based on the booking mode so the customer
+      // gets clear feedback ("Booked for 8 AM!" vs "Order created").
+      if (bookingMode === 'scheduled') {
+        toast.success(
+          isAr
+            ? `تم حجز موعد ${new Date(scheduledAt).toLocaleString('ar-DZ', { dateStyle: 'short', timeStyle: 'short' })}`
+            : `Réservation confirmée pour le ${new Date(scheduledAt).toLocaleString('fr-DZ', { dateStyle: 'short', timeStyle: 'short' })}`,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success(t.orderCreated);
+      }
     } catch {
       toast.error(isAr ? 'فشل إنشاء الطلب' : 'Échec');
     } finally {
@@ -474,6 +522,76 @@ export function CustomerHome() {
             placeholder={t.notesPlaceholder}
             className="resize-none"
             rows={2}
+          />
+        </div>
+      )}
+
+      {/* SCHEDULED BOOKINGS: a small two-option toggle ("Now" /
+          "Scheduled") plus a `datetime-local` picker that appears
+          only when the customer picks "Scheduled". Sits right
+          above the price estimate so the cost and the trip time
+          are visually grouped. The `min` attribute on the
+          `datetime-local` input blocks past dates at the browser
+          level, matching the server's Zod refinement. */}
+      <div
+        role="tablist"
+        aria-label={isAr ? 'توقيت الحجز' : 'Horaire de la course'}
+        className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/40 p-1"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={bookingMode === 'now'}
+          onClick={() => {
+            setBookingMode('now');
+            setScheduledAt('');
+          }}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition',
+            bookingMode === 'now'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Zap size={14} />
+          {t.now}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={bookingMode === 'scheduled'}
+          onClick={() => setBookingMode('scheduled')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition',
+            bookingMode === 'scheduled'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <CalendarClock size={14} />
+          {t.scheduleForLater}
+        </button>
+      </div>
+      {bookingMode === 'scheduled' && (
+        <div className="rounded-2xl border border-border bg-muted/30 p-3">
+          <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
+            {t.selectDateTime}
+          </label>
+          <Input
+            type="datetime-local"
+            value={scheduledAt}
+            onChange={(e) => setScheduledAt(e.target.value)}
+            // `min` is the next full minute so the customer can't
+            // book a ride "for right now" via the picker. The server
+            // also re-validates this in the Zod transform, so a
+            // browser quirk or timezone math can never bypass it.
+            min={(() => {
+              const d = new Date(Date.now() + 60_000);
+              const tz = d.getTimezoneOffset() * 60_000;
+              return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+            })()}
+            dir={isRtl ? 'rtl' : 'ltr'}
+            className="h-10 text-sm font-semibold"
           />
         </div>
       )}

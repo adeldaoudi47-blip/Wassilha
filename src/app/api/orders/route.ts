@@ -26,6 +26,11 @@ const VALID_CARGO: CargoKey[] = [
 
 const VALID_STATUS: OrderStatus[] = [
   'searching',
+  // `scheduled` is accepted on read (filtering / listing) but is
+  // never accepted on a direct POST / PUT from the client — the
+  // server derives it from `scheduledAt` instead, to prevent
+  // clients from spoofing the lifecycle state.
+  'scheduled',
   'accepted',
   'picked',
   'delivered',
@@ -65,6 +70,26 @@ const createOrderSchema = z.object({
   dropoffLng: z.number().min(-180).max(180).nullable().optional(),
   weight: z.number().min(0).max(50_000).optional(),
   notes: z.string().trim().max(500).optional().nullable(),
+  // SCHEDULED BOOKINGS: optional ISO-8601 timestamp. The server
+  // parses it once via `new Date()` so the client can send either
+  // an ISO string or a millisecond epoch. The route handler then
+  // decides whether the order is immediate or scheduled based on
+  // whether the parsed timestamp is in the future. Past dates are
+  // silently coerced to `null` (immediate order) so a stale UI
+  // doesn't accidentally book a ride in the past.
+  scheduledAt: z
+    .union([z.string(), z.number(), z.date()])
+    .optional()
+    .nullable()
+    .transform((v) => {
+      if (v === undefined || v === null || v === '') return null;
+      const d = v instanceof Date ? v : new Date(v);
+      if (!Number.isFinite(d.getTime())) return null;
+      // Past dates are treated as "no scheduling" so the customer
+      // gets an immediate order instead of a confusing 400.
+      if (d.getTime() <= Date.now()) return null;
+      return d;
+    }),
 });
 
 // GET /api/orders?role=&status=
@@ -204,7 +229,15 @@ export async function POST(req: NextRequest) {
         // price columns, so we persist the recomputed values here.
         distance: distanceKm,
         price,
-        status: 'searching',
+        // SCHEDULED BOOKINGS: when `scheduledAt` is a future date
+        // (validated by Zod above), the order waits in `scheduled`
+        // state and the driver fan-out below is skipped. The
+        // dispatcher (or a cron-like job, out of scope here) flips
+        // the status to `searching` when the time approaches.
+        // A null `scheduledAt` (or a past date) keeps the legacy
+        // immediate flow with `status='searching'`.
+        status: data.scheduledAt ? 'scheduled' : 'searching',
+        scheduledAt: data.scheduledAt ?? null,
         notes:
           typeof data.notes === 'string' && data.notes.trim()
             ? data.notes.trim()
@@ -234,6 +267,12 @@ export async function POST(req: NextRequest) {
     // index @@index([isOnline, isVerified, serviceType]) keeps the
     // query cheap as the fleet grows.
     void (async () => {
+      // SCHEDULED BOOKINGS: skip the driver fan-out for future-dated
+      // orders. The order is stored in `status='scheduled'` and
+      // waits in the "incoming scheduled" tab on the driver side.
+      // When the dispatcher flips it to `searching`, the normal
+      // fan-out (this whole block) runs from that path instead.
+      if (data.scheduledAt) return;
       try {
         // Map Order.cargoType to the Driver.serviceType category the
         // order is requesting. The Order column is a free String so
