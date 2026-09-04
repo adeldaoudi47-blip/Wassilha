@@ -145,15 +145,24 @@ export const api = {
   // Customer-facing browse: returns up to 50 available future
   // offers. `serviceType` is optional; when omitted the server
   // returns both TAXI and CARGO offers sorted by departure time.
-  listTripOffers: (params?: { serviceType?: TripOfferServiceType }) => {
+  //
+  // The server wraps the result in `{ offers: TripOffer[] }`
+  // (see /api/trip-offers/route.ts GET handler), so we unwrap
+  // it here. Without this, callers would receive the wrapper
+  // object and crash on `offers.length` / `offers.map`.
+  listTripOffers: async (params?: { serviceType?: TripOfferServiceType }) => {
     const q = new URLSearchParams();
     if (params?.serviceType) q.set('serviceType', params.serviceType);
-    return req<TripOffer[]>(`/api/trip-offers?${q.toString()}`);
+    const data = await req<{ offers: TripOffer[] }>(`/api/trip-offers?${q.toString()}`);
+    return data.offers;
   },
   // Driver's own offers (any status). Used by the driver "My
-  // offers" tab to render an inventory + cancel button.
-  listMyTripOffers: () =>
-    req<TripOffer[]>('/api/trip-offers?mine=1'),
+  // offers" tab to render an inventory + cancel button. Same
+  // wrapper-unwrapping as above.
+  listMyTripOffers: async () => {
+    const data = await req<{ offers: TripOffer[] }>('/api/trip-offers?mine=1');
+    return data.offers;
+  },
   // Driver publishes a new offer. All required fields are typed
   // here so a typo at the call site fails the TS build.
   createTripOffer: (data: {
