@@ -3,7 +3,7 @@
 import { createElement } from 'react';
 import {
   Package, Layers, Store, Sofa, Refrigerator, HardHat,
-  Briefcase, CircleEllipsis, type LucideIcon,
+  Briefcase, CircleEllipsis, Car, type LucideIcon,
 } from 'lucide-react';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 import { CARGO_TYPES } from '@/lib/wassilha-data';
@@ -17,6 +17,10 @@ const ICONS: Record<string, LucideIcon> = {
   HardHat,
   Briefcase,
   EllipsisHorizontalCircle: CircleEllipsis,
+  // `Car` is the icon used for the `taxi` (passenger-transport) cargo
+  // type. The yellow color comes from `CARGO_TYPES`, so the visual is
+  // Yassir-like without us having to ship a custom asset.
+  Car,
 };
 
 export function CargoIcon({ cargo, size = 20, className }: { cargo: CargoKey; size?: number; className?: string }) {

@@ -17,6 +17,11 @@ const VALID_CARGO: CargoKey[] = [
   'construction',
   'personal',
   'other',
+  // `taxi` is the passenger-transport service (Yassir-style). It is
+  // routed through the same Order table — the `cargoType` column is
+  // a free String, so no Prisma migration is required. Adding a
+  // string to the array is fully backward-compatible with old rows.
+  'taxi',
 ];
 
 const VALID_STATUS: OrderStatus[] = [

@@ -41,6 +41,12 @@ export const CARGO_TYPES: CargoMeta[] = [
   { key: 'construction', icon: 'HardHat', color: '#6B7280' },
   { key: 'personal', icon: 'Briefcase', color: '#EC4899' },
   { key: 'other', icon: 'EllipsisHorizontalCircle', color: '#64748B' },
+  // Passenger transport. Yellow (Yassir-like) + a `Car` icon so the
+  // driver / admin / customer see a clear visual distinction from
+  // cargo. Multiplier of 1.5 reflects that a taxi seats passengers
+  // (not bulk weight) but still costs more than a base parcel due to
+  // detour / waiting time.
+  { key: 'taxi', icon: 'Car', color: '#FACC15' },
 ];
 
 export const CARGO_MULTIPLIERS_DEFAULT: Record<CargoKey, number> = {
@@ -52,6 +58,10 @@ export const CARGO_MULTIPLIERS_DEFAULT: Record<CargoKey, number> = {
   construction: 1.8,
   personal: 1.0,
   other: 1.0,
+  // Taxi multiplier (1.5) — higher than `parcel` to reflect the
+  // passenger-service premium, but lower than `furniture` /
+  // `construction` since the driver isn't carrying bulky cargo.
+  taxi: 1.5,
 };
 
 // Haversine distance in km

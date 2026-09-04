@@ -10,7 +10,13 @@ export type CargoKey =
   | 'appliance'
   | 'construction'
   | 'personal'
-  | 'other';
+  | 'other'
+  // `taxi` is the passenger-transport service (Yassir-like). Added in
+  // the same union so the existing Zod enum, pricing multipliers, and
+  // `CARGO_TYPES` table all flow through one shape. The DB column
+  // `Order.cargoType` is a free `String`, so no Prisma migration is
+  // required — old rows are unaffected.
+  | 'taxi';
 export type OrderStatus = 'searching' | 'accepted' | 'picked' | 'delivered' | 'cancelled';
 
 export interface AuthUser {

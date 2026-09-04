@@ -95,7 +95,19 @@ export function AdminOrders() {
           {filtered.map((o) => (
             <Card key={o.id} className="p-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                {/* Background tint switches to a soft yellow when
+                    the order is a `taxi` (passenger transport) so
+                    the admin can spot ride requests at a glance in
+                    a long list. All other cargo types keep the
+                    primary-green tint they always had. */}
+                <div
+                  className={cn(
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                    o.cargoType === 'taxi'
+                      ? 'bg-yellow-100 dark:bg-yellow-900/30'
+                      : 'bg-primary/10',
+                  )}
+                >
                   <CargoIcon cargo={o.cargoType} size={20} />
                 </div>
                 <div className="min-w-0 flex-1">

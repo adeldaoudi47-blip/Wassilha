@@ -127,6 +127,10 @@ export const translations = {
       construction: 'مواد بناء',
       personal: 'أغراض شخصية',
       other: 'أخرى',
+      // `taxi` is the passenger-transport service. Surfaced in the
+      // customer cargo grid (as a single option under the taxi tab)
+      // and in the driver / admin lists.
+      taxi: 'تكسي',
     },
     cargoDesc: {
       parcel: 'صناديق، كولييات',
@@ -269,6 +273,17 @@ export const translations = {
     emptyWeight: 'الوزن فارغ',
     energy: 'الطاقة',
     power: 'القوة',
+    // === Service mode (cargo vs passenger) =============================
+    // Two new tabs sit above the request form so the customer can
+    // pick between "توصيل بضاعة" (existing flow) and "نقل ركاب /
+    // تكسي" (Yassir-like). All four keys are required by the
+    // updated customer-home.tsx; they are kept here next to the rest
+    // of the i18n table so both languages stay in sync.
+    passengerTransport: 'نقل ركاب / تكسي',
+    goodsDelivery: 'توصيل بضائع',
+    pickupLocation: 'موقع الركوب',
+    dropoffLocation: 'وجهة الوصول',
+    requestTaxi: 'اطلب تكسي الآن',
   },
   fr: {
     dir: 'ltr' as const,
@@ -396,6 +411,8 @@ export const translations = {
       construction: 'Matériaux',
       personal: 'Effets personnels',
       other: 'Autre',
+      // `taxi` (passenger transport) — mirrors the Arabic entry.
+      taxi: 'Taxi',
     },
     cargoDesc: {
       parcel: 'Boîtes, colis',
@@ -538,6 +555,14 @@ export const translations = {
     emptyWeight: 'Poids à vide',
     energy: 'Énergie',
     power: 'Puissance',
+    // === Service mode (cargo vs passenger) =============================
+    // French mirrors of the Arabic keys added in the `ar` block.
+    // Keeping them in the same order so future audits are easy.
+    passengerTransport: 'Transport de passagers / Taxi',
+    goodsDelivery: 'Livraison de marchandises',
+    pickupLocation: 'Lieu de prise en charge',
+    dropoffLocation: 'Destination',
+    requestTaxi: 'Commander un taxi',
   },
 };
 

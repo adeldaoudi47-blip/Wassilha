@@ -228,9 +228,26 @@ export function DriverRequests() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+                  <div
+                    className={cn(
+                      'mt-2.5 grid gap-1.5',
+                      // 3 cols for cargo (distance, weight, cargo label)
+                      // 2 cols for taxi  (distance, cargo label) — keeps
+                      // the row tight, no empty middle cell.
+                      o.cargoType === 'taxi' ? 'grid-cols-2' : 'grid-cols-3',
+                    )}
+                  >
                     <MiniStat icon={<Navigation size={11} />} value={`${o.distance} ${t.km}`} />
-                    <MiniStat icon={<Scale size={11} />} value={`${o.weight} ${t.kg}`} />
+                    {/* Weight is only meaningful for cargo. For `taxi`
+                        (passenger transport) the column collapses to
+                        a 2-col grid via the conditional grid above so
+                        the card doesn't render a misleading "20 kg"
+                        pill on every ride request. The cargo label /
+                        Car-icon already make the difference obvious
+                        via `CargoIcon` upstream. */}
+                    {o.cargoType !== 'taxi' && (
+                      <MiniStat icon={<Scale size={11} />} value={`${o.weight} ${t.kg}`} />
+                    )}
                     <MiniStat icon={<Package size={11} />} value={(t.cargo as Record<string, string>)[o.cargoType]} />
                   </div>
                   <div className="mt-2.5 flex items-center justify-between rounded-lg bg-primary/5 px-3 py-2">

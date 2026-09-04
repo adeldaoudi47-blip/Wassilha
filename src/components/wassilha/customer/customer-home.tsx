@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
-  Settings2, Check, Loader2, Crosshair, Navigation, MapPin,
+  Settings2, Check, Loader2, Crosshair, Navigation, MapPin, Car,
+  Package,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -75,6 +76,14 @@ export function CustomerHome() {
   const setCustomerTab = useNavStore((s) => s.setCustomerTab);
 
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
+  // `serviceMode` picks between the two top-level tabs above the form:
+  //   - 'cargo' → the original triporteur flow (parcels, furniture, …)
+  //   - 'taxi'  → passenger transport (Yassir-like). Hides the weight
+  //               slider + cargo grid + notes, swaps the button label,
+  //               and sends `cargoType: 'taxi'` to the API.
+  // Backward compatibility: defaults to 'cargo' so existing users see
+  // the same screen they were used to.
+  const [serviceMode, setServiceMode] = useState<'cargo' | 'taxi'>('cargo');
   const [selectedCargo, setSelectedCargo] = useState<CargoKey>('parcel');
   const [pickupText, setPickupText] = useState('');
   const [dropoffText, setDropoffText] = useState('');
@@ -99,9 +108,14 @@ export function CustomerHome() {
 
   const estimatedPrice = useMemo(() => {
     if (!pricing) return 0;
-    const mult = pricing.multipliers[selectedCargo] ?? 1;
+    // In taxi mode the cargo grid is hidden and `selectedCargo` is
+    // irrelevant — we just look up the `taxi` multiplier from the
+    // pricing table. The server-authoritative price is recomputed
+    // again on POST, so this is purely a UX estimate.
+    const effectiveKey: CargoKey = serviceMode === 'taxi' ? 'taxi' : selectedCargo;
+    const mult = pricing.multipliers[effectiveKey] ?? 1;
     return calcPrice(pricing.basePrice, pricing.perKm, distance, mult);
-  }, [pricing, selectedCargo, distance]);
+  }, [pricing, selectedCargo, serviceMode, distance]);
 
   const handleRequest = async () => {
     const pickupTrimmed = pickupText.trim();
@@ -112,14 +126,26 @@ export function CustomerHome() {
     }
     setSubmitting(true);
     try {
+      // `serviceMode === 'taxi'` flips the API payload so the order is
+      // categorized as passenger transport. We deliberately omit the
+      // `weight` field (it's not meaningful for passengers) and let the
+      // server fall back to a neutral default. We still send the
+      // estimated `price` for analytics / the price sheet, but the
+      // server recomputes the authoritative value from coordinates.
+      const isTaxi = serviceMode === 'taxi';
       const order = await api.createOrder({
-        cargoType: selectedCargo,
+        cargoType: isTaxi ? 'taxi' : selectedCargo,
         pickup: pickupTrimmed,
         dropoff: dropoffTrimmed,
-        weight,
+        // Only attach `weight` for cargo — keeps the taxi payload
+        // small and matches what a real Yassir-like client would send.
+        ...(isTaxi ? {} : { weight }),
         distance,
         price: estimatedPrice,
-        notes: notes || undefined,
+        // Notes are only relevant for cargo (fragile, "2nd floor",
+        // etc.). For taxis the field is hidden in the UI; we still
+        // pass an empty string so the server stores `null`.
+        notes: isTaxi ? undefined : (notes || undefined),
       });
       emitOrderCreated(order);
       setActiveOrderId(order.id);
@@ -268,6 +294,48 @@ export function CustomerHome() {
       />
       </div>
 
+      {/* Service mode toggle (cargo vs taxi) — sits above the pickup
+          block so the choice is visible *before* the user starts
+          filling the form. Backward-compatible: defaults to 'cargo'
+          so users who land here from the bottom-nav see the same
+          flow they had before. */}
+      <div
+        role="tablist"
+        aria-label={isAr ? 'نوع الخدمة' : 'Type de service'}
+        className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/40 p-1"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={serviceMode === 'cargo'}
+          onClick={() => setServiceMode('cargo')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition',
+            serviceMode === 'cargo'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Package size={16} />
+          {t.goodsDelivery}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={serviceMode === 'taxi'}
+          onClick={() => setServiceMode('taxi')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition',
+            serviceMode === 'taxi'
+              ? 'bg-yellow-400 text-yellow-950 shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Car size={16} />
+          {t.passengerTransport}
+        </button>
+      </div>
+
       {/* Pickup / dropoff selection (careem-style) */}
       {/* "Use my location" button — sits directly above the pickup row
           so the affordance is obvious. When tapped, fills the pickup
@@ -300,8 +368,13 @@ export function CustomerHome() {
         ) : null}
       </button>
       <Card className="divide-y overflow-hidden p-0">
+        {/* Pickup/dropoff labels swap to "موقع الركوب / وجهة الوصول"
+            when the passenger transport tab is active — same input
+            component, just different translation. The accent colors
+            stay the same (primary for pickup, orange for dropoff) so
+            the visual language is consistent with the existing flow. */}
         <DeliveryLocationInput
-          label={t.pickup}
+          label={serviceMode === 'taxi' ? t.pickupLocation : t.pickup}
           value={pickupText}
           onChange={setPickupText}
           placeholder={t.pickupPlaceholder}
@@ -310,7 +383,7 @@ export function CustomerHome() {
           onOpenPicker={() => setPickerFor('pickup')}
         />
         <DeliveryLocationInput
-          label={t.dropoff}
+          label={serviceMode === 'taxi' ? t.dropoffLocation : t.dropoff}
           value={dropoffText}
           onChange={setDropoffText}
           placeholder={t.dropoffPlaceholder}
@@ -320,75 +393,90 @@ export function CustomerHome() {
         />
       </Card>
 
-      {/* Cargo types */}
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-foreground">{t.cargoTypes}</h3>
-          <span className="text-xs text-muted-foreground">{t.cargoTypesSub}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {CARGO_TYPES.map((cargo) => {
-            const selected = selectedCargo === cargo.key;
-            return (
-              <button
-                key={cargo.key}
-                onClick={() => setSelectedCargo(cargo.key)}
-                className={cn(
-                  'flex flex-col items-center gap-1 rounded-xl border p-2 transition',
-                  selected
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-muted-foreground',
-                )}
-              >
-                <CargoIcon cargo={cargo.key} size={18} className={cn('h-7 w-7', selected ? '!text-primary' : 'text-muted-foreground')} />
-                <span className="text-[11px] font-bold">{(t.cargo as Record<string, string>)[cargo.key]}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      {/* Cargo types — only shown in cargo mode. The taxi service
+          doesn't expose a sub-type picker; the order is just
+          `cargoType: 'taxi'` server-side. Hiding the grid (instead
+          of graying it out) is the simplest way to communicate that
+          the concept of "نوع الحمولة" doesn't apply. */}
+      {serviceMode === 'cargo' && (
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground">{t.cargoTypes}</h3>
+            <span className="text-xs text-muted-foreground">{t.cargoTypesSub}</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {CARGO_TYPES.map((cargo) => {
+              const selected = selectedCargo === cargo.key;
+              return (
+                <button
+                  key={cargo.key}
+                  onClick={() => setSelectedCargo(cargo.key)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 rounded-xl border p-2 transition',
+                    selected
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground',
+                  )}
+                >
+                  <CargoIcon cargo={cargo.key} size={18} className={cn('h-7 w-7', selected ? '!text-primary' : 'text-muted-foreground')} />
+                  <span className="text-[11px] font-bold">{(t.cargo as Record<string, string>)[cargo.key]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
-      {/* Weight stepper */}
-      <Card className="flex items-center justify-between p-3.5">
+      {/* Weight stepper — only meaningful for cargo. Passengers don't
+          have a weight slider (it's stored as a neutral default on
+          the server). The `state` value is preserved across mode
+          toggles so flipping back to cargo restores the last weight. */}
+      {serviceMode === 'cargo' && (
+        <Card className="flex items-center justify-between p-3.5">
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground">{t.weight}</p>
+            <p className="text-lg font-bold text-foreground">{weight} {t.kg}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setWeight((w) => Math.max(1, w - 5))}
+              className="h-9 w-9 rounded-full"
+              aria-label="decrease"
+            >
+              <Minus size={16} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setWeight((w) => Math.min(500, w + 5))}
+              className="h-9 w-9 rounded-full"
+              aria-label="increase"
+            >
+              <Plus size={16} />
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Notes — only relevant for cargo. We keep the `notes` state
+          across mode toggles but the textarea is hidden in taxi mode
+          so the form is shorter and matches a Yassir-like flow. */}
+      {serviceMode === 'cargo' && (
         <div>
-          <p className="text-[11px] font-semibold text-muted-foreground">{t.weight}</p>
-          <p className="text-lg font-bold text-foreground">{weight} {t.kg}</p>
+          <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">{t.notes}</label>
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={t.notesPlaceholder}
+            className="resize-none"
+            rows={2}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setWeight((w) => Math.max(1, w - 5))}
-            className="h-9 w-9 rounded-full"
-            aria-label="decrease"
-          >
-            <Minus size={16} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setWeight((w) => Math.min(500, w + 5))}
-            className="h-9 w-9 rounded-full"
-            aria-label="increase"
-          >
-            <Plus size={16} />
-          </Button>
-        </div>
-      </Card>
-
-      {/* Notes */}
-      <div>
-        <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">{t.notes}</label>
-        <Textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder={t.notesPlaceholder}
-          className="resize-none"
-          rows={2}
-        />
-      </div>
+      )}
 
       {/* Estimate + actions */}
       <Card className="flex items-center justify-between bg-muted/50 p-3.5">
@@ -424,10 +512,23 @@ export function CustomerHome() {
         onClick={handleRequest}
         disabled={submitting || !pickupText.trim() || !dropoffText.trim()}
         size="lg"
-        className="h-14 w-full rounded-2xl bg-primary text-base font-bold shadow-xl"
+        className={cn(
+          'h-14 w-full rounded-2xl text-base font-bold shadow-xl',
+          // Yellow CTA in taxi mode to match the Yassir-style "Book a
+          // ride" affordance; primary green for cargo. Both use the
+          // same `bg-*` classes Tailwind already knows about (no
+          // runtime styles, fully SSR-safe).
+          serviceMode === 'taxi'
+            ? 'bg-yellow-400 text-yellow-950 hover:bg-yellow-500'
+            : 'bg-primary text-primary-foreground'
+        )}
       >
-        <Bike size={22} className="me-2" />
-        {t.requestTriporteur}
+        {serviceMode === 'taxi' ? (
+          <Car size={22} className="me-2" />
+        ) : (
+          <Bike size={22} className="me-2" />
+        )}
+        {serviceMode === 'taxi' ? t.requestTaxi : t.requestTriporteur}
         <span className="ms-2 rounded-full bg-white/20 px-2.5 py-0.5 text-sm">
           {formatDzd(estimatedPrice)} {t.dzd}
         </span>

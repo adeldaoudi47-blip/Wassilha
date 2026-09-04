@@ -99,9 +99,20 @@ export const api = {
     cargoType: string;
     pickup: string;
     dropoff: string;
-    weight: number;
-    distance: number;
-    price: number;
+    // `weight` is optional. The cargo UI sends a real number
+    // (1..500 kg), but the new passenger-transport mode (`cargoType
+    // = 'taxi'`) doesn't have a weight slider at all — the client
+    // simply omits the field and the server falls back to a neutral
+    // default. We type the param as `number | undefined` so the
+    // call site is honest about that.
+    weight?: number;
+    // `distance` and `price` are recomputed server-side from the
+    // coordinates (see V7 in src/lib/pricing.ts), so the client
+    // value is informational only. Both are optional in the
+    // payload — the server will overwrite them with the canonical
+    // Haversine-based values.
+    distance?: number;
+    price?: number;
     notes?: string;
     pickupLat?: number;
     pickupLng?: number;
