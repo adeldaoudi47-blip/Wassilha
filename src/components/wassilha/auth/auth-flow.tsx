@@ -180,7 +180,18 @@ export function AuthFlow() {
       setStep('otp');
       setResendTimer(30);
 
-      if (OTP_DEMO_MODE) {
+      if (result.devOtp) {
+        // SAFE BYPASS MODE (temporary): backend returned the OTP directly
+        // (BYPASS_SMS=true) so we can show it on screen instead of relying
+        // on the SMS provider. The code persists in the server's OtpCode
+        // table for /api/auth/verify-otp to verify as usual.
+        toast.success(
+          isAr
+            ? `رمز التحقق (تجريبي): ${result.devOtp}`
+            : `Code de vérification (bypass) : ${result.devOtp}`,
+          { duration: 120000 }
+        );
+      } else if (OTP_DEMO_MODE) {
         toast.success(
           isAr
             ? `رمز التجربة: ${result.devOtp || '0000'}`
@@ -259,7 +270,17 @@ export function AuthFlow() {
       setOtp('');
       setStep('otp');
       setResendTimer(30);
-      if (OTP_DEMO_MODE) {
+      if (result.devOtp) {
+        // SAFE BYPASS MODE (temporary): see handleSendOtp above for the full
+        // explanation. Mirror the behaviour so the driver self-registration
+        // flow also surfaces the OTP on screen when SMS is disabled.
+        toast.success(
+          isAr
+            ? `رمز التحقق (تجريبي): ${result.devOtp}`
+            : `Code de vérification (bypass) : ${result.devOtp}`,
+          { duration: 120000 }
+        );
+      } else if (OTP_DEMO_MODE) {
         toast.success(
           isAr
             ? `رمز التجربة: ${result.devOtp || '0000'}`
@@ -627,7 +648,17 @@ export function AuthFlow() {
       setOtp('');
       setStep('forgot-otp');
       setResendTimer(30);
-      if (OTP_DEMO_MODE) toast.success('Demo code: ' + (result.devOtp || '0000'));
+      if (result.devOtp) {
+        // SAFE BYPASS MODE (temporary): see handleSendOtp above. Surface
+        // the reset OTP on screen so the user can paste it without waiting
+        // for an SMS that the provider may fail to deliver.
+        toast.success(
+          isAr
+            ? `رمز تعيين كلمة المرور (تجريبي): ${result.devOtp}`
+            : `Code de réinitialisation (bypass) : ${result.devOtp}`,
+          { duration: 120000 }
+        );
+      } else if (OTP_DEMO_MODE) toast.success('Demo code: ' + (result.devOtp || '0000'));
       else toast.success(isAr ? 'Code sent' : 'Code envoye');
     } catch (error) {
       console.error('REQUEST RESET ERROR:', error);
