@@ -307,6 +307,29 @@ export const translations = {
     scheduled: 'مجدول',
     selectDateTime: 'اختر التاريخ والوقت',
     scheduledAt: 'وقت الحجز',
+    // === Trip offers (driver-published pre-planned trips) ===============
+    // The driver publishes a future trip (TAXI ride or CARGO run);
+    // the customer browses them on the "عروض السائقين" tab and
+    // books one directly. The offer card shows the departure
+    // time, the price, and (for TAXI) how many seats are still
+    // free. `bookOffer` opens a confirm dialog; the actual
+    // book/cancel calls go through the /api/trip-offers
+    // endpoints.
+    tripOffers: 'عروض السائقين',
+    myOffers: 'عروضي',
+    createOffer: 'إنشاء عرض',
+    seatsAvail: 'مقاعد متاحة',
+    available: 'متاح',
+    booked: 'محجوز',
+    offerBooked: 'تم حجز هذا العرض',
+    offerCancelled: 'تم إلغاء العرض',
+    bookOffer: 'احجز هذا العرض',
+    cancelOffer: 'إلغاء العرض',
+    noOffers: 'لا توجد عروض متاحة',
+    offerPrice: 'سعر العرض',
+    offerSeats: 'مقاعد',
+    offerCargo: 'نوع البضاعة',
+    confirmBook: 'هل تريد حجز هذا العرض؟',
   },
   fr: {
     dir: 'ltr' as const,
@@ -603,6 +626,26 @@ export const translations = {
     scheduled: 'Programmé',
     selectDateTime: 'Sélectionner la date et l\'heure',
     scheduledAt: 'Heure de la réservation',
+    // === Trip offers (driver-published pre-planned trips) ===============
+    // Mirrors the Arabic keys above. A driver can publish a trip
+    // (TAXI ride or CARGO run) ahead of time; the customer browses
+    // them on the "Offres des chauffeurs" tab and books one
+    // directly.
+    tripOffers: 'Offres des chauffeurs',
+    myOffers: 'Mes offres',
+    createOffer: 'Créer une offre',
+    seatsAvail: 'Places disponibles',
+    available: 'Disponible',
+    booked: 'Réservé',
+    offerBooked: 'Offre réservée',
+    offerCancelled: 'Offre annulée',
+    bookOffer: 'Réserver cette offre',
+    cancelOffer: 'Annuler l\'offre',
+    noOffers: 'Aucune offre disponible',
+    offerPrice: 'Prix de l\'offre',
+    offerSeats: 'Places',
+    offerCargo: 'Type de marchandise',
+    confirmBook: 'Voulez-vous réserver cette offre ?',
   },
 };
 

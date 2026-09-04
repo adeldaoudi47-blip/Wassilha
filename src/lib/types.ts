@@ -108,6 +108,43 @@ export interface AdminDriverLocation {
   vehicleLabel: string | null;
 }
 
+// TRIP OFFERS: lifecycle of a pre-published trip.
+export type TripOfferStatus = 'available' | 'booked' | 'cancelled';
+// TRIP OFFERS: matches Driver.serviceType (free string on the DB
+// side; narrowed here for the API surface). Old 'BOTH' drivers
+// can still publish either flavour — the value is a per-offer
+// choice, not a per-driver one.
+export type TripOfferServiceType = 'TAXI' | 'CARGO';
+
+export interface TripOffer {
+  id: string;
+  driverId: string;
+  serviceType: TripOfferServiceType;
+  pickup: string;
+  dropoff: string;
+  scheduledAt: string; // ISO-8601
+  price: number;
+  // For TAXI: number of seats still available. For CARGO: null.
+  seatsAvail: number | null;
+  // For CARGO: same vocabulary as Order.cargoType. For TAXI: null.
+  cargoType: CargoKey | null;
+  status: TripOfferStatus;
+  bookerId: string | null;
+  orderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Optional join shapes the API may include (e.g. on the
+  // customer browse view we want the driver name + rating inline
+  // so we don't need a second roundtrip).
+  driver?: {
+    id: string;
+    user: AuthUser;
+    rating: number;
+    totalTrips: number;
+    serviceType?: 'CARGO' | 'TAXI' | 'BOTH' | string;
+  } | null;
+}
+
 export interface Order {
   id: string;
   code: string;

@@ -6,6 +6,8 @@ import type {
   DriverProfile,
   Order,
   PricingConfig,
+  TripOffer,
+  TripOfferServiceType,
 } from './types';
 
 async function req<T>(
@@ -138,6 +140,48 @@ export const api = {
   getOrder: (id: string) => req<Order>(`/api/orders/${id}`),
   acceptOrder: (id: string) =>
     req<Order>(`/api/orders/${id}/accept`, { method: 'POST' }),
+
+  // TRIP OFFERS
+  // Customer-facing browse: returns up to 50 available future
+  // offers. `serviceType` is optional; when omitted the server
+  // returns both TAXI and CARGO offers sorted by departure time.
+  listTripOffers: (params?: { serviceType?: TripOfferServiceType }) => {
+    const q = new URLSearchParams();
+    if (params?.serviceType) q.set('serviceType', params.serviceType);
+    return req<TripOffer[]>(`/api/trip-offers?${q.toString()}`);
+  },
+  // Driver's own offers (any status). Used by the driver "My
+  // offers" tab to render an inventory + cancel button.
+  listMyTripOffers: () =>
+    req<TripOffer[]>('/api/trip-offers?mine=1'),
+  // Driver publishes a new offer. All required fields are typed
+  // here so a typo at the call site fails the TS build.
+  createTripOffer: (data: {
+    serviceType: TripOfferServiceType;
+    pickup: string;
+    dropoff: string;
+    scheduledAt: string; // ISO-8601
+    price: number;
+    seatsAvail?: number;
+    cargoType?: string;
+  }) =>
+    req<TripOffer>('/api/trip-offers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  // Driver cancels their own offer. The server flips status to
+  // 'cancelled' (soft delete) so the audit trail is preserved.
+  cancelTripOffer: (id: string) =>
+    req<TripOffer>(`/api/trip-offers/${id}`, { method: 'DELETE' }),
+  // Customer books an offer. On success the response carries
+  // both the freshly-created `Order` and the updated `TripOffer`
+  // (now status='booked'), so the UI can navigate to the order
+  // detail view and the offer list re-renders in the same pass.
+  bookTripOffer: (id: string) =>
+    req<{ order: Order; offer: TripOffer }>(
+      `/api/trip-offers/${id}/book`,
+      { method: 'POST' },
+    ),
   rejectOrder: (id: string) =>
     req<{ ok: boolean }>(`/api/orders/${id}/reject`, { method: 'POST' }),
   pickupOrder: (id: string) =>

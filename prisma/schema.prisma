@@ -32,6 +32,11 @@ model User {
   drivenOrders Order[]     @relation("DriverOrders")
   ratingsGiven Rating[]    @relation("Rater")
   ratingsRecv  Rating[]    @relation("Ratee")
+  // TRIP OFFERS: a customer can book one or more trip offers
+  // offered by drivers. Tracked separately from the resulting
+  // Order (which lives in `orders` above) so that we can render
+  // "offers you have booked" without joining through Order.
+  bookedOffers TripOffer[] @relation("TripOfferBooker")
   driver       Driver?
   sessions     Session[]
   pushTokens   PushToken[]
@@ -97,6 +102,11 @@ model Driver {
   // taxi driver never receives a cargo ping.
   serviceType           String               @default("CARGO")
   appliedAt             DateTime?
+
+  // TRIP OFFERS: a driver can publish pre-planned trips (taxi
+  // ride, cargo run) so that customers can browse them and book
+  // directly. Back-relation of TripOffer.driver.
+  offers                TripOffer[]
   reviewedAt            DateTime?
   rating                Float                @default(5.0)
   totalTrips            Int                  @default(0)
@@ -213,6 +223,12 @@ model Order {
 
   ratings Rating[]
 
+  // TRIP OFFERS: when an order is created from a booked TripOffer
+  // the offer stores a pointer back to the resulting order so that
+  // admins can trace "this order came from this offer" without
+  // joining through the customer.
+  tripOffer TripOffer?
+
   // SECURITY (V14): indexes for hot queries. customerId/driverId are
   // used by /api/orders GET to scope the listing. status and the
   // (status, createdAt) compound back the driver fan-out query that
@@ -227,6 +243,72 @@ model Order {
   // the driver's "incoming scheduled" tab both filter by
   // (scheduledAt ASC) when status='scheduled'.
   @@index([scheduledAt])
+}
+
+/// A pre-published trip a driver advertises so that customers can
+/// browse it and book it directly. Mirrors the columns a customer
+/// would otherwise enter on the order form (pickup, dropoff,
+/// scheduledAt, price, serviceType) plus booking state
+/// (`status`, `bookerId`, `orderId`).
+///
+/// - `serviceType` is one of "TAXI" / "CARGO" and is intentionally
+///   free (no Prisma enum) to match the existing `Driver.serviceType`
+///   column and to allow future categories (e.g. "DELIVERY") without
+///   a migration. The driver-side POST validates the value against an
+///   allowlist before insert.
+/// - `seatsAvail` is for TAXI offers (number of seats still free).
+///   For CARGO offers it is null.
+/// - `cargoType` is for CARGO offers (parcel / goods / shop /
+///   furniture / appliance / construction / personal / other — same
+///   vocabulary as `Order.cargoType`). For TAXI offers it is null.
+/// - `status` lifecycle:
+///     "available" — open for booking
+///     "booked"    — a customer claimed it (an Order has been
+///                    created and `orderId` is set)
+///     "cancelled" — driver pulled the offer
+///   Free string to stay consistent with `Order.status` and
+///   `Driver.applicationStatus` (no Prisma enum).
+/// - `bookerId` / `booker` → the customer who booked it (nullable
+///   while the offer is still available). `onDelete: SetNull` so
+///   that deleting the customer doesn't cascade-delete the offer
+///   (the offer becomes orphaned, which admin can clean up).
+/// - `orderId` / `order` → the Order created when the offer was
+///   booked. `@unique` because each offer can be booked at most
+///   once. `onDelete: SetNull` so the offer survives a later
+///   deletion of the order.
+model TripOffer {
+  id          String   @id @default(cuid())
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  serviceType String
+  pickup      String
+  dropoff     String
+  scheduledAt DateTime
+  price       Int
+  seatsAvail  Int?
+  cargoType   String?
+  status      String   @default("available")
+  bookerId    String?
+  booker      User?    @relation("TripOfferBooker", fields: [bookerId], references: [id], onDelete: SetNull)
+  orderId     String?  @unique
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // driverId: "my offers" listing on the driver side.
+  @@index([driverId])
+  // status: customer browse filters by `status='available'` and
+  // the dispatcher / driver UI filter on `status='booked'`.
+  @@index([status])
+  // scheduledAt: customer browse sorts by upcoming departures.
+  @@index([scheduledAt])
+  // Compound (status, scheduledAt) backs the customer listing
+  // `where: { status: 'available', scheduledAt: { gt: now } }`
+  // with a single index scan.
+  @@index([status, scheduledAt])
+  // Compound (serviceType, status) backs the per-category browse
+  // (TAXI vs CARGO) which is the common path.
+  @@index([serviceType, status])
 }
 
 model Pricing {

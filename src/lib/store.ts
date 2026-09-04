@@ -25,8 +25,11 @@ export const useAppStore = create<AppState>()(
 );
 
 // Non-persisted navigation state (in-memory, resets on refresh — desired for a single-page app)
-type CustomerScreen = 'home' | 'track' | 'history' | 'profile';
-type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile';
+// TRIP OFFERS: `offers` is a new screen on both customer and driver
+// sides. The customer browses available offers; the driver
+// manages their own published offers.
+type CustomerScreen = 'home' | 'track' | 'history' | 'profile' | 'offers';
+type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
 type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet';
 
 interface NavState {

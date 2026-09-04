@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -15,12 +15,20 @@ interface NavItem {
 
 const CUSTOMER_NAV: NavItem[] = [
   { key: 'home', label: 'home', icon: Home },
+  // TRIP OFFERS: customer browses available offers. Sits between
+  // `home` and `history` so it's discoverable without being
+  // aggressive on the home screen.
+  { key: 'offers', label: 'tripOffers', icon: CalendarClock },
   { key: 'history', label: 'history', icon: ClipboardList },
   { key: 'profile', label: 'profile', icon: User },
 ];
 const DRIVER_NAV: NavItem[] = [
   { key: 'requests', label: 'incomingRequests', icon: Bike },
   { key: 'trips', label: 'myTrips', icon: Package },
+  // TRIP OFFERS: driver manages their own published offers.
+  // Sits between `trips` and `earnings` to keep the workflow
+  // contiguous (request -> trip -> manage offer -> earn).
+  { key: 'offers', label: 'myOffers', icon: CalendarClock },
   { key: 'earnings', label: 'earnings', icon: Wallet },
   { key: 'profile', label: 'profile', icon: User },
 ];

@@ -12,6 +12,8 @@ import { CustomerTrack } from '@/components/wassilha/customer/customer-track';
 import { CustomerHistory } from '@/components/wassilha/customer/customer-history';
 import { CustomerProfile } from '@/components/wassilha/customer/customer-profile';
 import { DriverRequests } from '@/components/wassilha/driver/driver-requests';
+import { DriverOffers } from '@/components/wassilha/driver/driver-offers';
+import { CustomerOffers } from '@/components/wassilha/customer/customer-offers';
 import { DriverTrips } from '@/components/wassilha/driver/driver-trips';
 import { DriverEarnings } from '@/components/wassilha/driver/driver-earnings';
 import { DriverProfile } from '@/components/wassilha/driver/driver-profile';
@@ -71,11 +73,16 @@ export default function Home() {
     else if (customerTab === 'track') { title = t.track; content = <CustomerTrack />; }
     else if (customerTab === 'history') { title = t.history; content = <CustomerHistory />; }
     else if (customerTab === 'profile') { title = t.profile; content = <CustomerProfile />; }
+    // TRIP OFFERS: dedicated tab for browsing driver-published offers.
+    else if (customerTab === 'offers') { title = t.tripOffers; content = <CustomerOffers />; }
   } else if (user.role === 'driver') {
     if (driverTab === 'requests') { title = t.incomingRequests; subtitle = t.location; content = <DriverRequests />; }
     else if (driverTab === 'trips') { title = t.myTrips; content = <DriverTrips />; }
     else if (driverTab === 'earnings') { title = t.earnings; content = <DriverEarnings />; }
     else if (driverTab === 'profile') { title = t.profile; content = <DriverProfile />; }
+    // TRIP OFFERS: dedicated tab for managing the driver's own
+    // published offers (publish / cancel).
+    else if (driverTab === 'offers') { title = t.myOffers; content = <DriverOffers />; }
   } else if (user.role === 'admin') {
     if (adminTab === 'dashboard') { title = t.dashboard; subtitle = t.location; content = <AdminDashboard />; }
     else if (adminTab === 'fleet') { title = t.fleetMap; subtitle = t.location; content = <AdminFleetMap />; }

@@ -96,3 +96,47 @@ export const publicOrderSelect = {
   // requests) reads this to render the booking time.
   scheduledAt: true,
 } as const;
+
+/**
+ * TRIP OFFERS: the list of TripOffer columns that are safe to return
+ * to any authenticated party (driver owner, customer, admin).
+ *
+ * `bookerId` and `orderId` are exposed on purpose so the UI can
+ * tell the driver "this offer is booked by user X" without a
+ * follow-up call. The booker is resolved server-side only.
+ *
+ * Driver relation is intentionally NOT included here — the
+ * `browse` endpoint inlines a curated driver shape (id, user
+ * public fields, rating, totalTrips, serviceType) via
+ * `withDriverForBrowse` below.
+ */
+export const publicTripOfferSelect = {
+  id: true,
+  driverId: true,
+  serviceType: true,
+  pickup: true,
+  dropoff: true,
+  scheduledAt: true,
+  price: true,
+  seatsAvail: true,
+  cargoType: true,
+  status: true,
+  bookerId: true,
+  orderId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+/**
+ * TRIP OFFERS: a slim driver projection for the customer browse
+ * feed. Picks only safe + useful fields (no email, no
+ * passwordHash, no phone — phone is leaked only on the driver's
+ * own profile screen).
+ */
+export const tripOfferDriverSelect = {
+  id: true,
+  rating: true,
+  totalTrips: true,
+  serviceType: true,
+  user: { select: publicUserSelect },
+} as const;
