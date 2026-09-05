@@ -39,10 +39,15 @@ async function req<T>(
 export const api = {
   // Auth
   sendOtp: (phone: string) =>
-    req<{ ok: boolean; devOtp?: string }>('/api/auth/send-otp', {
-      method: 'POST',
-      body: JSON.stringify({ phone }),
-    }),
+    // SECURITY (V?? — OTP bypass lock-down): the server no longer
+    // returns the OTP in the response. The shape is `{ ok, sms, provider }`.
+    req<{ ok: boolean; sms: boolean; provider: string }>(
+      '/api/auth/send-otp',
+      {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      }
+    ),
   verifyOtp: (phone: string, code: string, name?: string) =>
     req<{
       user?: AuthUser;
@@ -78,7 +83,9 @@ export const api = {
     req<{ pendingSignup: boolean; phone: string | null }>('/api/auth/pending-signup'),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   requestPasswordReset: (phone: string) =>
-    req<{ ok: boolean; devOtp?: string }>(
+    // SECURITY (V?? — OTP bypass lock-down): the server no longer
+    // returns the OTP in the response. The shape is `{ ok, provider }`.
+    req<{ ok: boolean; provider: string }>(
       '/api/auth/forgot-password/request',
       { method: 'POST', body: JSON.stringify({ phone }) }
     ),

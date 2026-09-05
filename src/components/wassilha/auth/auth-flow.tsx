@@ -33,10 +33,13 @@ import { normalizeAlgerianPhone } from '@/lib/phone';
 
 type Step = 'onboarding' | 'phone' | 'otp' | 'signup' | 'login' | 'forgot-phone' | 'forgot-otp' | 'forgot-reset' | 'driver-form' | 'driver-pending' | 'driver-rejected';
 
-const OTP_DEMO_MODE =
-  process.env.NEXT_PUBLIC_OTP_DEMO_MODE === 'true';
-
-const OTP_LENGTH = OTP_DEMO_MODE ? 4 : 6;
+// SECURITY (V?? — OTP bypass lock-down): the OTP length is now a
+// hard-coded 6 digits. The previous 4-digit demo branch (controlled
+// by NEXT_PUBLIC_OTP_DEMO_MODE) was removed along with the BYPASS_SMS
+// escape hatch on the server. Production always uses a 6-digit code
+// that is delivered exclusively through the configured SMS / WhatsApp
+// provider — no value is ever echoed back to the client.
+const OTP_LENGTH = 6;
 
 // SECURITY: demo quick-login UI is rendered only when explicitly enabled
 // for local development. Production builds never render it.
@@ -180,30 +183,15 @@ export function AuthFlow() {
       setStep('otp');
       setResendTimer(30);
 
-      if (result.devOtp) {
-        // SAFE BYPASS MODE (temporary): backend returned the OTP directly
-        // (BYPASS_SMS=true) so we can show it on screen instead of relying
-        // on the SMS provider. The code persists in the server's OtpCode
-        // table for /api/auth/verify-otp to verify as usual.
-        toast.success(
-          isAr
-            ? `رمز التحقق (تجريبي): ${result.devOtp}`
-            : `Code de vérification (bypass) : ${result.devOtp}`,
-          { duration: 120000 }
-        );
-      } else if (OTP_DEMO_MODE) {
-        toast.success(
-          isAr
-            ? `رمز التجربة: ${result.devOtp || '0000'}`
-            : `Code démo : ${result.devOtp || '0000'}`
-        );
-      } else {
-        toast.success(
-          isAr
-            ? 'تم إرسال رمز التحقق إلى هاتفك'
-            : 'Le code de vérification a été envoyé à votre téléphone'
-        );
-      }
+      // SECURITY (V?? — OTP bypass lock-down): the server no longer
+      // returns the OTP in the response (BYPASS_SMS has been removed
+      // from /api/auth/send-otp). The only user-facing message is
+      // "we sent the code" — never the code itself.
+      toast.success(
+        isAr
+          ? 'تم إرسال رمز التحقق إلى هاتفك عبر واتساب أو رسالة قصيرة'
+          : 'Le code de vérification a été envoyé sur WhatsApp ou par SMS'
+      );
     } catch (error) {
       console.error('SEND OTP ERROR:', error);
 
@@ -265,28 +253,19 @@ export function AuthFlow() {
     setIntendsDriver(true);
     try {
       const result = await api.sendOtp(clean);
-      console.log('[Driver Flow] OTP sent successfully, devOtp=', result.devOtp);
+      console.log('[Driver Flow] OTP sent successfully for phone:', clean);
       setPhone(clean);
       setOtp('');
       setStep('otp');
       setResendTimer(30);
-      if (result.devOtp) {
-        // SAFE BYPASS MODE (temporary): see handleSendOtp above for the full
-        // explanation. Mirror the behaviour so the driver self-registration
-        // flow also surfaces the OTP on screen when SMS is disabled.
-        toast.success(
-          isAr
-            ? `رمز التحقق (تجريبي): ${result.devOtp}`
-            : `Code de vérification (bypass) : ${result.devOtp}`,
-          { duration: 120000 }
-        );
-      } else if (OTP_DEMO_MODE) {
-        toast.success(
-          isAr
-            ? `رمز التجربة: ${result.devOtp || '0000'}`
-            : `Code démo : ${result.devOtp || '0000'}`
-        );
-      }
+      // SECURITY (V?? — OTP bypass lock-down): the server no longer
+      // returns the OTP in the response. Same generic "code sent"
+      // message as the customer flow — never the digits themselves.
+      toast.success(
+        isAr
+          ? 'تم إرسال رمز التحقق إلى هاتفك عبر واتساب أو رسالة قصيرة'
+          : 'Le code de vérification a été envoyé sur WhatsApp ou par SMS'
+      );
     } catch (error) {
       console.error('[Driver Flow] Failed to send OTP:', error);
       // Same error-code mapping as the customer flow (see handleSendOtp).
@@ -648,18 +627,14 @@ export function AuthFlow() {
       setOtp('');
       setStep('forgot-otp');
       setResendTimer(30);
-      if (result.devOtp) {
-        // SAFE BYPASS MODE (temporary): see handleSendOtp above. Surface
-        // the reset OTP on screen so the user can paste it without waiting
-        // for an SMS that the provider may fail to deliver.
-        toast.success(
-          isAr
-            ? `رمز تعيين كلمة المرور (تجريبي): ${result.devOtp}`
-            : `Code de réinitialisation (bypass) : ${result.devOtp}`,
-          { duration: 120000 }
-        );
-      } else if (OTP_DEMO_MODE) toast.success('Demo code: ' + (result.devOtp || '0000'));
-      else toast.success(isAr ? 'Code sent' : 'Code envoye');
+      // SECURITY (V?? — OTP bypass lock-down): the password-reset
+      // endpoint no longer echoes the code. The user gets a generic
+      // "code sent" message — same as the regular OTP path.
+      toast.success(
+        isAr
+          ? 'تم إرسال رمز إعادة التعيين عبر واتساب أو رسالة قصيرة'
+          : 'Le code de réinitialisation a été envoyé sur WhatsApp ou par SMS'
+      );
     } catch (error) {
       console.error('REQUEST RESET ERROR:', error);
       // Same error-code mapping as the customer flow (see handleSendOtp).
@@ -1181,13 +1156,15 @@ export function AuthFlow() {
           </div>
           <div className="mt-auto pb-6 pt-8">
             <div className="rounded-xl bg-amber-50 p-3 text-center text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-              {OTP_DEMO_MODE
-                ? isAr
-                  ? 'وضع التجربة: استخدم 0000'
-                  : 'Mode demo : utilisez 0000'
-                : isAr
-                  ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS'
-                  : 'Entrez le code a 6 chiffres recu par SMS'}
+              {/* SECURITY (V?? — OTP bypass lock-down): the demo
+                  banner that printed the literal "0000" code has been
+                  removed. Production users now see a generic "enter
+                  the 6-digit code" hint; demo mode is for local dev
+                  only and the dev reads the code from the server
+                  logs, not the client UI. */}
+              {isAr
+                ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS أو واتساب'
+                : 'Entrez le code a 6 chiffres recu par SMS ou WhatsApp'}
             </div>
           </div>
         </div>
@@ -1447,13 +1424,13 @@ export function AuthFlow() {
 
         <div className="mt-auto pb-6 pt-8">
           <div className="rounded-xl bg-amber-50 p-3 text-center text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-            {OTP_DEMO_MODE
-              ? isAr
-                ? 'وضع التجربة: استخدم 0000'
-                : 'Mode démo : utilisez 0000'
-              : isAr
-                ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS'
-                : 'Entrez le code à 6 chiffres reçu par SMS'}
+            {/* SECURITY (V?? — OTP bypass lock-down): the demo
+                banner that printed the literal "0000" code has been
+                removed. See the matching block in the customer OTP
+                screen. */}
+            {isAr
+              ? 'أدخل الرمز المكون من 6 أرقام المرسل عبر SMS أو واتساب'
+              : 'Entrez le code à 6 chiffres reçu par SMS ou WhatsApp'}
           </div>
         </div>
       </div>

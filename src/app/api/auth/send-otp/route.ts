@@ -86,31 +86,15 @@ await db.otpCode.create({
   // failed, and (b) DB write itself failed.
   console.log('[SEND-OTP] Saved OTP for phone:', phone, '| Code:', code);
 
-  // SAFE BYPASS MODE (temporary): when BYPASS_SMS=true, skip the SMS provider
-  // entirely and return the freshly generated OTP in the JSON response. The
-  // frontend surfaces it as a toast so the user can read it on screen. The
-  // code is still hashed/checked at /api/auth/verify-otp exactly like the
-  // normal flow, so security semantics are unchanged. Reset BYPASS_SMS to
-  // false (or remove the var) to re-enable real SMS delivery.
-  const bypassSms = process.env.BYPASS_SMS === 'true';
-  if (bypassSms) {
-    console.log('[SEND-OTP] BYPASS_SMS=true — returning devOtp in response, skipping sendSms.');
-    return NextResponse.json({
-      ok: true,
-      sms: false,
-      devOtp: code,
-      bypass: true,
-    });
-  }
-
 if (demoMode) {
+  // SECURITY (V?? — OTP demo lock-down): in demo mode we still go
+  // through the real sendSms path so the integration is exercised
+  // end-to-end. The DB row holds the demo code; the response never
+  // leaks it. Local dev can read it from the DB or server logs
+  // (the log line above is still printed for that reason).
   console.log('[WASSILHA OTP DEMO] ' + phone + ' -> ' + code);
-
-  return NextResponse.json({
-    ok: true,
-    devOtp: code,
-    demo: true,
-  });
+} else {
+  console.log('[WASSILHA OTP] Generated fresh code for phone: ' + phone);
 }
 
 const recipient = '+213' + phone.substring(1);

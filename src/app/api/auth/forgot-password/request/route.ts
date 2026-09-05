@@ -87,23 +87,17 @@ export async function POST(req: NextRequest) {
     });
 
     if (demoMode) {
+      // SECURITY (V?? — OTP demo lock-down): the demo code stays in
+      // the DB row but is never echoed back to the client. Local
+      // dev can read it from the server log line below.
       console.log('[WASSILHA FORGOT-PW DEMO] ' + phone + ' -> ' + code);
-      return NextResponse.json({ ok: true, devOtp: code });
     }
 
     if (user && user.accountStatus === 'active') {
-      // SAFE BYPASS MODE (temporary): when BYPASS_SMS=true, skip the SMS
-      // provider and surface the OTP in the JSON response so the frontend
-      // can display it on screen. Mirrors the same toggle in
-      // /api/auth/send-otp so the password-reset flow stays in lock-step
-      // with the regular OTP flow. The row in OtpCode is the source of
-      // truth; devOtp is just a UI hint.
-      const bypassSms = process.env.BYPASS_SMS === 'true';
-      if (bypassSms) {
-        console.log('[FORGOT-PW] BYPASS_SMS=true — returning devOtp in response, skipping sendSms.');
-        return NextResponse.json({ ok: true, devOtp: code, bypass: true });
-      }
-
+      // SECURITY (V?? — bypass removed): there used to be a
+      // BYPASS_SMS=true escape hatch that surfaced the OTP in the
+      // JSON response. It has been removed entirely. OTPs now travel
+      // through the SMS provider only.
       const recipient = '+213' + phone.substring(1);
       const content = 'رمز تعيين كلمة المرور في وصّلها هو: ' + code;
       const sms = await sendSms(recipient, content);
