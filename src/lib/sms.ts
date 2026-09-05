@@ -108,24 +108,31 @@ async function sendWithBrevo(
   return { provider: 'brevo', response: result };
 }
 
-// WhatsApp API integration.
+// WhatsApp API integration — UltraMsg-compatible.
 //
-// This is provider-agnostic on purpose: the same code path works with
-// Ultramsg, Wati, Meta Cloud API, Twilio, or any other gateway that
-// exposes a JSON POST endpoint taking a body and an auth token. The
-// caller configures the exact URL and token via env vars:
+// We hard-code the UltraMsg /messages/chat contract here because the
+// real deployment is wired to UltraMsg (Vercel env vars). The contract
+// is documented at https://docs.ultramsg.com/ and differs from a
+// generic JSON gateway in two important ways:
 //
-//   WHATSAPP_API_URL   e.g. https://api.ultramsg.com/instance123/messages/chat
-//   WHATSAPP_API_TOKEN the bearer / x-token the gateway expects
-//   WHATSAPP_AUTH_HEADER  optional. Defaults to "Authorization: Bearer".
-//                        Set to "x-token" for Ultramsg/Wati.
+//   1. The auth token is sent in the REQUEST BODY (`token=...`) and
+//      optionally also as a `?token=...` query string. There is no
+//      `Authorization: Bearer` header — UltraMsg ignores it and the
+//      instance is then seen as unauthenticated.
 //
-// The body is sent as JSON: { to: <recipient>, body: <content> }. If
-// the customer's gateway expects different field names, they can wrap
-// it in their own proxy and point WHATSAPP_API_URL at the proxy.
+//   2. The body is form-urlencoded (`Content-Type:
+//      application/x-www-form-urlencoded`), not JSON. Sending JSON
+//      silently succeeds (200 OK) without actually dispatching the
+//      message, which is exactly the failure mode we are fixing.
 //
-// We never return the recipient's phone number or the OTP code in the
-// SmsResult — only the provider name and the gateway's raw response.
+// UltraMsg success response:
+//   { "sent": "true",  "message": "ok", "id": <msgId> }
+//
+// UltraMsg failure response (HTTP 200 but message NOT sent):
+//   { "sent": "false", "error": "<reason>" }
+//
+// We MUST check `sent === 'true'`; relying on `response.ok` is not
+// enough because UltraMsg always replies 200.
 async function sendWithWhatsApp(
   recipient: string,
   content: string
@@ -137,35 +144,92 @@ async function sendWithWhatsApp(
     throw new Error('WHATSAPP_API_URL or WHATSAPP_API_TOKEN is missing');
   }
 
-  // Some gateways (Ultramsg, Wati) want a custom header name. We let
-  // the operator pick. Anything else falls back to standard
-  // Authorization: Bearer <token>.
-  const authHeaderName = process.env.WHATSAPP_AUTH_HEADER || 'Authorization';
-  const isBearer =
-    authHeaderName.toLowerCase() === 'authorization' ||
-    !process.env.WHATSAPP_AUTH_HEADER;
-  const authHeaderValue = isBearer ? `Bearer ${token}` : token;
+  // UltraMsg requires an international number with NO leading `+`,
+  // NO spaces, and NO leading zero. Examples:
+  //   recipient `+213562166355`  ->  `213562166355`  (correct)
+  //   recipient `00213562166355` ->  `213562166355`  (correct)
+  //   recipient `0562166355`     ->  `213562166355`  (we add 213)
+  // The upstream code already feeds us a +213XXXXXXXXX form (built
+  // in /api/auth/send-otp), so we strip the `+` here. We also keep a
+  // defensive 213-prefix / 0-strip in case a future caller hands us
+  // a different shape.
+  let phone = recipient.replace(/[\s\-+]/g, '');
+  if (phone.startsWith('00213')) phone = phone.slice(2);
+  if (phone.startsWith('0')) phone = '213' + phone.slice(1);
+  if (!/^213\d{9}$/.test(phone)) {
+    throw new Error(
+      `WhatsApp: phone number is not a valid Algerian international form (got "${recipient}", normalized "${phone}")`
+    );
+  }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      [authHeaderName]: authHeaderValue,
-    },
-    body: JSON.stringify({
-      // Most providers accept `to` and `body` (Ultramsg / Wati use
-      // `body`; Meta Cloud uses `text`; the simple common form wins
-      // here — operators that need different fields can proxy).
-      to: recipient.replace(/^\+/, ''),
-      body: content,
-    }),
+  // Body: form-urlencoded. `token`, `to`, and `body` are the three
+  // required fields per the UltraMsg docs. `priority` is an optional
+  // hint and defaults to "1" on UltraMsg's side; we set it explicitly
+  // so the operator can change it in one place if the instance is
+  // throttled.
+  const formBody = new URLSearchParams({
+    token,
+    to: phone,
+    body: content,
+    priority: '1',
   });
+
+  // Some UltraMsg deployments accept the token in the query string
+  // instead of the body. If the operator sets WHATSAPP_TOKEN_IN_QUERY
+  // we add it as a query parameter and drop it from the body. This
+  // is opt-in because it leaks the token to proxy/access logs more
+  // easily than the body form.
+  let targetUrl = url;
+  if (process.env.WHATSAPP_TOKEN_IN_QUERY === 'true') {
+    formBody.delete('token');
+    const sep = url.includes('?') ? '&' : '?';
+    targetUrl = `${url}${sep}token=${encodeURIComponent(token)}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: formBody.toString(),
+    });
+  } catch (networkError) {
+    console.error('[Wassilha WhatsApp] Network error:', networkError);
+    throw networkError;
+  }
 
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(`WhatsApp HTTP ${response.status}: ${JSON.stringify(result)}`);
+    const msg = `WhatsApp HTTP ${response.status}: ${JSON.stringify(result)}`;
+    console.error('[Wassilha WhatsApp] Error:', msg);
+    throw new Error(msg);
+  }
+
+  // UltraMsg always replies 200 even when the message was not
+  // actually queued (e.g. recipient is not on WhatsApp, instance is
+  // disconnected, template mismatch, daily quota hit, etc.). The
+  // authoritative signal is the `sent` field — must be the string
+  // "true". Anything else (boolean false, missing, error string) is
+  // a real failure that the user must be told about; otherwise we
+  // would silently lose their OTP and the user is locked out.
+  const body = (result ?? {}) as {
+    sent?: string | boolean;
+    error?: string;
+    message?: string;
+  };
+  const sent = body.sent;
+  if (sent !== true && sent !== 'true') {
+    const reason =
+      body.error ||
+      (typeof body.message === 'string' ? body.message : null) ||
+      'unknown UltraMsg failure (sent field is not "true")';
+    const msg = `WhatsApp rejected the message: ${reason}`;
+    console.error('[Wassilha WhatsApp] Error:', msg, '| raw response:', result);
+    throw new Error(msg);
   }
 
   return { provider: 'whatsapp', response: result };
