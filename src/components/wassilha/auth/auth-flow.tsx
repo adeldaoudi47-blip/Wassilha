@@ -27,6 +27,7 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from '@/components/ui/input-otp';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 import { normalizeAlgerianPhone } from '@/lib/phone';
@@ -74,8 +75,10 @@ export function AuthFlow() {
   // codeNotFound because the server already consumed the OTP.
   const verifyingRef = useRef(false);
   const [resendTimer, setResendTimer] = useState(0);
-  // When true, the user came from "Devenir chauffeur" and should be
-  // routed to the driver form on a fresh account instead of customer signup.
+  // When true, the user picked the "Driver" tab on the OTP screen and
+  // should be routed to the driver form on a fresh account instead of
+  // the customer signup. The phone screen no longer has a "Become a
+  // driver" button — the choice is now made on the OTP screen.
   const [intendsDriver, setIntendsDriver] = useState(false);
   // Driver self-registration form fields (filled after OTP verification).
   // Carte grise (vehicle registration) data — replaces the legacy ad-hoc
@@ -960,25 +963,6 @@ export function AuthFlow() {
               </div>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-                {t.name} ({t.customer})
-              </label>
-
-              <Input
-                placeholder={
-                  isAr
-                    ? 'اسمك (اختياري)'
-                    : 'Votre nom (optionnel)'
-                }
-                value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
-                className="h-12"
-              />
-            </div>
-
             <Button
               onClick={handleSendOtp}
               disabled={loading}
@@ -1005,30 +989,6 @@ export function AuthFlow() {
               {isAr
                 ? 'الدخول بالبريد الإلكتروني وكلمة المرور'
                 : 'Connexion par email et mot de passe'}
-            </button>
-
-            <div className="mt-4 flex items-center gap-3 text-[11px] text-muted-foreground">
-              <div className="h-px flex-1 bg-border" />
-              <span>{isAr ? 'أو' : 'OU'}</span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-
-            <button
-              type="button"
-              onClick={async () => {
-                // Driver flow: send the OTP just like the customer flow, then
-                // once verified, the server will route the user to the driver
-                // form (since role=driver + accountStatus=pending drivers
-                // don't get a session and surface the "pending" state).
-                // setName('') is now handled inside handleSendOtpAsDriver
-                // so any future entry point gets the same cleanup.
-                await handleSendOtpAsDriver();
-              }}
-              disabled={loading}
-              className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-primary bg-primary/5 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-primary/10 disabled:opacity-50"
-            >
-              <Bike size={18} className="shrink-0" />
-              {isAr ? 'أريد التسجيل كسائق' : 'Devenir chauffeur'}
             </button>
           </div>
 
@@ -1314,18 +1274,6 @@ export function AuthFlow() {
           <BrandLogo size={56} showText />
         </div>
 
-        {intendsDriver && (
-          <div
-            className="mb-4 flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-bold text-primary"
-            role="status"
-          >
-            <Bike size={14} className="shrink-0" />
-            {isAr
-              ? 'مسار التسجيل كسائق'
-              : 'Inscription en tant que chauffeur'}
-          </div>
-        )}
-
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
           <ShieldCheck
             size={30}
@@ -1375,13 +1323,42 @@ export function AuthFlow() {
           </InputOTP>
         </div>
 
+        <p className="mt-6 text-center text-xs font-semibold text-muted-foreground">
+          {t.selectRole}
+        </p>
+
+        <Tabs
+          value={intendsDriver ? 'driver' : 'customer'}
+          onValueChange={(v) =>
+            setIntendsDriver(v === 'driver')
+          }
+          className="mt-2 w-full"
+        >
+          <TabsList className="inline-flex h-12 w-full rounded-xl p-1">
+            <TabsTrigger
+              value="customer"
+              className="h-full flex-1 rounded-lg text-sm font-bold data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            >
+              <Package size={16} className="me-1.5 shrink-0" />
+              {t.customerTab}
+            </TabsTrigger>
+            <TabsTrigger
+              value="driver"
+              className="h-full flex-1 rounded-lg text-sm font-bold data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            >
+              <Bike size={16} className="me-1.5 shrink-0" />
+              {t.driverTab}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         <Button
           onClick={handleVerify}
           disabled={
             loading || verifyingRef.current || otp.length !== OTP_LENGTH
           }
           size="lg"
-          className="mt-8 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg"
+          className="mt-6 h-12 w-full rounded-xl bg-primary text-sm font-bold shadow-lg"
         >
           {loading ? (
             <Sparkles
@@ -1403,11 +1380,12 @@ export function AuthFlow() {
             <button
               onClick={() => {
                 // FIX: route the resend through the same path the user
-                // originally took. If they started the driver flow
-                // ("Devenir chauffeur"), `intendsDriver=true` and we must
-                // keep it that way — calling `handleSendOtp` here would
-                // silently reset the flag to false and the post-OTP router
-                // in handleVerify would dump the user into customer signup.
+                // originally took. The user now picks the role via the
+                // Tabs on this screen, so `intendsDriver` already
+                // reflects their choice. `handleSendOtp` would reset it
+                // to false, which would dump the driver back into the
+                // customer signup branch on the next verify. The
+                // as-driver variant preserves the flag.
                 if (intendsDriver) {
                   console.log('[Driver Flow] Resending OTP via driver handler');
                   handleSendOtpAsDriver();

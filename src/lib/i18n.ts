@@ -177,6 +177,13 @@ export const translations = {
     invalidOtp: 'الرمز غير صحيح',
     resendIn: 'إعادة الإرسال خلال',
     seconds: 'ثانية',
+    // === Auth flow v2 — role selector on the OTP screen ===========
+    // The user picks customer vs. driver *after* entering the phone
+    // number and receiving the OTP, instead of from a "Become a
+    // driver" button on the phone screen. Mirrors added in `fr`.
+    selectRole: 'اختر نوع حسابك',
+    customerTab: 'طالب الخدمة',
+    driverTab: 'سائق',
     orderProgress: 'تقدم الطلب',
     liveTracking: 'تتبع مباشر',
     eta: 'الوصول المتوقع',
@@ -515,6 +522,11 @@ export const translations = {
     invalidOtp: 'Code invalide',
     resendIn: 'Renvoyer dans',
     seconds: 's',
+    // === Auth flow v2 — role selector on the OTP screen ===========
+    // French mirrors of the Arabic keys added above.
+    selectRole: 'Choisissez votre type de compte',
+    customerTab: 'Client',
+    driverTab: 'Chauffeur',
     orderProgress: 'Progression',
     liveTracking: 'Suivi en direct',
     eta: 'Arrivée estimée',
