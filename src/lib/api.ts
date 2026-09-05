@@ -279,6 +279,22 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ isVerified: verified }),
     }),
+  // SECURITY (V??): ban / hard-delete hooks. The server is the source
+  // of truth — these wrappers exist purely to give the admin UI a
+  // typed `api.banDriver()` / `api.deleteDriver()` and to centralise
+  // the URL. Any error (403, 404, 409 hasHistory, …) is thrown so the
+  // toast layer can surface it.
+  banDriver: (id: string) =>
+    req<DriverProfile>(`/api/admin/drivers/${id}/reject`, {
+      method: 'PATCH',
+    }),
+  deleteDriver: (id: string) =>
+    req<{ ok: true; id: string; userId: string }>(
+      `/api/admin/drivers/${id}`,
+      {
+        method: 'DELETE',
+      }
+    ),
 
   // Driver self-registration (admin approval required before activation)
   applyDriver: (data: {

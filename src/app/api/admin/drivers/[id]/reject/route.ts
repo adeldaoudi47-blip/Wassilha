@@ -1,4 +1,20 @@
 // PATCH /api/admin/drivers/:id/reject  (admin only)
+//
+// "Ban" / "suspend" a driver. We use the existing 'rejected' status
+// (also used for failed applications) so the user-side `verify-otp`
+// gate — which refuses to issue a session unless `accountStatus ===
+// 'active'` — already blocks the driver from logging in again.
+//
+// On top of flipping the flag we also:
+//   1. Force `isOnline = false` so the order fan-out ignores them
+//      immediately (no new ping), and
+//   2. Hard-delete all `Session` rows for that user so any in-flight
+//      cookie is invalidated. The next request from the suspended
+//      driver hits a 401.
+//
+// We keep the driver + vehicle rows on disk on purpose: hard delete
+// would orphan the historical orders they delivered (which are a legal
+// record) and would also break ratings.
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
@@ -40,12 +56,25 @@ export async function PATCH(_req, { params }) {
     const updated = await db.$transaction(async (tx) => {
       const driverRow = await tx.driver.update({
         where: { id },
-        data: { applicationStatus: 'rejected', isVerified: false, reviewedAt: new Date() },
+        data: {
+          applicationStatus: 'rejected',
+          isVerified: false,
+          // SECURITY: force the driver offline so the order fan-out
+          // stops pinging them right away.
+          isOnline: false,
+          reviewedAt: new Date(),
+        },
         include: { user: true, vehicleRegistration: true },
       });
       await tx.user.update({
         where: { id: driverRow.userId },
         data: { accountStatus: 'rejected' },
+      });
+      // SECURITY: invalidate any active cookie. Even if the client
+      // still holds a valid JWT, the Session row is gone so the
+      // next getSession() returns null and they get 401.
+      await tx.session.deleteMany({
+        where: { userId: driverRow.userId },
       });
       return driverRow;
     });

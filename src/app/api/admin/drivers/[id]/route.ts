@@ -118,3 +118,97 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     );
   }
 }
+
+// DELETE /api/admin/drivers/:id  (admin only)
+//
+// Hard-delete a driver account and every row that points to it.
+//
+// Safety guards:
+//   1. requirePrivilegedAdmin() — only the hard-coded admin phone
+//      can fire this. PATCH is also behind the same gate, so admins
+//      shouldn't be able to reach DELETE by accident.
+//   2. refuse to delete a driver that has historical Orders or
+//      Ratings. Those are financial records the company is legally
+//      required to keep (Algeria bookkeeping rules + we need them for
+//      customer support). The admin sees `error: 'hasHistory'` and
+//      has to use the ban flow instead.
+//   3. everything happens inside a single Prisma transaction. If
+//      any step throws, the database is left untouched.
+//
+// Cascade map (from prisma/schema.prisma):
+//   Driver.userId → User.id           onDelete: Cascade
+//     → Session, PushToken, User (self) all drop with the User
+//   Driver.vehicleRegistrationId → VehicleRegistration.id  SetNull
+//     → we delete the VR explicitly first so the Driver row has
+//       nothing to null out.
+//   TripOffer.driverId → Driver.id   onDelete: Cascade
+//     → all offers vanish with the Driver.
+export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  try {
+    const gate = await requirePrivilegedAdmin();
+    if (!gate.ok) {
+      return NextResponse.json(gate.body, { status: gate.status });
+    }
+
+    const { id } = await params;
+    const existing = await db.driver.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, role: true } } },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: 'notFound' }, { status: 404 });
+    }
+    if (existing.user.role !== 'driver') {
+      return NextResponse.json({ error: 'notADriver' }, { status: 400 });
+    }
+
+    // 1. History guard. We can't cascade-delete Orders / Ratings
+    // because they also point at *customers* and *other drivers* via
+    // fromId/toId — nuking them would erase receipts the rest of the
+    // platform needs. So we simply refuse the request.
+    const [orderCount, ratingCount] = await Promise.all([
+      db.order.count({ where: { driverId: existing.userId } }),
+      db.rating.count({
+        where: { OR: [{ toId: existing.userId }, { fromId: existing.userId }] },
+      }),
+    ]);
+    if (orderCount > 0 || ratingCount > 0) {
+      return NextResponse.json(
+        {
+          error: 'hasHistory',
+          detail:
+            'Driver has historical orders or ratings and cannot be hard-deleted. Use the ban flow instead.',
+          counts: { orders: orderCount, ratings: ratingCount },
+        },
+        { status: 409 }
+      );
+    }
+
+    // 2. Transactional teardown. We delete in FK-safe order:
+    //    VR (no incoming FK in our schema that would block it) →
+    //    Driver (SetNull on vehicleRegistrationId becomes moot) →
+    //    User (Cascade drops Sessions / PushTokens).
+    const userId = existing.userId;
+    await db.$transaction(async (tx) => {
+      const driverRow = await tx.driver.findUnique({
+        where: { id },
+        select: { vehicleRegistrationId: true },
+      });
+      if (driverRow?.vehicleRegistrationId) {
+        await tx.vehicleRegistration.delete({
+          where: { id: driverRow.vehicleRegistrationId },
+        });
+      }
+      await tx.driver.delete({ where: { id } });
+      await tx.user.delete({ where: { id: userId } });
+    });
+
+    return NextResponse.json({ ok: true, id, userId });
+  } catch (e) {
+    console.error('[WASSILHA DELETE-DRIVER] Server error:', e);
+    return NextResponse.json(
+      { error: 'serverError', detail: String(e) },
+      { status: 500 }
+    );
+  }
+}

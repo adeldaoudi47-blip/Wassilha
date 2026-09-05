@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff, Car, Package, Layers } from 'lucide-react';
+import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff, Car, Package, Layers, Ban, Trash2 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -11,10 +11,23 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDzd } from '@/lib/wassilha-data';
 import { cn } from '@/lib/utils';
 import type { DriverProfile } from '@/lib/types';
+
+// Local "what kind of destructive action is the admin about to take?"
+// state. Keeping it in a single object means the confirm dialog is
+// driven by one piece of state instead of two booleans + a target
+// id (which is a classic source of stale-id bugs).
+type ConfirmAction =
+  | { kind: 'ban'; driver: DriverProfile }
+  | { kind: 'delete'; driver: DriverProfile }
+  | null;
 
 export function AdminDrivers() {
   const { t, isAr } = useT();
@@ -29,6 +42,13 @@ export function AdminDrivers() {
     numeroImmatriculation: '',
   });
   const [saving, setSaving] = useState(false);
+  // The confirm dialog + which destructive action is queued. When
+  // non-null, the AlertDialog is open and `confirmAction.kind` picks
+  // the title/body/handler.
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  // Lock the confirm button while the network round-trip is in
+  // flight so a double-click can't fire two DELETE calls.
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const load = () => {
     api.adminDrivers().then(setDrivers).catch(() => {}).finally(() => setLoading(false));
@@ -66,6 +86,65 @@ export function AdminDrivers() {
       load();
       toast.success(d.isVerified ? t.deactivate : t.activate);
     } catch { /* ignore */ }
+  };
+
+  // Ban = soft. The driver + vehicle rows are kept on disk so we
+  // don't lose their order history. The server (PATCH .../reject)
+  // flips accountStatus to 'rejected' and kills every active Session
+  // so the next request from the driver hits 401.
+  const handleBan = async (d: DriverProfile) => {
+    setConfirmBusy(true);
+    try {
+      await api.banDriver(d.id);
+      // Optimistic UI: drop the row immediately. The server has
+      // already forced isOnline=false and the Session rows are gone,
+      // so a stale card would just confuse the admin.
+      setDrivers((prev) => prev.filter((x) => x.id !== d.id));
+      toast.success(t.driverBanned);
+      setConfirmAction(null);
+    } catch (e) {
+      // SECURITY: surface the server's own error key so the admin
+      // can act on it (e.g. "notADriver" means the row is in a
+      // weird state and the page should be reloaded).
+      const key = (e as any)?.message || 'serverError';
+      toast.error(key);
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  // Hard delete. The server refuses with `error: 'hasHistory'` if
+  // the driver has Orders / Ratings — we surface the i18n'd message
+  // and keep the row visible so the admin can fall back to the ban
+  // flow.
+  const handleDelete = async (d: DriverProfile) => {
+    setConfirmBusy(true);
+    try {
+      await api.deleteDriver(d.id);
+      setDrivers((prev) => prev.filter((x) => x.id !== d.id));
+      toast.success(t.driverDeleted);
+      setConfirmAction(null);
+    } catch (e) {
+      const key = (e as any)?.message || 'serverError';
+      if (key === 'hasHistory') {
+        toast.error(t.driverHasHistory);
+      } else {
+        toast.error(key);
+      }
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  // Single entry-point for the AlertDialog. Picks the handler by
+  // `kind` so the JSX is just one button + one onClick.
+  const runConfirm = async () => {
+    if (!confirmAction) return;
+    if (confirmAction.kind === 'ban') {
+      await handleBan(confirmAction.driver);
+    } else {
+      await handleDelete(confirmAction.driver);
+    }
   };
 
   return (
@@ -151,6 +230,34 @@ export function AdminDrivers() {
                   >
                     {d.isVerified ? t.deactivate : t.activate}
                   </Button>
+                  {/* Moderation row. Two icon buttons: a yellow Ban
+                      (soft) and a red Trash2 (hard delete). Each
+                      opens a confirm dialog before firing. We render
+                      them as small square buttons so they line up
+                      with the activate/deactivate button above
+                      without breaking the card's flex column. */}
+                  <div className="mt-0.5 flex items-center gap-1">
+                    <Button
+                      onClick={() => setConfirmAction({ kind: 'ban', driver: d })}
+                      size="sm"
+                      variant="outline"
+                      title={t.banDriver}
+                      aria-label={t.banDriver}
+                      className="h-6 w-6 p-0 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                    >
+                      <Ban size={12} />
+                    </Button>
+                    <Button
+                      onClick={() => setConfirmAction({ kind: 'delete', driver: d })}
+                      size="sm"
+                      variant="outline"
+                      title={t.deleteDriver}
+                      aria-label={t.deleteDriver}
+                      className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -217,6 +324,52 @@ export function AdminDrivers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm dialog for ban / hard-delete. The body text and the
+          destructive button's colour swap on `confirmAction.kind` so
+          we render one AlertDialog instead of two. The Cancel button
+          resets `confirmAction` (and also clears `confirmBusy` if the
+          user closed mid-flight). */}
+      <AlertDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !confirmBusy) setConfirmAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction?.kind === 'delete' ? t.deleteDriver : t.banDriver}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction?.kind === 'delete' ? t.confirmDeleteDriver : t.confirmBanDriver}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmBusy}>
+              {t.cancel}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // The Radix AlertDialog auto-closes after the action
+                // click; we want it to stay open while the network
+                // call is in flight, so we preventDefault and close
+                // it manually from the handler on success.
+                e.preventDefault();
+                runConfirm();
+              }}
+              disabled={confirmBusy}
+              className={cn(
+                confirmAction?.kind === 'delete'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-amber-600 hover:bg-amber-700'
+              )}
+            >
+              {confirmAction?.kind === 'delete' ? t.deleteDriver : t.banDriver}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
