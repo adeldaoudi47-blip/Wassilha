@@ -273,6 +273,10 @@ export const translations = {
     emptyWeight: 'الوزن فارغ',
     energy: 'الطاقة',
     power: 'القوة',
+    // Driver profile — edit carte grise (Phase 7+)
+    editVehicle: 'تعديل بيانات المركبة',
+    vehicleUpdated: 'تم تحديث بيانات المركبة بنجاح',
+    updateFailed: 'فشل التحديث، حاول مرة أخرى',
     // === Service mode (cargo vs passenger) =============================
     // Two new tabs sit above the request form so the customer can
     // pick between "توصيل بضاعة" (existing flow) and "نقل ركاب /
@@ -601,6 +605,10 @@ export const translations = {
     emptyWeight: 'Poids à vide',
     energy: 'Énergie',
     power: 'Puissance',
+    // Driver profile — edit carte grise (Phase 7+)
+    editVehicle: 'Modifier les données du véhicule',
+    vehicleUpdated: 'Les données du véhicule ont été mises à jour avec succès',
+    updateFailed: 'Échec de la mise à jour, réessayez',
     // === Service mode (cargo vs passenger) =============================
     // French mirrors of the Arabic keys added in the `ar` block.
     // Keeping them in the same order so future audits are easy.

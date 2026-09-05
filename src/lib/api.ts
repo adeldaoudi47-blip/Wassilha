@@ -222,6 +222,35 @@ export const api = {
       weekly: { day: string; earnings: number }[];
     }>('/api/driver/earnings'),
   incomingOrders: () => req<Order[]>('/api/driver/incoming'),
+  // Update the driver's carte-grise (vehicle registration). Returns
+  // the updated VehicleRegistrationInfo (matches the shape used inside
+  // DriverProfile.vehicleRegistration).
+  updateVehicleRegistration: (data: {
+    numeroImmatriculation: string;
+    marque: string;
+    type?: string | null;
+    anneePremiereMiseCirculation: number;
+    datePremiereMiseEnCirculation?: string | null;
+    adresse?: string | null;
+    ptac?: string | null;
+    poidsAVide?: string | null;
+    energie?: string | null;
+    puissance?: string | null;
+  }) =>
+    req<{
+      id: string;
+      numeroImmatriculation: string;
+      typeProprietaire: 'PERSONNE_PHYSIQUE' | 'PERSONNE_MORALE';
+      nom: string | null;
+      prenom: string | null;
+      raisonSociale: string | null;
+      marque: string;
+      type: string | null;
+      anneePremiereMiseCirculation: number;
+    }>('/api/driver/vehicle', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 
   // Admin
   adminStats: () => req<AdminStats>('/api/admin/stats'),

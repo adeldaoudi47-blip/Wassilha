@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, Bike, Star, MapPin, ShieldCheck, BadgeCheck, LogOut } from 'lucide-react';
+import { Phone, Bike, Star, MapPin, ShieldCheck, BadgeCheck, LogOut, Pencil, Loader2 } from 'lucide-react';
 import { useT } from '../use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -9,6 +9,9 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDzd } from '@/lib/wassilha-data';
 import type { DriverProfile } from '@/lib/types';
 
@@ -17,6 +20,7 @@ export function DriverProfile() {
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
   const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     api.driverProfile().then(setProfile).catch(() => {});
@@ -87,6 +91,22 @@ export function DriverProfile() {
       </Card>
 
       {/* Vehicle info (carte grise) */}
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-sm font-bold text-foreground">
+          {t.vehicleData}
+        </h2>
+        {profile?.vehicleRegistration && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEditOpen(true)}
+            className="h-8 gap-1.5 text-primary hover:text-primary"
+          >
+            <Pencil size={14} />
+            {t.editVehicle}
+          </Button>
+        )}
+      </div>
       <Card className="divide-y divide-border p-0">
         <Row
           icon={<Bike size={16} className="text-primary" />}
@@ -126,6 +146,17 @@ export function DriverProfile() {
       <p className="text-center text-[10px] text-muted-foreground">
         {t.appName} v1.0.0 · {t.location} · © 2026
       </p>
+
+      {profile?.vehicleRegistration && (
+        <VehicleEditDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          vehicle={profile.vehicleRegistration}
+          onSaved={(updated) => {
+            setProfile({ ...profile, vehicleRegistration: updated });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -148,5 +179,248 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
       <span className="text-sm font-semibold text-muted-foreground">{label}</span>
       <span className="ms-auto text-sm font-bold text-foreground">{value}</span>
     </div>
+  );
+}
+
+// Energie allow-list mirrored from the API. Kept here so the <select>
+// only offers valid values, and the server-side allow-list still has
+// the final say.
+const ENERGIE_OPTIONS = [
+  'Benzine',
+  'Diesel',
+  'GPL',
+  'Electrique',
+  'Hybride',
+] as const;
+
+// Dialog that lets the driver edit their carte-grise fields. Pre-filled
+// from the current `vehicle` prop; on submit it calls
+// `api.updateVehicleRegistration` and bubbles the updated record back
+// via `onSaved`. Server-side error codes (e.g. duplicate plate) are
+// surfaced as a toast.
+function VehicleEditDialog({
+  open,
+  onOpenChange,
+  vehicle,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  vehicle: DriverProfile['vehicleRegistration'] & object;
+  onSaved: (updated: NonNullable<DriverProfile['vehicleRegistration']>) => void;
+}) {
+  const { t, isAr } = useT();
+  // Local form state, seeded from props on mount + whenever the dialog
+  // re-opens with fresh data. We intentionally don't keep the seed
+  // updated while the dialog is open so the user can type freely.
+  const [numeroImmatriculation, setNumeroImmatriculation] = useState(
+    vehicle.numeroImmatriculation
+  );
+  const [marque, setMarque] = useState(vehicle.marque);
+  const [type, setType] = useState(vehicle.type ?? '');
+  const [annee, setAnnee] = useState(
+    String(vehicle.anneePremiereMiseCirculation)
+  );
+  const [adresse, setAdresse] = useState('');
+  // Optional fields live only on the full VR row — fetch them from
+  // the current `vehicle` if present (we accept partial objects).
+  const [ptac, setPtac] = useState('');
+  const [poidsAVide, setPoidsAVide] = useState('');
+  const [energie, setEnergie] = useState('');
+  const [puissance, setPuissance] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed when opening with different data.
+  useEffect(() => {
+    if (!open) return;
+    setNumeroImmatriculation(vehicle.numeroImmatriculation);
+    setMarque(vehicle.marque);
+    setType(vehicle.type ?? '');
+    setAnnee(String(vehicle.anneePremiereMiseCirculation));
+    // Extended fields may not be on the type used by the GET endpoint;
+    // we read them defensively through any-cast.
+    const v = vehicle as unknown as Record<string, unknown>;
+    setAdresse(typeof v.adresse === 'string' ? (v.adresse as string) : '');
+    setPtac(typeof v.ptac === 'string' ? (v.ptac as string) : '');
+    setPoidsAVide(
+      typeof v.poidsAVide === 'string' ? (v.poidsAVide as string) : ''
+    );
+    setEnergie(typeof v.energie === 'string' ? (v.energie as string) : '');
+    setPuissance(
+      typeof v.puissance === 'string' ? (v.puissance as string) : ''
+    );
+  }, [open, vehicle]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // Client-side sanity check; server still has the final say.
+    const yearNum = Number(annee);
+    if (!Number.isInteger(yearNum)) {
+      toast.error(t.updateFailed);
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await api.updateVehicleRegistration({
+        numeroImmatriculation: numeroImmatriculation.trim(),
+        marque: marque.trim(),
+        type: type.trim() || null,
+        anneePremiereMiseCirculation: yearNum,
+        adresse: adresse.trim() || null,
+        ptac: ptac.trim() || null,
+        poidsAVide: poidsAVide.trim() || null,
+        energie: energie.trim() || null,
+        puissance: puissance.trim() || null,
+      });
+      onSaved(updated);
+      toast.success(t.vehicleUpdated);
+      onOpenChange(false);
+    } catch (err) {
+      // Show the server-side error code (e.g. "numeroImmatriculationAlreadyUsed")
+      // so the driver knows what to fix.
+      const msg = err instanceof Error ? err.message : t.updateFailed;
+      toast.error(msg || t.updateFailed);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t.editVehicle}</DialogTitle>
+          <DialogDescription>
+            {isAr
+              ? 'يمكنك تحديث معلومات مركبتك في أي وقت.'
+              : 'Vous pouvez mettre à jour les informations de votre véhicule à tout moment.'}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSave} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="vehicle-plate">{t.registrationNumber}</Label>
+            <Input
+              id="vehicle-plate"
+              value={numeroImmatriculation}
+              onChange={(e) => setNumeroImmatriculation(e.target.value)}
+              required
+              maxLength={64}
+              dir="ltr"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-brand">{t.brand}</Label>
+              <Input
+                id="vehicle-brand"
+                value={marque}
+                onChange={(e) => setMarque(e.target.value)}
+                required
+                maxLength={64}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-type">
+                {isAr ? 'نوع المركبة' : 'Type'}
+              </Label>
+              <Input
+                id="vehicle-type"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                maxLength={64}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-year">
+                {isAr ? 'سنة أول وضع للسير' : 'Année de mise en circulation'}
+              </Label>
+              <Input
+                id="vehicle-year"
+                type="number"
+                value={annee}
+                onChange={(e) => setAnnee(e.target.value)}
+                required
+                min={1950}
+                max={new Date().getFullYear() + 1}
+                dir="ltr"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-energie">{t.energy}</Label>
+              <select
+                id="vehicle-energie"
+                value={energie}
+                onChange={(e) => setEnergie(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">—</option>
+                {ENERGIE_OPTIONS.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="vehicle-adresse">{t.address}</Label>
+            <Input
+              id="vehicle-adresse"
+              value={adresse}
+              onChange={(e) => setAdresse(e.target.value)}
+              maxLength={128}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-ptac">{t.ptac}</Label>
+              <Input
+                id="vehicle-ptac"
+                value={ptac}
+                onChange={(e) => setPtac(e.target.value)}
+                maxLength={128}
+                dir="ltr"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vehicle-poids">{t.emptyWeight}</Label>
+              <Input
+                id="vehicle-poids"
+                value={poidsAVide}
+                onChange={(e) => setPoidsAVide(e.target.value)}
+                maxLength={128}
+                dir="ltr"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="vehicle-puissance">{t.power}</Label>
+            <Input
+              id="vehicle-puissance"
+              value={puissance}
+              onChange={(e) => setPuissance(e.target.value)}
+              maxLength={128}
+              dir="ltr"
+            />
+          </div>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
+              {t.cancel}
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving && <Loader2 size={14} className="me-2 animate-spin" />}
+              {t.save}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
