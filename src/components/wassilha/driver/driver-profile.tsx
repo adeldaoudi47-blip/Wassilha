@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDzd } from '@/lib/wassilha-data';
 import type { DriverProfile } from '@/lib/types';
+import Link from 'next/link';
 
 export function DriverProfile() {
   const { t, isAr } = useT();
@@ -142,6 +143,15 @@ export function DriverProfile() {
       <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">
         <LogOut size={16} className="me-2" /> {t.logout}
       </Button>
+
+      <div className="text-center">
+        <Link
+          href="/privacy-policy"
+          className="text-[11px] font-semibold text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
+        >
+          سياسة الخصوصية · Politique de confidentialité
+        </Link>
+      </div>
 
       <p className="text-center text-[10px] text-muted-foreground">
         {t.appName} v1.0.0 · {t.location} · © 2026
