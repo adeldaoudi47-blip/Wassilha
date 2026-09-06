@@ -26,14 +26,6 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-const ALLOWED_ENERGIES = new Set([
-  'Benzine',
-  'Diesel',
-  'GPL',
-  'Electrique',
-  'Hybride',
-]);
-
 const OPTIONAL_STR_MAX = 128;
 
 // Body of the PATCH. We Zod-validate the structure once, then enforce
@@ -86,23 +78,13 @@ const vehicleUpdateSchema = z.object({
     .max(OPTIONAL_STR_MAX)
     .optional()
     .nullable(),
-  poidsAVide: z
-    .string()
-    .trim()
-    .max(OPTIONAL_STR_MAX)
-    .optional()
-    .nullable(),
-  // Restricted allow-list (see ALLOWED_ENERGIES). Optional.
-  energie: z
-    .string()
-    .trim()
-    .max(OPTIONAL_STR_MAX)
-    .optional()
-    .nullable(),
-  puissance: z
-    .string()
-    .trim()
-    .max(OPTIONAL_STR_MAX)
+  // Number of passenger seats (TAXI / BOTH). Optional -- null for cargo.
+  // Stored as Int; ranges 1..30 are accepted, anything outside returns 400.
+  seats: z
+    .number({ message: 'invalidSeats' })
+    .int('invalidSeats')
+    .min(1, 'invalidSeats')
+    .max(30, 'invalidSeats')
     .optional()
     .nullable(),
 });
@@ -162,11 +144,12 @@ export async function PATCH(req: NextRequest) {
       return badRequest('invalidAnneePremiereMiseCirculation');
     }
 
-    // Energie allow-list. Empty / null is allowed (field is optional).
-    const energie = optStr(v.energie);
-    if (energie !== null && !ALLOWED_ENERGIES.has(energie)) {
-      return badRequest('invalidEnergie');
-    }
+    // (Legacy) the driver-facing form used to collect energie and validate
+    // it against a known short list. The field is no longer on the new
+    // form, but the energie column is still kept on
+    // VehicleRegistration for backwards-compatibility with rows created
+    // by older applications. We simply stop writing to it from this
+    // endpoint.
 
     // Look up the driver + their vehicle registration. We refuse early
     // if either is missing (admin-created accounts that somehow don't
@@ -215,9 +198,9 @@ export async function PATCH(req: NextRequest) {
         ),
         adresse: optStr(v.adresse),
         ptac: optStr(v.ptac),
-        poidsAVide: optStr(v.poidsAVide),
-        energie,
-        puissance: optStr(v.puissance),
+        // Forward seats directly (already a number|undefined|null after
+        // Zod validation). For CARGO drivers the column stays null.
+        seats: v.seats ?? null,
       },
     });
 

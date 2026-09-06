@@ -192,16 +192,6 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
   );
 }
 
-// Energie allow-list mirrored from the API. Kept here so the <select>
-// only offers valid values, and the server-side allow-list still has
-// the final say.
-const ENERGIE_OPTIONS = [
-  'Benzine',
-  'Diesel',
-  'GPL',
-  'Electrique',
-  'Hybride',
-] as const;
 
 // Dialog that lets the driver edit their carte-grise fields. Pre-filled
 // from the current `vehicle` prop; on submit it calls
@@ -235,9 +225,12 @@ function VehicleEditDialog({
   // Optional fields live only on the full VR row — fetch them from
   // the current `vehicle` if present (we accept partial objects).
   const [ptac, setPtac] = useState('');
-  const [poidsAVide, setPoidsAVide] = useState('');
-  const [energie, setEnergie] = useState('');
-  const [puissance, setPuissance] = useState('');
+  // Number of passenger seats for TAXI / BOTH drivers. Optional, kept as
+  // a string so the user can clear/retype without a 0 lingering. The
+  // driver row's `serviceType` is loaded with the profile; we read it
+  // below to decide which fields to validate on save.
+  const [seats, setSeats] = useState('');
+  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
   const [saving, setSaving] = useState(false);
 
   // Re-seed when opening with different data.
@@ -252,12 +245,20 @@ function VehicleEditDialog({
     const v = vehicle as unknown as Record<string, unknown>;
     setAdresse(typeof v.adresse === 'string' ? (v.adresse as string) : '');
     setPtac(typeof v.ptac === 'string' ? (v.ptac as string) : '');
-    setPoidsAVide(
-      typeof v.poidsAVide === 'string' ? (v.poidsAVide as string) : ''
-    );
-    setEnergie(typeof v.energie === 'string' ? (v.energie as string) : '');
-    setPuissance(
-      typeof v.puissance === 'string' ? (v.puissance as string) : ''
+    // `seats` is an Int (or null) on the wire; coerce to a string for
+    // the <input type=number> so the value can be edited cleanly.
+    if (typeof v.seats === 'number' && Number.isFinite(v.seats)) {
+      setSeats(String(v.seats));
+    } else {
+      setSeats('');
+    }
+    // `serviceType` rides on the Driver row, not the VehicleRegistration
+    // row, so we read it through a sibling any-cast. It is used to drive
+    // the conditional UI below.
+    setServiceType(
+      v.serviceType === 'TAXI' || v.serviceType === 'BOTH'
+        ? (v.serviceType as 'TAXI' | 'BOTH')
+        : 'CARGO'
     );
   }, [open, vehicle]);
 
@@ -278,9 +279,15 @@ function VehicleEditDialog({
         anneePremiereMiseCirculation: yearNum,
         adresse: adresse.trim() || null,
         ptac: ptac.trim() || null,
-        poidsAVide: poidsAVide.trim() || null,
-        energie: energie.trim() || null,
-        puissance: puissance.trim() || null,
+        // Seats: required for TAXI / BOTH, null for CARGO. The server
+        // re-validates with Zod (1..30 range).
+        seats:
+          serviceType === 'CARGO'
+            ? null
+            : (() => {
+                const n = parseInt(seats, 10);
+                return Number.isFinite(n) ? n : null;
+              })(),
       });
       onSaved(updated);
       toast.success(t.vehicleUpdated);
@@ -357,22 +364,6 @@ function VehicleEditDialog({
                 dir="ltr"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="vehicle-energie">{t.energy}</Label>
-              <select
-                id="vehicle-energie"
-                value={energie}
-                onChange={(e) => setEnergie(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">—</option>
-                {ENERGIE_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="vehicle-adresse">{t.address}</Label>
@@ -383,9 +374,9 @@ function VehicleEditDialog({
               maxLength={128}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {serviceType !== 'TAXI' ? (
             <div className="space-y-1.5">
-              <Label htmlFor="vehicle-ptac">{t.ptac}</Label>
+              <Label htmlFor="vehicle-ptac">{t.cargoCapacity}</Label>
               <Input
                 id="vehicle-ptac"
                 value={ptac}
@@ -394,27 +385,22 @@ function VehicleEditDialog({
                 dir="ltr"
               />
             </div>
+          ) : null}
+          {serviceType !== 'CARGO' ? (
             <div className="space-y-1.5">
-              <Label htmlFor="vehicle-poids">{t.emptyWeight}</Label>
+              <Label htmlFor="vehicle-seats">{t.seatsNumber}</Label>
               <Input
-                id="vehicle-poids"
-                value={poidsAVide}
-                onChange={(e) => setPoidsAVide(e.target.value)}
-                maxLength={128}
+                id="vehicle-seats"
+                type="number"
+                min={1}
+                max={30}
+                value={seats}
+                onChange={(e) => setSeats(e.target.value)}
                 dir="ltr"
               />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="vehicle-puissance">{t.power}</Label>
-            <Input
-              id="vehicle-puissance"
-              value={puissance}
-              onChange={(e) => setPuissance(e.target.value)}
-              maxLength={128}
-              dir="ltr"
-            />
-          </div>
+          ) : null}
+
           <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"

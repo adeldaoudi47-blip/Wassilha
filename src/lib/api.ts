@@ -240,9 +240,9 @@ export const api = {
     datePremiereMiseEnCirculation?: string | null;
     adresse?: string | null;
     ptac?: string | null;
-    poidsAVide?: string | null;
-    energie?: string | null;
-    puissance?: string | null;
+    // Number of passenger seats — required for TAXI / BOTH service type,
+    // null for CARGO. Forwarded to the server unchanged.
+    seats?: number | null;
   }) =>
     req<{
       id: string;
@@ -254,6 +254,8 @@ export const api = {
       marque: string;
       type: string | null;
       anneePremiereMiseCirculation: number;
+      // Returned so the driver profile UI can re-render after a save.
+      seats: number | null;
     }>('/api/driver/vehicle', {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -318,9 +320,10 @@ export const api = {
     datePremiereMiseEnCirculation?: string;
     adresse?: string;
     ptac?: string;
-    poidsAVide?: string;
-    energie?: string;
-    puissance?: string;
+    // Number of passenger seats (TAXI / BOTH). Optional in the wire
+    // format — the server validates against the chosen serviceType
+    // (CARGO -> null, TAXI/BOTH -> required 1..30).
+    seats?: number;
     // Service type — the driver picks which kind(s) of orders they
     // want to receive once approved:
     //   "CARGO"  → original triporteur flow
@@ -359,9 +362,8 @@ export const api = {
           datePremiereMiseEnCirculation: string | null;
           adresse: string | null;
           ptac: string | null;
-          poidsAVide: string | null;
-          energie: string | null;
-          puissance: string | null;
+          // Number of passenger seats (TAXI / BOTH) or null for CARGO.
+          seats: number | null;
         } | null;
       }[]
     >('/api/admin/driver-applications'),

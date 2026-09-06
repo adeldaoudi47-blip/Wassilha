@@ -35,7 +35,14 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
   const [marque, setMarque] = useState('');
   const [datePremiereMiseEnCirculation, setDate] = useState('');
   const [adresse, setAdresse] = useState('');
-  const [energie, setEnergie] = useState('');
+  // Cargo capacity in kg. Required for CARGO / BOTH, hidden for TAXI.
+  // Free-form string (matches the rest of the carte-grise optional
+  // fields) so the driver can enter "500", "1.5t", etc.
+  const [cargoCapacity, setCargoCapacity] = useState('');
+  // Number of passenger seats. Required for TAXI / BOTH, hidden for
+  // CARGO. Kept as a string so the form can be partially filled without
+  // losing the user's input; the submit handler converts and validates.
+  const [seats, setSeats] = useState('');
   // `serviceType` is sent to the server alongside the rest of the
   // carte-grise data and persisted in `Driver.serviceType`. Once
   // approved, the driver will only receive orders matching this
@@ -62,7 +69,7 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
       toast.error(isAr ? 'أدخل اسم الشركة' : 'Entrez la raison sociale');
       return;
     }
-    if (!marque.trim() || !datePremiereMiseEnCirculation.trim() || !adresse.trim() || !energie.trim()) {
+    if (!marque.trim() || !datePremiereMiseEnCirculation.trim() || !adresse.trim()) {
       toast.error(isAr ? 'أكمل باقي الحقول المطلوبة' : 'Renseignez les autres champs obligatoires');
       return;
     }
@@ -71,6 +78,21 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
     if (!Number.isFinite(year) || year < 1950 || year > currentYear + 1) {
       toast.error(isAr ? 'تاريخ غير صحيح' : 'Date invalide');
       return;
+    }
+    // Conditional validation matching the service type: cargo needs
+    // capacity, taxi needs seats. BOTH needs both.
+    if (serviceType !== 'TAXI') {
+      if (!cargoCapacity.trim()) {
+        toast.error(isAr ? 'أدخل الحمولة الإجمالية' : 'Entrez la capacite de chargement');
+        return;
+      }
+    }
+    if (serviceType !== 'CARGO') {
+      const seatsN = parseInt(seats, 10);
+      if (!Number.isFinite(seatsN) || seatsN < 1 || seatsN > 30) {
+        toast.error(isAr ? 'أدخل عدد مقاعد صحيح بين 1 و 30' : 'Entrez un nombre de places valide (1 a 30)');
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -85,7 +107,12 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
         anneePremiereMiseCirculation: year,
         datePremiereMiseEnCirculation: datePremiereMiseEnCirculation.trim(),
         adresse: adresse.trim(),
-        energie: energie.trim(),
+        // Cargo capacity (optional, required for CARGO / BOTH). Sent as
+        // `ptac` to keep the wire field aligned with the carte-grise
+        // semantics already in place.
+        ptac: cargoCapacity.trim() || undefined,
+        // Passenger seats. Required for TAXI / BOTH, ignored for CARGO.
+        seats: serviceType === 'CARGO' ? undefined : (parseInt(seats, 10) || undefined),
         // Persisted in Driver.serviceType and used by the order fan-out
         // in POST /api/orders to filter which drivers get the push.
         serviceType,
@@ -212,22 +239,10 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
           <Field label={isAr ? 'عنوان المالك' : 'Adresse du propriétaire'} required>
             <Input value={adresse} onChange={(e) => setAdresse(e.target.value)} className="h-11 rounded-xl" />
           </Field>
-          <Field label={isAr ? 'الطاقة' : 'Énergie'} required>
-            <Select value={energie || undefined} onValueChange={setEnergie}>
-              <SelectTrigger className="h-11 rounded-xl">
-                <SelectValue placeholder={isAr ? 'اختر الطاقة' : 'Sélectionnez'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Benzine">{isAr ? 'بنزين' : 'Benzine'}</SelectItem>
-                <SelectItem value="Diesel">{isAr ? 'مازوت' : 'Diesel'}</SelectItem>
-                <SelectItem value="GPL">GPL</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
           {/* Driver service type — must be picked before the upgrade is
               accepted. Tells the order fan-out which drivers are eligible
-              for the order (cargo / taxi / both). Rendered right after
-              the energie select so it sits in the required-fields block. */}
+              for the order (cargo / taxi / both). The conditional
+              cargoCapacity/seats fields that follow read this value. */}
           <Field label={t.driverService} required>
             <Select
               value={serviceType}
@@ -243,6 +258,31 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
               </SelectContent>
             </Select>
           </Field>
+          {serviceType !== 'TAXI' ? (
+            <Field label={t.cargoCapacity} required>
+              <Input
+                value={cargoCapacity}
+                onChange={(e) => setCargoCapacity(e.target.value)}
+                placeholder={isAr ? 'الحمولة الإجمالية بالكيلوغرام' : 'Capacite de chargement (kg)'}
+                className="h-11 rounded-xl"
+                dir="ltr"
+              />
+            </Field>
+          ) : null}
+          {serviceType !== 'CARGO' ? (
+            <Field label={t.seatsNumber} required>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={seats}
+                onChange={(e) => setSeats(e.target.value)}
+                placeholder={isAr ? 'عدد المقاعد (1-30)' : 'Nombre de places (1-30)'}
+                className="h-11 rounded-xl"
+                dir="ltr"
+              />
+            </Field>
+          ) : null}
         </div>
 
         <Button

@@ -95,9 +95,11 @@ export function AuthFlow() {
     datePremiereMiseEnCirculation: '',
     adresse: '',
     ptac: '',
-    poidsAVide: '',
-    energie: '',
-    puissance: '',
+    // Number of passenger seats. Required for TAXI / BOTH, hidden for
+    // CARGO. Stored as Int on VehicleRegistration.seats (see the
+    // server validation in /api/auth/apply-driver). Empty string means
+    // 'not yet entered' so the submit handler can detect and 400.
+    seats: '',
     // Driver picks which service(s) they want to provide. Persisted
     // in `Driver.serviceType` and used by the order fan-out query in
     // `POST /api/orders` so a cargo-only driver never receives a
@@ -524,12 +526,6 @@ export function AuthFlow() {
       );
       return;
     }
-    if (!vr.energie.trim()) {
-      toast.error(
-        isAr ? 'اختر نوع الطاقة' : 'Selectionnez le type d’energie'
-      );
-      return;
-    }
     const year = parseInt(vr.anneePremiereMiseCirculation, 10);
     const currentYear = new Date().getFullYear();
     if (
@@ -543,6 +539,21 @@ export function AuthFlow() {
           : `Entrez une annee valide entre 1950 et ${currentYear + 1}`
       );
       return;
+    }
+    // Number of passenger seats is required for TAXI / BOTH drivers and
+    // ignored for CARGO. The server re-validates and returns 400 on
+    // garbage, so this is a friendly pre-check that keeps the user out
+    // of the error toast loop.
+    if (vr.serviceType !== 'CARGO') {
+      const seatsN = parseInt(vr.seats, 10);
+      if (!Number.isFinite(seatsN) || seatsN < 1 || seatsN > 30) {
+        toast.error(
+          isAr
+            ? 'أدخل عدد مقاعد صحيح بين 1 و 30'
+            : 'Entrez un nombre de places valide (1 a 30)'
+        );
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -562,10 +573,14 @@ export function AuthFlow() {
         // Carte grise extended fields.
         datePremiereMiseEnCirculation: vr.datePremiereMiseEnCirculation.trim(),
         adresse: vr.adresse.trim(),
+        // Cargo capacity is optional and only displayed for CARGO / BOTH
+        // drivers in the form; we forward it as-is to the server.
         ptac: vr.ptac.trim() || undefined,
-        poidsAVide: vr.poidsAVide.trim() || undefined,
-        energie: vr.energie.trim() || undefined,
-        puissance: vr.puissance.trim() || undefined,
+        // Number of passenger seats. Only meaningful for TAXI / BOTH; the
+        // server stores null for CARGO regardless of what we send.
+        seats: vr.serviceType === 'CARGO'
+          ? undefined
+          : (parseInt(vr.seats, 10) || undefined),
         // `serviceType` decides which orders this driver will receive
         // once approved: "CARGO" (parcels / furniture), "TAXI" (passenger
         // transport, Yassir-like) or "BOTH" (default fallback on the
@@ -1628,46 +1643,7 @@ export function AuthFlow() {
                   />
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                    {t.energy}
-                    <span className="text-destructive"> *</span>
-                  </label>
-                  <Select
-                    value={vehicleRegistration.energie || undefined}
-                    onValueChange={(v) => updateVehicleRegistration('energie', v)}
-                  >
-                    <SelectTrigger className="h-12 rounded-xl">
-                      <SelectValue placeholder={isAr ? 'اختر الطاقة' : 'Selectionnez l’energie'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Benzine">{isAr ? 'بنزين' : 'Benzine'}</SelectItem>
-                      <SelectItem value="Diesel">{isAr ? 'مازوت / ديزل' : 'Diesel'}</SelectItem>
-                      <SelectItem value="GPL">{isAr ? 'غاز ميمع سيرغاز GPL' : 'GPL'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                    {t.ptac}
-                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
-                  </label>
-                  <Input
-                    value={vehicleRegistration.ptac}
-                    onChange={(e) => updateVehicleRegistration('ptac', e.target.value)}
-                    placeholder={isAr ? 'الحمولة الإجمالية بالكيلوغرام' : 'PTAC (kg)'}
-                    className="h-12 rounded-xl"
-                    dir="ltr"
-                  />
-                </div>
-
-                {/* Driver service type — decides which orders this driver
-                    will receive after admin approval. Rendered between
-                    the required carte-grise fields and the optional
-                    PTAC/PUISSANCE block so the form reads top-to-bottom
-                    in order of importance. Default "CARGO" matches the
-                    pre-taxi fleet, so legacy behaviour is preserved. */}
                 <div>
                   <label className="mb-1 block text-xs font-bold text-muted-foreground">
                     {t.driverService}
@@ -1677,8 +1653,8 @@ export function AuthFlow() {
                     value={vehicleRegistration.serviceType}
                     onValueChange={(v) =>
                       updateVehicleRegistration(
-                        'serviceType',
-                        v as 'CARGO' | 'TAXI' | 'BOTH'
+                        "serviceType",
+                        v as "CARGO" | "TAXI" | "BOTH"
                       )
                     }
                   >
@@ -1693,33 +1669,42 @@ export function AuthFlow() {
                   </Select>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                    {t.emptyWeight}
-                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
-                  </label>
-                  <Input
-                    value={vehicleRegistration.poidsAVide}
-                    onChange={(e) => updateVehicleRegistration('poidsAVide', e.target.value)}
-                    placeholder={isAr ? 'الوزن فارغ بالكيلوغرام' : 'Poids a vide (kg)'}
-                    className="h-12 rounded-xl"
-                    dir="ltr"
-                  />
-                </div>
+                {vehicleRegistration.serviceType !== "TAXI" ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                      {t.cargoCapacity}
+                      <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? "· اختياري" : "· optionnel"})</span>
+                    </label>
+                    <Input
+                      value={vehicleRegistration.ptac}
+                      onChange={(e) => updateVehicleRegistration("ptac", e.target.value)}
+                      placeholder={isAr ? "الحمولة الإجمالية بالكيلوغرام" : "Capacite de chargement (kg)"}
+                      className="h-12 rounded-xl"
+                      dir="ltr"
+                    />
+                  </div>
+                ) : null}
 
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
-                    {t.power}
-                    <span className="text-[10px] font-normal text-muted-foreground"> ({isAr ? '· اختياري' : '· optionnel'})</span>
-                  </label>
-                  <Input
-                    value={vehicleRegistration.puissance}
-                    onChange={(e) => updateVehicleRegistration('puissance', e.target.value)}
-                    placeholder={isAr ? 'القوة بالحصان (CV)' : 'Puissance (CV)'}
-                    className="h-12 rounded-xl"
-                    dir="ltr"
-                  />
-                </div>
+                {vehicleRegistration.serviceType !== "CARGO" ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                      {t.seatsNumber}
+                      <span className="text-destructive"> *</span>
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={vehicleRegistration.seats}
+                      onChange={(e) => updateVehicleRegistration("seats", e.target.value)}
+                      placeholder={isAr ? "عدد المقاعد (1-30)" : "Nombre de places (1-30)"}
+                      className="h-12 rounded-xl"
+                      dir="ltr"
+                    />
+                  </div>
+                ) : null}
+
+
               </div>
             </div>
           </div>

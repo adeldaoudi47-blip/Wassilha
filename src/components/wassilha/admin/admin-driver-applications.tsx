@@ -24,9 +24,9 @@ type VehicleRegistration = {
   datePremiereMiseEnCirculation: string | null;
   adresse: string | null;
   ptac: string | null;
-  poidsAVide: string | null;
-  energie: string | null;
-  puissance: string | null;
+  // Number of passenger seats for TAXI / BOTH service types. Null for
+  // CARGO drivers and for legacy rows that pre-date the V2 schema.
+  seats: number | null;
 };
 
 type Application = {
@@ -173,18 +173,11 @@ export function AdminDriverApplications() {
                         {' · '}
                         {a.vehicleRegistration.anneePremiereMiseCirculation}
                       </p>
-                      {a.vehicleRegistration.energie ? (
-                        <p className="text-muted-foreground">
-                          <span className="font-semibold">{t.energy}: </span>
-                          {a.vehicleRegistration.energie}
-                          {a.vehicleRegistration.puissance ? ` · ${t.power}: ${a.vehicleRegistration.puissance}` : ''}
-                        </p>
-                      ) : null}
-                      {(a.vehicleRegistration.ptac || a.vehicleRegistration.poidsAVide) ? (
+                      {(a.vehicleRegistration.ptac || a.vehicleRegistration.seats) ? (
                         <p className="text-muted-foreground" dir="ltr">
-                          {a.vehicleRegistration.ptac ? `${t.ptac}: ${a.vehicleRegistration.ptac}` : ''}
-                          {a.vehicleRegistration.ptac && a.vehicleRegistration.poidsAVide ? ' · ' : ''}
-                          {a.vehicleRegistration.poidsAVide ? `${t.emptyWeight}: ${a.vehicleRegistration.poidsAVide}` : ''}
+                          {a.vehicleRegistration.ptac ? `${t.cargoCapacity}: ${a.vehicleRegistration.ptac}` : ''}
+                          {a.vehicleRegistration.ptac && a.vehicleRegistration.seats ? ' · ' : ''}
+                          {a.vehicleRegistration.seats ? `${t.seatsNumber}: ${a.vehicleRegistration.seats}` : ''}
                         </p>
                       ) : null}
                     </div>

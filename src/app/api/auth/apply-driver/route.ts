@@ -58,9 +58,11 @@ interface ApplyDriverBody {
   datePremiereMiseEnCirculation?: unknown;
   adresse?: unknown;
   ptac?: unknown;
-  poidsAVide?: unknown;
-  energie?: unknown;
-  puissance?: unknown;
+  // Number of passenger seats -- required for TAXI / BOTH, ignored for
+  // CARGO. Stored as Int in VehicleRegistration.seats. Optional in
+  // the wire format; the server validates it against the chosen
+  // serviceType below (see seats resolution).
+  seats?: unknown;
   // `serviceType` decides which orders the driver will receive after
   // admin approval. Persisted in `Driver.serviceType`. Allowed values
   // are restricted by `normalizeServiceType` below; anything outside
@@ -210,23 +212,48 @@ export async function POST(req: NextRequest) {
     const datePremiereMiseEnCirculation = optStr(body.datePremiereMiseEnCirculation);
     const adresse = optStr(body.adresse);
     const ptac = optStr(body.ptac);
-    const poidsAVide = optStr(body.poidsAVide);
-    const energie = optStr(body.energie);
-    const puissance = optStr(body.puissance);
     // Normalize the service type with an allow-list. Anything outside
     // "CARGO" / "TAXI" / "BOTH" falls back to "CARGO" so a typo on
-    // the client (or a future value) never causes a 500. The result
     // is persisted in `Driver.serviceType` and used by the order
     // fan-out in `POST /api/orders` to filter who gets the push.
     const serviceType = normalizeServiceType(body.serviceType);
-    // Restrict `energie` to a known short list so admins don't see garbage
-    // in the dashboard. Empty / null is allowed (optional).
-    if (energie !== null) {
-      const allowed = new Set(['Benzine', 'Diesel', 'GPL', 'Electrique', 'Hybride']);
-      if (!allowed.has(energie)) {
-        return badRequest('invalidEnergie');
+    // Resolve `seats` against the chosen serviceType:
+    //   * CARGO  -> always null (truck/triporteur doesn't carry passengers)
+    //   * TAXI   -> required, must be a positive integer (1..30)
+    //   * BOTH   -> required, same range as TAXI
+    // Strings/NaN/negatives are rejected with 400 so the admin dashboard
+    // can trust the value is either a sane seat count or null.
+    const SEATS_MIN = 1;
+    const SEATS_MAX = 30;
+    const seatsFromBody = (() => {
+      const raw = body.seats;
+      if (raw === undefined || raw === null || raw === '') return null;
+      // Accept numeric (e.g. 4) or numeric strings (e.g. "4").
+      const n = typeof raw === 'number' ? raw : Number(raw);
+      if (!Number.isFinite(n)) return Number.NaN;
+      return Math.trunc(n);
+    })();
+    let seatsValue: number | null;
+    if (serviceType === 'CARGO') {
+      // Explicitly ignore seats for cargo drivers; null is the canonical
+      // value so the admin panel can distinguish "ignored" from "missing".
+      seatsValue = null;
+    } else {
+      if (seatsFromBody === null || !Number.isFinite(seatsFromBody)) {
+        return badRequest('invalidSeats');
       }
+      if (seatsFromBody < SEATS_MIN || seatsFromBody > SEATS_MAX) {
+        return badRequest('invalidSeats');
+      }
+      seatsValue = seatsFromBody as number;
     }
+    // (Legacy) the driver-facing form used to collect `energie` and validate
+    // it against a known short list. The field is no longer on the new
+    // form (the form went from "engine + power" to "cargo capacity vs.
+    // seats"), but the `energie` column is still kept on
+    // `VehicleRegistration` for backwards-compatibility with rows
+    // created by older applications. We simply stop writing to it from
+    // this endpoint.
 
     if (
       typeof body.anneePremiereMiseCirculation !== 'number' ||
@@ -317,9 +344,7 @@ export async function POST(req: NextRequest) {
               datePremiereMiseEnCirculation,
               adresse,
               ptac,
-              poidsAVide,
-              energie,
-              puissance,
+              seats: seatsValue,
             },
           });
           return tx.driver.update({
@@ -378,9 +403,7 @@ export async function POST(req: NextRequest) {
               datePremiereMiseEnCirculation,
               adresse,
               ptac,
-              poidsAVide,
-              energie,
-              puissance,
+              seats: seatsValue,
             },
           });
           // 3) Create the Driver row linked to the same userId. If an old
@@ -471,9 +494,7 @@ export async function POST(req: NextRequest) {
           datePremiereMiseEnCirculation,
           adresse,
           ptac,
-          poidsAVide,
-          energie,
-          puissance,
+          seats: seatsValue,
         },
       });
       return tx.driver.create({

@@ -288,6 +288,11 @@ export const translations = {
     emptyWeight: 'الوزن فارغ',
     energy: 'الطاقة',
     power: 'القوة',
+    // New (V2) field on the driver application form. Replaces the legacy
+    // poidsAVide/energie/puissance trio for cargo drivers. Required for
+    // TAXI / BOTH and ignored for CARGO.
+    cargoCapacity: 'الحمولة الإجمالية (سعة الشحن)',
+    seatsNumber: 'عدد المقاعد',
     // Driver profile — edit carte grise (Phase 7+)
     editVehicle: 'تعديل بيانات المركبة',
     vehicleUpdated: 'تم تحديث بيانات المركبة بنجاح',
@@ -633,6 +638,11 @@ export const translations = {
     emptyWeight: 'Poids à vide',
     energy: 'Énergie',
     power: 'Puissance',
+    // New (V2) field on the driver application form. Replaces the legacy
+    // poidsAVide/energie/puissance trio for cargo drivers. Required for
+    // TAXI / BOTH and ignored for CARGO.
+    cargoCapacity: 'Capacite de chargement',
+    seatsNumber: 'Nombre de places',
     // Driver profile — edit carte grise (Phase 7+)
     editVehicle: 'Modifier les données du véhicule',
     vehicleUpdated: 'Les données du véhicule ont été mises à jour avec succès',

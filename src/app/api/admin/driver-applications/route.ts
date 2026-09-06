@@ -49,9 +49,7 @@ export async function GET() {
                 d.vehicleRegistration.datePremiereMiseEnCirculation,
               adresse: d.vehicleRegistration.adresse,
               ptac: d.vehicleRegistration.ptac,
-              poidsAVide: d.vehicleRegistration.poidsAVide,
-              energie: d.vehicleRegistration.energie,
-              puissance: d.vehicleRegistration.puissance,
+              seats: d.vehicleRegistration.seats,
             }
           : null,
       }))

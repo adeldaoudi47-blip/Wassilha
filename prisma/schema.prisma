@@ -166,6 +166,11 @@ model VehicleRegistration {
   energie                       String?
   // Carte-grisse â€” P.2: puissance administrative / fiscale (CV).
   puissance                     String?
+  // Number of passenger seats (TAXI / BOTH service). Optional — only
+  // required when serviceType != 'CARGO'. Stored as an int (the
+  // carte-grise S.1 / G field) so it can be queried/filtered without
+  // string parsing on the order fan-out path.
+  seats                         Int?
   // Chassis / serial number fields are intentionally NOT exposed in the
   // driver-facing form (privacy + verification happens off-platform). They
   // are kept in the schema for future use.
