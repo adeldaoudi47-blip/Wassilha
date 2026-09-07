@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -34,6 +34,11 @@ const DRIVER_NAV: NavItem[] = [
   { key: 'earnings', label: 'earnings', icon: Wallet },
   { key: 'profile', label: 'profile', icon: User },
 ];
+const ARTISAN_NAV: NavItem[] = [
+  { key: 'dashboard', label: 'artisanDashboard', icon: Store },
+  { key: 'products', label: 'myProducts', icon: Package },
+  { key: 'profile', label: 'profile', icon: User },
+];
 const ADMIN_NAV: NavItem[] = [
   { key: 'dashboard', label: 'dashboard', icon: LayoutDashboard },
   { key: 'fleet', label: 'fleetMap', icon: MapPin },
@@ -48,6 +53,7 @@ const ADMIN_NAV: NavItem[] = [
 const NAVS: Record<Role, NavItem[]> = {
   customer: CUSTOMER_NAV,
   driver: DRIVER_NAV,
+  artisan: ARTISAN_NAV,
   admin: ADMIN_NAV,
 };
 
@@ -59,12 +65,14 @@ export function BottomNav({ role }: { role: Role }) {
   const customerTab = useNavStore((s) => s.customerTab);
   const driverTab = useNavStore((s) => s.driverTab);
   const adminTab = useNavStore((s) => s.adminTab);
+  const artisanTab = useNavStore((s) => s.artisanTab);
+  const setArtisanTab = useNavStore((s) => s.setArtisanTab);
   const setCustomerTab = useNavStore((s) => s.setCustomerTab);
   const setDriverTab = useNavStore((s) => s.setDriverTab);
   const setAdminTab = useNavStore((s) => s.setAdminTab);
 
-  const activeTab = role === 'customer' ? customerTab : role === 'driver' ? driverTab : adminTab;
-  const setter = role === 'customer' ? setCustomerTab : role === 'driver' ? setDriverTab : setAdminTab;
+  const activeTab = role === 'customer' ? customerTab : role === 'driver' ? driverTab : role === 'artisan' ? artisanTab : adminTab;
+  const setter = role === 'customer' ? setCustomerTab : role === 'driver' ? setDriverTab : role === 'artisan' ? setArtisanTab : setAdminTab;
 
   return (
     <nav className="sticky bottom-0 z-30 border-t border-border/60 bg-background/90 backdrop-blur-lg">

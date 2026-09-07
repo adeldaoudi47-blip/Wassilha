@@ -1,7 +1,28 @@
-import type { Lang } from './types';
+﻿import type { Lang } from './types';
 
 export const translations = {
   ar: {
+    // === HIRFA artisan dashboard (P5) =============================
+    artisanDashboard: 'لوحة الحرفي',
+    myProducts: 'منتجاتي',
+    addProduct: 'إضافة منتج',
+    editProduct: 'تعديل المنتج',
+    uploadImages: 'رفع الصور',
+    productPrice: 'السعر (دج)',
+    productStock: 'الكمية المتوفرة',
+    productName: 'اسم المنتج',
+    productDescription: 'وصف المنتج (اختياري)',
+    productCategory: 'التصنيف',
+    productStockStatus: 'حالة المنتج',
+    saveProduct: 'حفظ المنتج',
+    noProducts: 'لا توجد منتجات بعد. أضف أول منتج!',
+    deleteProductConfirm: 'هل أنت متأكد من حذف هذا المنتج؟',
+    productSaved: 'تم حفظ المنتج بنجاح',
+    productDeleted: 'تم حذف المنتج',
+    imageUploaded: 'تم رفع الصورة',
+    uploadFailed: 'تعذر رفع الصورة',
+    stockZeroMade: 'الطلب عند الطلب',
+    stockAvailable: 'متوفر',
     // === HIRFA artisan application (P4) =============================
     openCraftStore: 'افتح متجرك في حِرفة',
     openCraftStoreSub: 'اعرض منتجاتك اليدوية على زبائن القرارة',
@@ -297,7 +318,7 @@ export const translations = {
     lastSeen: 'آخر ظهور',
     lastUpdate: 'آخر تحديث:',
     refresh: 'تحديث',
-    fetchError: 'تعذّر تحميل بيانات السائقين. حاول مرة أخرى.',
+    fetchError: 'تعذر تحميل البيانات',
     noDriversOnline: 'لا يوجد سائقون متصلون الآن',
     noDriversHint: 'سيظهر السائقون هنا تلقائياً عند بدء رحلة نشطة.',
     // Phase 5 — Delivery point picker (careem-style neighbourhood + landmark)
@@ -389,6 +410,27 @@ export const translations = {
     confirmBook: 'هل تريد حجز هذا العرض؟',
   },
   fr: {
+    // === HIRFA artisan dashboard (P5) - French mirrors ============
+    artisanDashboard: 'Tableau de bord artisan',
+    myProducts: 'Mes produits',
+    addProduct: 'Ajouter un produit',
+    editProduct: 'Modifier le produit',
+    uploadImages: 'Télécharger des images',
+    productPrice: 'Prix (DZD)',
+    productStock: 'Stock disponible',
+    productName: 'Nom du produit',
+    productDescription: 'Description (optionnel)',
+    productCategory: 'Catégorie',
+    productStockStatus: 'Statut du produit',
+    saveProduct: 'Enregistrer',
+    noProducts: 'Aucun produit pour le moment. Ajoutez votre premier produit !',
+    deleteProductConfirm: 'Êtes-vous sûr de vouloir supprimer ce produit ?',
+    productSaved: 'Produit enregistré',
+    productDeleted: 'Produit supprimé',
+    imageUploaded: 'Image téléchargée',
+    uploadFailed: 'Échec du téléchargement',
+    stockZeroMade: 'Sur commande',
+    stockAvailable: 'Disponible',
     // === HIRFA artisan application (P4) - French mirrors ============
     openCraftStore: 'Ouvrir votre boutique HIRFA',
     openCraftStoreSub: 'Vendez vos produits artisanaux aux clients d’El Guerrara',
@@ -680,7 +722,7 @@ export const translations = {
     lastSeen: 'Dernier signal',
     lastUpdate: 'Dernière mise à jour :',
     refresh: 'Actualiser',
-    fetchError: 'Impossible de charger les chauffeurs. Réessayez.',
+    fetchError: 'Impossible de charger les données',
     noDriversOnline: 'Aucun chauffeur en ligne pour le moment',
     noDriversHint: 'Les chauffeurs apparaîtront ici dès qu\u2019ils démarrent une course.',
     // Phase 5 — Delivery point picker (careem-style neighbourhood + landmark)
