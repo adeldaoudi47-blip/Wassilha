@@ -28,17 +28,20 @@ export const useAppStore = create<AppState>()(
 // TRIP OFFERS: `offers` is a new screen on both customer and driver
 // sides. The customer browses available offers; the driver
 // manages their own published offers.
-type CustomerScreen = 'home' | 'hirfa' | 'track' | 'history' | 'profile' | 'offers';
+type CustomerScreen = 'home' | 'hirfa' | 'cart' | 'track' | 'history' | 'profile' | 'offers';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
+type ArtisanScreen = 'dashboard' | 'products' | 'orders' | 'profile';
 type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet' | 'craft';
 
 interface NavState {
   customerTab: CustomerScreen;
   driverTab: DriverScreen;
+  artisanTab: ArtisanScreen;
   adminTab: AdminScreen;
   activeOrderId: string | null;
   setCustomerTab: (t: CustomerScreen) => void;
   setDriverTab: (t: DriverScreen) => void;
+  setArtisanTab: (t: ArtisanScreen) => void;
   setAdminTab: (t: AdminScreen) => void;
   setActiveOrderId: (id: string | null) => void;
 }
@@ -46,10 +49,12 @@ interface NavState {
 export const useNavStore = create<NavState>((set) => ({
   customerTab: 'home',
   driverTab: 'requests',
+  artisanTab: 'dashboard',
   adminTab: 'dashboard',
   activeOrderId: null,
   setCustomerTab: (t) => set({ customerTab: t }),
   setDriverTab: (t) => set({ driverTab: t }),
+  setArtisanTab: (t) => set({ artisanTab: t }),
   setAdminTab: (t) => set({ adminTab: t }),
   setActiveOrderId: (id) => set({ activeOrderId: id }),
 }));

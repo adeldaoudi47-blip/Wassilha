@@ -25,6 +25,8 @@ import { AdminPricing } from '@/components/wassilha/admin/admin-pricing';
 import { AdminDriverApplications } from '@/components/wassilha/admin/admin-driver-applications';
 import { AdminArtisanApplications } from '@/components/wassilha/admin/admin-artisan-applications';
 import { AdminFleetMap } from '@/components/wassilha/admin/admin-fleet-map';
+import { ArtisanDashboard } from '@/components/wassilha/craft/artisan-dashboard';
+import { CraftCart } from '@/components/wassilha/craft/craft-cart';
 
 export default function Home() {
   const { t, isRtl } = useT();
@@ -33,6 +35,7 @@ export default function Home() {
   const customerTab = useNavStore((s) => s.customerTab);
   const driverTab = useNavStore((s) => s.driverTab);
   const adminTab = useNavStore((s) => s.adminTab);
+  const artisanTab = useNavStore((s) => s.artisanTab);
   const [booting, setBooting] = useState(true);
 
   // Sync document direction with language
@@ -78,6 +81,7 @@ export default function Home() {
     else if (customerTab === 'profile') { title = t.profile; content = <CustomerProfile />; }
     // TRIP OFFERS: dedicated tab for browsing driver-published offers.
     else if (customerTab === 'offers') { title = t.tripOffers; content = <CustomerOffers />; }
+    else if (customerTab === 'cart') { title = t.cart; content = <CraftCart />; }
   } else if (user.role === 'driver') {
     if (driverTab === 'requests') { title = t.incomingRequests; subtitle = t.location; content = <DriverRequests />; }
     else if (driverTab === 'trips') { title = t.myTrips; content = <DriverTrips />; }
@@ -94,6 +98,11 @@ export default function Home() {
     else if (adminTab === 'drivers') { title = t.drivers; content = <AdminDrivers />; }
     else if (adminTab === 'orders') { title = t.orders; content = <AdminOrders />; }
     else if (adminTab === 'pricing') { title = t.pricing; content = <AdminPricing />; }
+  } else if (user.role === 'artisan') {
+    if (artisanTab === 'dashboard') { title = t.artisanDashboard; subtitle = t.hirfa; content = <ArtisanDashboard />; }
+    else if (artisanTab === 'products') { title = t.myProducts; content = <ArtisanDashboard />; }
+    else if (artisanTab === 'orders') { title = t.newOrder; content = <ArtisanDashboard />; }
+    else if (artisanTab === 'profile') { title = t.profile; content = <ArtisanDashboard />; }
   }
 
   return (

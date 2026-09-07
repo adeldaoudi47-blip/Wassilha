@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors, Store } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors, Store, ShoppingBag, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -17,6 +17,8 @@ const CUSTOMER_NAV: NavItem[] = [
   { key: 'home', label: 'home', icon: Home },
   // HIRFA marketplace (craft) - dedicated customer tab (P3).
   { key: 'hirfa', label: 'hirfa', icon: Hammer },
+  // HIRFA (P6): craft cart tab.
+  { key: 'cart', label: 'cart', icon: ShoppingBag },
   // TRIP OFFERS: customer browses available offers. Sits between
   // `home` and `history` so it's discoverable without being
   // aggressive on the home screen.
@@ -37,6 +39,8 @@ const DRIVER_NAV: NavItem[] = [
 const ARTISAN_NAV: NavItem[] = [
   { key: 'dashboard', label: 'artisanDashboard', icon: Store },
   { key: 'products', label: 'myProducts', icon: Package },
+  // HIRFA (P6): artisan order management tab.
+  { key: 'orders', label: 'newOrder', icon: Clock },
   { key: 'profile', label: 'profile', icon: User },
 ];
 const ADMIN_NAV: NavItem[] = [

@@ -12,6 +12,9 @@ import type {
   CraftProductListResponse,
   CraftProductPublic,
   CraftArtisanApplication,
+  CraftOrderPublic,
+  CraftOrderListResponse,
+  CraftOrderStatus,
 } from './types';
 
 async function req<T>(
@@ -426,4 +429,49 @@ export const api = {
       `/api/admin/craft/artisans/${id}/reject`,
       { method: "PATCH" }
     ),
+
+  // HIRFA (P5): artisan product management + image upload
+  createCraftProduct: (data: {
+    nameAr: string;
+    nameFr?: string;
+    descriptionAr?: string;
+    descriptionFr?: string;
+    price: number;
+    categoryId: string;
+    images?: string[];
+    stock?: number;
+    isFeatured?: boolean;
+  }) => req<CraftProductPublic>("/api/craft/products", { method: "POST", body: JSON.stringify(data) }),
+  getMyCraftProducts: () => req<CraftProductPublic[]>("/api/craft/products/mine"),
+  updateCraftProduct: (id: string, data: Partial<{
+    nameAr: string;
+    nameFr?: string | null;
+    descriptionAr?: string | null;
+    descriptionFr?: string | null;
+    price: number;
+    categoryId: string;
+    images: string[];
+    stock: number;
+    isFeatured: boolean;
+  }>) => req<CraftProductPublic>(`/api/craft/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteCraftProduct: (id: string) => req<{ ok: boolean; id: string }>(`/api/craft/products/${id}`, { method: "DELETE" }),
+  uploadCraftImage: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return req<{ url: string }>("/api/craft/upload", { method: "POST", body: fd });
+  },
+
+  // HIRFA (P6): order lifecycle — create, list, status transitions
+  createCraftOrder: (data: {
+    items: { productId: string; quantity: number }[];
+    deliveryOption?: 'pickup';
+    notes?: string;
+  }) => req<CraftOrderPublic>("/api/craft/orders", { method: "POST", body: JSON.stringify(data) }),
+  getCraftOrders: () =>
+    req<CraftOrderListResponse>("/api/craft/orders"),
+  updateCraftOrderStatus: (id: string, status: CraftOrderStatus) =>
+    req<CraftOrderPublic>(`/api/craft/orders/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 };

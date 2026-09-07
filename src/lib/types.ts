@@ -1,6 +1,6 @@
 // WASSILHA shared types
 
-export type Role = 'customer' | 'driver' | 'admin';
+export type Role = 'customer' | 'driver' | 'admin' | 'artisan';
 export type Lang = 'ar' | 'fr';
 export type CargoKey =
   | 'parcel'
@@ -255,6 +255,53 @@ export interface CraftProductListResponse {
 // reviewer can identify the applicant. Workshop coordinates are never
 // exposed here.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// HIRFA (P6): craft order status and public-facing shapes for the cart &
+// order-management flows. CraftOrderStatus is a free String in the DB but
+// we narrow the union here so the frontend can pattern-match safely.
+// ---------------------------------------------------------------------------
+export type CraftOrderStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'ready'
+  | 'delivered'
+  | 'cancelled';
+
+export interface CraftOrderItemPublic {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  product: {
+    id: string;
+    nameAr: string;
+    nameFr: string | null;
+    images: string[];
+  };
+}
+
+export interface CraftOrderPublic {
+  id: string;
+  code: string;
+  status: CraftOrderStatus;
+  deliveryOption: string;
+  totalPrice: number;
+  notes: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+  customer: { id: string; name: string; phone: string };
+  artisan: { id: string; displayName: string; avatarUrl: string | null };
+  items: CraftOrderItemPublic[];
+}
+
+export interface CraftOrderListResponse {
+  orders: CraftOrderPublic[];
+  total: number;
+}
+
 export interface CraftArtisanApplication {
   id: string;
   userId: string;

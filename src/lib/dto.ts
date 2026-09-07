@@ -156,6 +156,47 @@ export const publicArtisanSelect = {
   area: { select: { nameAr: true, nameFr: true } },
 } as const;
 
+// ---------------------------------------------------------------------------
+// HIRFA (P6): public projections for craft orders. The customer's phone is
+// included so the artisan can contact them; the artisan phone is NOT
+// included (the artisan already knows their own contact).
+// ---------------------------------------------------------------------------
+export const publicCraftOrderItemSelect = {
+  id: true,
+  productId: true,
+  quantity: true,
+  unitPrice: true,
+  product: {
+    select: {
+      id: true,
+      nameAr: true,
+      nameFr: true,
+      images: true,
+    },
+  },
+} as const;
+
+export const publicCraftOrderSelect = {
+  id: true,
+  code: true,
+  status: true,
+  deliveryOption: true,
+  totalPrice: true,
+  notes: true,
+  createdAt: true,
+  confirmedAt: true,
+  readyAt: true,
+  deliveredAt: true,
+  cancelledAt: true,
+  customer: { select: { id: true, name: true, phone: true } },
+  artisan: { select: { id: true, displayName: true, avatarUrl: true } },
+  items: { select: publicCraftOrderItemSelect },
+} as const;
+
+// ---------------------------------------------------------------------------
+// HIRFA (P3): public projection for craft products. The artisan contact
+// phone, owning user id and exact workshop coords are never returned.
+// ---------------------------------------------------------------------------
 export const publicCraftProductSelect = {
   id: true,
   nameAr: true,
