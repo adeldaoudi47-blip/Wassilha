@@ -40,6 +40,10 @@ model User {
   driver       Driver?
   sessions     Session[]
   pushTokens   PushToken[]
+  // HIRFA marketplace: artisan shop profile (admin-approved) and the
+  // customer side of craft orders.
+  artisan      ArtisanProfile?
+  craftOrders  CraftOrder[]    @relation("CraftCustomerOrders")
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
@@ -234,6 +238,11 @@ model Order {
   // joining through the customer.
   tripOffer TripOffer?
 
+  // HIRFA: when a CraftOrder uses Wassilha transport
+  // (deliveryOption = "wassilha_delivery") its delivery leg is a
+  // normal Order, linked back here.
+  craftDelivery CraftOrder?
+
   // SECURITY (V14): indexes for hot queries. customerId/driverId are
   // used by /api/orders GET to scope the listing. status and the
   // (status, createdAt) compound back the driver fan-out query that
@@ -398,6 +407,8 @@ model DeliveryArea {
   isActive  Boolean         @default(true)
   sortOrder Int             @default(0)
   points    DeliveryPoint[]
+  // HIRFA: artisan workshops anchored to a neighbourhood.
+  artisans  ArtisanProfile[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -450,4 +461,146 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+
+/// HIRFA marketplace: category taxonomy for handmade crafts.
+model CraftCategory {
+  id        String         @id @default(cuid())
+  nameAr    String
+  nameFr    String?
+  slug      String         @unique
+  isActive  Boolean        @default(true)
+  sortOrder Int            @default(0)
+  products  CraftProduct[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+/// A maker/seller on the HIRFA marketplace. Mirrors the Driver
+/// self-registration workflow: the row starts as status="pending"
+/// after the artisan applies, and only an admin can flip it to
+/// "active" (or "rejected"). While status != "active" the artisan
+/// cannot publish products or receive orders (same gate as
+/// Driver.applicationStatus).
+model ArtisanProfile {
+  id          String        @id @default(cuid())
+  userId      String        @unique
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  bioAr       String?       @db.Text
+  bioFr       String?       @db.Text
+  // Contact number shown to customers (falls back to user.phone).
+  phone       String?
+  // Workshop location: anchored to the shared DeliveryArea
+  // neighbourhood taxonomy, plus free-text address and optional
+  // verified coords (honest-data policy, like DeliveryPoint).
+  areaId      String?
+  area        DeliveryArea? @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  addressAr   String?
+  latitude    Decimal?      @db.Decimal(10, 7)
+  longitude   Decimal?      @db.Decimal(10, 7)
+  avatarUrl   String?
+  // pending | active | rejected (free String, no enum - mirrors
+  // Driver.applicationStatus and Order.status conventions).
+  status      String        @default("pending")
+  rating      Float         @default(5.0)
+  totalSales  Int           @default(0)
+  appliedAt   DateTime?
+  reviewedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  products    CraftProduct[]
+  craftOrders CraftOrder[]
+
+  @@index([status])
+}
+
+/// A handmade product listed by an artisan. `images` holds URLs
+/// served from object storage (Vercel Blob / Cloudinary) - no binary
+/// blobs live in Postgres. `price` is an integer amount of DZD
+/// (same convention as Order.price / TripOffer.price).
+model CraftProduct {
+  id            String         @id @default(cuid())
+  artisanId     String
+  artisan       ArtisanProfile @relation(fields: [artisanId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      CraftCategory  @relation(fields: [categoryId], references: [id])
+  nameAr        String
+  nameFr        String?
+  descriptionAr String?        @db.Text
+  descriptionFr String?        @db.Text
+  price         Int
+  images        String[]
+  // Handmade stock is often a single piece; the API layer enforces
+  // stock >= 0 and decrements it on order confirmation.
+  stock         Int            @default(1)
+  isActive      Boolean        @default(true)
+  isFeatured    Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  items         CraftOrderItem[]
+
+  @@index([artisanId])
+  @@index([categoryId, isActive])
+  @@index([isActive])
+}
+
+/// A customer order placed on the HIRFA marketplace. Deliberately
+/// separate from the transport `Order` table: a craft order is
+/// product-centric (quantities, price snapshots) while Order is
+/// trip-centric (pickup/dropoff, per-km pricing). When the customer
+/// chooses Wassilha transport (deliveryOption = "wassilha_delivery")
+/// the delivery leg is later materialised as a normal Order and
+/// linked via deliveryOrderId so admins can trace the full chain.
+model CraftOrder {
+  id              String         @id @default(cuid())
+  code            String         @unique // human-friendly HIRFA-XXXXX
+  customerId      String
+  customer        User           @relation("CraftCustomerOrders", fields: [customerId], references: [id])
+  artisanId       String
+  artisan         ArtisanProfile @relation(fields: [artisanId], references: [id])
+  // pending | confirmed | ready | delivered | cancelled
+  // (free String - mirrors Order.status / TripOffer.status).
+  status          String         @default("pending")
+  // pickup (customer collects at the workshop) | wassilha_delivery
+  deliveryOption  String         @default("pickup")
+  deliveryOrderId String?        @unique
+  deliveryOrder   Order?         @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
+  totalPrice      Int
+  notes           String?
+  confirmedAt     DateTime?
+  readyAt         DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  items           CraftOrderItem[]
+
+  @@index([customerId])
+  @@index([artisanId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Line item of a CraftOrder. `unitPrice` snapshots
+/// CraftProduct.price at order time so later price edits never
+/// rewrite history (same pattern as the server-side pricing rule).
+model CraftOrderItem {
+  id           String       @id @default(cuid())
+  craftOrderId String
+  order        CraftOrder   @relation(fields: [craftOrderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      CraftProduct @relation(fields: [productId], references: [id])
+  quantity     Int          @default(1)
+  unitPrice    Int
+  note         String?
+
+  @@index([craftOrderId])
+  @@index([productId])
 }

@@ -140,3 +140,33 @@ export const tripOfferDriverSelect = {
   serviceType: true,
   user: { select: publicUserSelect },
 } as const;
+
+
+// ---------------------------------------------------------------------------
+// HIRFA (craft) - public projections. Artisan contact phone, owning user id
+// and exact workshop coords/address are intentionally excluded: customers
+// see the neighbourhood (area name) only.
+// ---------------------------------------------------------------------------
+export const publicArtisanSelect = {
+  id: true,
+  displayName: true,
+  avatarUrl: true,
+  rating: true,
+  totalSales: true,
+  area: { select: { nameAr: true, nameFr: true } },
+} as const;
+
+export const publicCraftProductSelect = {
+  id: true,
+  nameAr: true,
+  nameFr: true,
+  descriptionAr: true,
+  descriptionFr: true,
+  price: true,
+  images: true,
+  stock: true,
+  isFeatured: true,
+  createdAt: true,
+  category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
+  artisan: { select: publicArtisanSelect },
+} as const;

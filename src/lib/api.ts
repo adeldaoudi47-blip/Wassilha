@@ -8,6 +8,9 @@ import type {
   PricingConfig,
   TripOffer,
   TripOfferServiceType,
+  CraftCategoryPublic,
+  CraftProductListResponse,
+  CraftProductPublic,
 } from './types';
 
 async function req<T>(
@@ -375,4 +378,27 @@ export const api = {
     req<DriverProfile>(`/api/admin/drivers/${id}/reject`, {
       method: 'PATCH',
     }),
+
+  // HIRFA marketplace (craft) - public catalog endpoints (P3)
+  getCraftCategories: () => req<CraftCategoryPublic[]>("/api/craft/categories"),
+  getCraftProducts: (params?: {
+    categoryId?: string;
+    artisanId?: string;
+    q?: string;
+    featured?: boolean;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const qp = new URLSearchParams();
+    if (params?.categoryId) qp.set("categoryId", params.categoryId);
+    if (params?.artisanId) qp.set("artisanId", params.artisanId);
+    if (params?.q) qp.set("q", params.q);
+    if (params?.featured) qp.set("featured", "1");
+    if (params?.page) qp.set("page", String(params.page));
+    if (params?.pageSize) qp.set("pageSize", String(params.pageSize));
+    const qs = qp.toString();
+    return req<CraftProductListResponse>(`/api/craft/products${qs ? `?${qs}` : ""}`);
+  },
+  getCraftProduct: (id: string) =>
+    req<CraftProductPublic>(`/api/craft/products/${id}`),
 };

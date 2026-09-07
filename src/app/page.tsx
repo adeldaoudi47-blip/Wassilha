@@ -8,6 +8,7 @@ import { useRealtime } from '@/components/wassilha/use-realtime';
 import { AuthFlow } from '@/components/wassilha/auth/auth-flow';
 import { AppShell } from '@/components/wassilha/app-shell';
 import { CustomerHome } from '@/components/wassilha/customer/customer-home';
+import { HirfaHome } from '@/components/wassilha/craft/hirfa-home';
 import { CustomerTrack } from '@/components/wassilha/customer/customer-track';
 import { CustomerHistory } from '@/components/wassilha/customer/customer-history';
 import { CustomerProfile } from '@/components/wassilha/customer/customer-profile';
@@ -70,6 +71,7 @@ export default function Home() {
 
   if (user.role === 'customer') {
     if (customerTab === 'home') { title = t.home; subtitle = t.tagline; content = <CustomerHome />; }
+    else if (customerTab === 'hirfa') { title = t.hirfa; subtitle = t.hirfaMarketplace; content = <HirfaHome />; }
     else if (customerTab === 'track') { title = t.track; content = <CustomerTrack />; }
     else if (customerTab === 'history') { title = t.history; content = <CustomerHistory />; }
     else if (customerTab === 'profile') { title = t.profile; content = <CustomerProfile />; }

@@ -202,3 +202,49 @@ export interface Location {
   lat: number;
   lng: number;
 }
+
+
+// ---------------------------------------------------------------------------
+// HIRFA marketplace (craft) - public-facing shapes served by /api/craft/*.
+// Mirror the DTO selects in lib/dto.ts: sensitive artisan fields (contact
+// phone, owning user id, exact workshop coords/address) are never returned.
+// ---------------------------------------------------------------------------
+export interface CraftCategoryPublic {
+  id: string;
+  nameAr: string;
+  nameFr: string | null;
+  slug: string;
+  sortOrder: number;
+}
+
+export interface ArtisanPublic {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  rating: number;
+  totalSales: number;
+  area: { nameAr: string; nameFr: string | null } | null;
+}
+
+export interface CraftProductPublic {
+  id: string;
+  nameAr: string;
+  nameFr: string | null;
+  descriptionAr: string | null;
+  descriptionFr: string | null;
+  price: number;
+  images: string[];
+  stock: number;
+  isFeatured: boolean;
+  createdAt: string;
+  category: { id: string; nameAr: string; nameFr: string | null; slug: string };
+  artisan: ArtisanPublic;
+}
+
+export interface CraftProductListResponse {
+  products: CraftProductPublic[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}

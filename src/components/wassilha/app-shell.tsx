@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -15,6 +15,8 @@ interface NavItem {
 
 const CUSTOMER_NAV: NavItem[] = [
   { key: 'home', label: 'home', icon: Home },
+  // HIRFA marketplace (craft) - dedicated customer tab (P3).
+  { key: 'hirfa', label: 'hirfa', icon: Hammer },
   // TRIP OFFERS: customer browses available offers. Sits between
   // `home` and `history` so it's discoverable without being
   // aggressive on the home screen.

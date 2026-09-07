@@ -28,7 +28,7 @@ export const useAppStore = create<AppState>()(
 // TRIP OFFERS: `offers` is a new screen on both customer and driver
 // sides. The customer browses available offers; the driver
 // manages their own published offers.
-type CustomerScreen = 'home' | 'track' | 'history' | 'profile' | 'offers';
+type CustomerScreen = 'home' | 'hirfa' | 'track' | 'history' | 'profile' | 'offers';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
 type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet';
 
@@ -59,3 +59,36 @@ export function useRole(): Role | null {
   const user = useAppStore((s) => s.user);
   return user?.role ?? null;
 }
+
+
+// HIRFA (P3): lightweight client-side cart for craft products. UX-only
+// state - the server recomputes every price at checkout (P6) and never
+// trusts anything stored here.
+export interface CraftCartItem {
+  productId: string;
+  nameAr: string;
+  price: number;
+  image: string | null;
+  qty: number;
+}
+
+interface CraftCartState {
+  items: CraftCartItem[];
+  addItem: (item: Omit<CraftCartItem, "qty">, qty?: number) => void;
+  removeItem: (productId: string) => void;
+  clear: () => void;
+}
+
+export const useCraftCart = create<CraftCartState>((set) => ({
+  items: [],
+  addItem: (item, qty = 1) =>
+    set((s) => {
+      const existing = s.items.find((i) => i.productId === item.productId);
+      const items = existing
+        ? s.items.map((i) => (i.productId === item.productId ? { ...i, qty: i.qty + qty } : i))
+        : [...s.items, { ...item, qty }];
+      return { items };
+    }),
+  removeItem: (productId) => set((s) => ({ items: s.items.filter((i) => i.productId !== productId) })),
+  clear: () => set({ items: [] }),
+}));

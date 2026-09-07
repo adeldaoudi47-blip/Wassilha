@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import {
   Minus, Plus, Calculator, Bike, ShieldCheck, Clock, CloudOff,
   Settings2, Check, Loader2, Crosshair, Navigation, MapPin, Car,
-  Package, Zap, CalendarClock,
+  Package, Zap, CalendarClock, Hammer, ChevronRight,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -291,6 +291,22 @@ export function CustomerHome() {
 
   return (
     <div className="space-y-4">
+      {/* HIRFA marketplace entry (P3) - navigates to the dedicated hirfa tab. */}
+      <button
+        onClick={() => setCustomerTab('hirfa')}
+        className="flex w-full items-center gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-l from-emerald-700 to-emerald-900 p-4 text-start shadow-sm transition-transform active:scale-[0.99] dark:border-emerald-800"
+      >
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+          <Hammer size={22} className="text-white" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-extrabold text-white">
+            {t.hirfa} · {t.hirfaMarketplace}
+          </p>
+          <p className="truncate text-xs text-white/80">{t.hirfaTagline}</p>
+        </div>
+        <ChevronRight size={20} className="shrink-0 text-white/80 rtl:rotate-180" />
+      </button>
       {/* Map preview.
           -----------
           While ANY modal Sheet (the pricing breakdown OR the
