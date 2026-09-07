@@ -11,6 +11,7 @@ import type {
   CraftCategoryPublic,
   CraftProductListResponse,
   CraftProductPublic,
+  CraftArtisanApplication,
 } from './types';
 
 async function req<T>(
@@ -401,4 +402,28 @@ export const api = {
   },
   getCraftProduct: (id: string) =>
     req<CraftProductPublic>(`/api/craft/products/${id}`),
+
+  // HIRFA (P4): artisan store application + admin review queue
+  applyArtisan: (data: {
+    displayName: string;
+    bio?: string;
+    phone?: string;
+    areaSlug?: string;
+  }) =>
+    req<{ ok: boolean; status: "pending"; reapplied?: boolean }>(
+      "/api/craft/artisan/apply",
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  getArtisanApplications: () =>
+    req<CraftArtisanApplication[]>("/api/admin/craft/artisans"),
+  approveArtisan: (id: string) =>
+    req<{ ok: boolean; status: "active" }>(
+      `/api/admin/craft/artisans/${id}/approve`,
+      { method: "PATCH" }
+    ),
+  rejectArtisan: (id: string) =>
+    req<{ ok: boolean; status: "rejected" }>(
+      `/api/admin/craft/artisans/${id}/reject`,
+      { method: "PATCH" }
+    ),
 };

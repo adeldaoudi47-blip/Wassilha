@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Package, Bike, DollarSign, Clock, TrendingUp, Users, CheckCircle2, Activity,
-  ShieldCheck,
+  ShieldCheck, Hammer,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -33,6 +33,18 @@ export function AdminDashboard() {
   useEffect(() => {
     api.adminStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
     const id = setInterval(() => api.adminStats().then(setStats).catch(() => {}), 8000);
+    return () => clearInterval(id);
+  }, []);
+
+  // HIRFA (P4): pending artisan application badge.
+  const [pendingCraftCount, setPendingCraftCount] = useState(0);
+  useEffect(() => {
+    const load = () =>
+      api.getArtisanApplications()
+        .then((apps) => setPendingCraftCount(apps.filter((a) => a.status === 'pending').length))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 10000);
     return () => clearInterval(id);
   }, []);
 
@@ -217,6 +229,27 @@ export function AdminDashboard() {
           ))}
         </div>
       </Card>
+
+      {/* HIRFA artisan applications quick-access (pending only) */}
+      {pendingCraftCount > 0 ? (
+        <button
+          onClick={() => setAdminTab('craft')}
+          className="flex w-full items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-start transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-200 dark:bg-emerald-900">
+            <Hammer size={20} className="text-emerald-700 dark:text-emerald-300" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-foreground">{t.craftApplications}</p>
+            <p className="text-xs text-muted-foreground">
+              {pendingCraftCount} {t.applicationPending}
+            </p>
+          </div>
+          <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-emerald-500 px-2 text-xs font-black text-white">
+            {pendingCraftCount}
+          </span>
+        </button>
+      ) : null}
 
       {/* Driver applications quick-access (only visible when there are pending applications) */}
       {pendingAppCount > 0 ? (

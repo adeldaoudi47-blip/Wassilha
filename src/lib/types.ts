@@ -248,3 +248,24 @@ export interface CraftProductListResponse {
   pageSize: number;
   hasMore: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// HIRFA (P4): artisan application as seen by the admin review queue.
+// `user` carries the public user projection (name/phone/avatar) so the
+// reviewer can identify the applicant. Workshop coordinates are never
+// exposed here.
+// ---------------------------------------------------------------------------
+export interface CraftArtisanApplication {
+  id: string;
+  userId: string;
+  displayName: string;
+  bioAr: string | null;
+  bioFr: string | null;
+  phone: string | null;
+  status: 'pending' | 'rejected';
+  appliedAt: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  area: { nameAr: string; nameFr: string | null } | null;
+  user: { id: string; name: string; phone: string; avatar: string | null };
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers } from 'lucide-react';
+import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers, Hammer } from 'lucide-react';
 import { useT } from '../use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { UpgradeDriverDialog } from './upgrade-driver-dialog';
+import { ApplyArtisanDialog } from './apply-artisan-dialog';
 import type { Order } from '@/lib/types';
 import { formatDzd } from '@/lib/wassilha-data';
 import Link from 'next/link';
@@ -20,6 +21,7 @@ export function CustomerProfile() {
   const setUser = useAppStore((s) => s.setUser);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showArtisanApply, setShowArtisanApply] = useState(false);
 
   useEffect(() => {
     api.listOrders({ role: 'customer' }).then(setOrders).catch(() => {});
@@ -124,6 +126,35 @@ export function CustomerProfile() {
           </div>
         </div>
       </Card>
+
+      {/* HIRFA (P4): artisan store application call-out. Mirrors the
+          upgrade-to-driver amber card but in HIRFA emerald branding. */}
+      <Card className="overflow-hidden border-2 border-emerald-300 bg-emerald-50 p-4 shadow-md dark:border-emerald-700 dark:bg-emerald-950/20">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-200 text-emerald-900 shadow-sm dark:bg-emerald-900/30 dark:text-emerald-200">
+            <Hammer size={22} />
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-black text-emerald-900 dark:text-emerald-200">
+              {t.openCraftStore}
+            </p>
+            <p className="mt-1 text-[12px] leading-relaxed text-emerald-800/90 dark:text-emerald-300/80">
+              {t.openCraftStoreSub}
+            </p>
+            <Button
+              onClick={() => setShowArtisanApply(true)}
+              className="mt-4 h-12 w-full rounded-xl bg-emerald-600 text-sm font-black uppercase tracking-wide text-white shadow-lg hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              size="lg"
+            >
+              {t.applyAsArtisan}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {showArtisanApply && (
+        <ApplyArtisanDialog onClose={() => setShowArtisanApply(false)} />
+      )}
 
       {showUpgrade && (
         <UpgradeDriverDialog

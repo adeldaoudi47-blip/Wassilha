@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer } from 'lucide-react';
+import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
 import { useNavStore } from '@/lib/store';
@@ -38,6 +38,8 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'dashboard', label: 'dashboard', icon: LayoutDashboard },
   { key: 'fleet', label: 'fleetMap', icon: MapPin },
   { key: 'applications', label: 'driverApplications', icon: ShieldCheck },
+  // HIRFA (P4): artisan store applications review tab.
+  { key: 'craft', label: 'craftApplications', icon: Scissors },
   { key: 'drivers', label: 'drivers', icon: Users },
   { key: 'orders', label: 'orders', icon: ClipboardList },
   { key: 'pricing', label: 'pricing', icon: Tags },

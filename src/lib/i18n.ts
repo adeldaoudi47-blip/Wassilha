@@ -2,6 +2,22 @@ import type { Lang } from './types';
 
 export const translations = {
   ar: {
+    // === HIRFA artisan application (P4) =============================
+    openCraftStore: 'افتح متجرك في حِرفة',
+    openCraftStoreSub: 'اعرض منتجاتك اليدوية على زبائن القرارة',
+    applyAsArtisan: 'التقديم كحرفية',
+    craftApplicationPending: 'طلبك قيد المراجعة من الإدارة. سيتم إشعارك عند الموافقة.',
+    craftApplications: 'طلبات حِرفة',
+    approveArtisan: 'موافقة',
+    rejectArtisan: 'رفض',
+    storeName: 'اسم المتجر',
+    storeBio: 'وصف المتجر (اختياري)',
+    submitApplication: 'إرسال الطلب',
+    artisanApproved: 'تمت الموافقة على المتجر',
+    artisanRejected: 'تم رفض الطلب',
+    noCraftApplications: 'لا توجد طلبات حِرفة جديدة',
+    storeNameRequired: 'أدخل اسم المتجر (حرفان على الأقل)',
+    storeArea: 'الحي (اختياري)',
     // === HIRFA marketplace (P3) ====================================
     hirfa: 'حِرفة',
     hirfaMarketplace: 'سوق الحرف اليدوية',
@@ -373,6 +389,22 @@ export const translations = {
     confirmBook: 'هل تريد حجز هذا العرض؟',
   },
   fr: {
+    // === HIRFA artisan application (P4) - French mirrors ============
+    openCraftStore: 'Ouvrir votre boutique HIRFA',
+    openCraftStoreSub: 'Vendez vos produits artisanaux aux clients d’El Guerrara',
+    applyAsArtisan: 'Postuler en tant qu’artisane',
+    craftApplicationPending: 'Votre demande est en cours de révision. Vous serez notifié après approbation.',
+    craftApplications: 'Demandes HIRFA',
+    approveArtisan: 'Approuver',
+    rejectArtisan: 'Rejeter',
+    storeName: 'Nom de la boutique',
+    storeBio: 'Description (optionnel)',
+    submitApplication: 'Envoyer la demande',
+    artisanApproved: 'Boutique approuvée',
+    artisanRejected: 'Demande rejetée',
+    noCraftApplications: 'Aucune nouvelle demande HIRFA',
+    storeNameRequired: 'Le nom de la boutique est requis',
+    storeArea: 'Quartier (optionnel)',
     // === HIRFA marketplace (P3) - French mirrors ====================
     hirfa: 'HIRFA',
     hirfaMarketplace: 'Marketplace de l’artisanat',

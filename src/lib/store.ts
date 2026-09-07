@@ -30,7 +30,7 @@ export const useAppStore = create<AppState>()(
 // manages their own published offers.
 type CustomerScreen = 'home' | 'hirfa' | 'track' | 'history' | 'profile' | 'offers';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
-type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet';
+type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet' | 'craft';
 
 interface NavState {
   customerTab: CustomerScreen;
