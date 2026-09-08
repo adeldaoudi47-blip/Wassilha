@@ -42,8 +42,9 @@ model User {
   pushTokens   PushToken[]
   // HIRFA marketplace: artisan shop profile (admin-approved) and the
   // customer side of craft orders.
-  artisan      ArtisanProfile?
-  craftOrders  CraftOrder[]    @relation("CraftCustomerOrders")
+  artisan          ArtisanProfile?
+  craftOrders      CraftOrder[]    @relation("CraftCustomerOrders")
+  craftReviewsGiven CraftReview[] @relation("CraftReviewer")
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
@@ -515,6 +516,7 @@ model ArtisanProfile {
 
   products    CraftProduct[]
   craftOrders CraftOrder[]
+  craftReviews CraftReview[]
 
   @@index([status])
 }
@@ -581,6 +583,7 @@ model CraftOrder {
   updatedAt       DateTime       @updatedAt
 
   items           CraftOrderItem[]
+  review          CraftReview?
 
   @@index([customerId])
   @@index([artisanId])
@@ -603,4 +606,24 @@ model CraftOrderItem {
 
   @@index([craftOrderId])
   @@index([productId])
+}
+
+/// P7: Review for a CraftOrder. One review per craft order (enforced by
+/// unique craftOrderId). The artisan's average rating is recomputed
+/// via SQL aggregate whenever a new review is created.
+model CraftReview {
+  id           String     @id @default(cuid())
+  craftOrderId String     @unique
+  craftOrder   CraftOrder @relation(fields: [craftOrderId], references: [id], onDelete: Cascade)
+  fromId       String
+  from         User       @relation("CraftReviewer", fields: [fromId], references: [id])
+  toId         String
+  to           ArtisanProfile @relation(fields: [toId], references: [id], onDelete: Cascade)
+  score        Int        // 1..5
+  comment      String?
+  createdAt    DateTime   @default(now())
+
+  @@index([toId])
+  @@index([fromId])
+  @@index([craftOrderId])
 }

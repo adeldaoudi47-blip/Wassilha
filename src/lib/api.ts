@@ -464,14 +464,24 @@ export const api = {
   // HIRFA (P6): order lifecycle — create, list, status transitions
   createCraftOrder: (data: {
     items: { productId: string; quantity: number }[];
-    deliveryOption?: 'pickup';
+    deliveryOption?: 'pickup' | 'wassilha_delivery';
+    dropoffAddress?: string;
+    dropoffLat?: number;
+    dropoffLng?: number;
     notes?: string;
   }) => req<CraftOrderPublic>("/api/craft/orders", { method: "POST", body: JSON.stringify(data) }),
   getCraftOrders: () =>
     req<CraftOrderListResponse>("/api/craft/orders"),
-  updateCraftOrderStatus: (id: string, status: CraftOrderStatus) =>
+  updateCraftOrderStatus: (id: string, status: CraftOrderStatus, dropoffAddress?: string, dropoffLat?: number, dropoffLng?: number) =>
     req<CraftOrderPublic>(`/api/craft/orders/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, dropoffAddress, dropoffLat, dropoffLng }),
+    }),
+
+  // HIRFA (P7): rate a delivered craft order
+  rateCraftOrder: (id: string, score: number, comment?: string) =>
+    req<{ ok: boolean; message: string }>(`/api/craft/orders/${id}/rate`, {
+      method: "POST",
+      body: JSON.stringify({ score, comment }),
     }),
 };

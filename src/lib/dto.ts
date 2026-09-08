@@ -191,6 +191,14 @@ export const publicCraftOrderSelect = {
   customer: { select: { id: true, name: true, phone: true } },
   artisan: { select: { id: true, displayName: true, avatarUrl: true } },
   items: { select: publicCraftOrderItemSelect },
+  review: {
+    select: {
+      id: true,
+      score: true,
+      comment: true,
+      createdAt: true,
+    },
+  },
 } as const;
 
 // ---------------------------------------------------------------------------

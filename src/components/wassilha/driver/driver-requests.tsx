@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Bike, Wifi, WifiOff, Package, MapPin, Flag, Scale, Navigation,
-  Check, X, Bell, BellOff, Zap, CalendarClock, Clock,
+  Check, X, Bell, BellOff, Zap, CalendarClock, Clock, ShoppingBag,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -237,8 +237,15 @@ export function DriverRequests() {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <CargoIcon cargo={o.cargoType} size={20} />
+                    <div className={cn(
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                      o.cargoType === 'craft' ? "bg-amber-100 dark:bg-amber-950/30" : "bg-primary/10"
+                    )}>
+                      {o.cargoType === 'craft' ? (
+                        <ShoppingBag size={20} className="text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <CargoIcon cargo={o.cargoType} size={20} />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -251,27 +258,36 @@ export function DriverRequests() {
                       </div>
                     </div>
                   </div>
+                  {/* P7: Craft delivery badge */}
+                  {o.cargoType === 'craft' && (
+                    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 dark:bg-amber-950/20">
+                      <ShoppingBag size={12} className="text-amber-600 dark:text-amber-400" />
+                      <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                        {t.craftDelivery}
+                      </span>
+                    </div>
+                  )}
                   <div
                     className={cn(
                       'mt-2.5 grid gap-1.5',
                       // 3 cols for cargo (distance, weight, cargo label)
                       // 2 cols for taxi  (distance, cargo label) — keeps
                       // the row tight, no empty middle cell.
-                      o.cargoType === 'taxi' ? 'grid-cols-2' : 'grid-cols-3',
+                      // craft: 2 cols (distance, cargo label)
+                      o.cargoType === 'taxi' || o.cargoType === 'craft' ? 'grid-cols-2' : 'grid-cols-3',
                     )}
                   >
                     <MiniStat icon={<Navigation size={11} />} value={`${o.distance} ${t.km}`} />
                     {/* Weight is only meaningful for cargo. For `taxi`
-                        (passenger transport) the column collapses to
-                        a 2-col grid via the conditional grid above so
-                        the card doesn't render a misleading "20 kg"
+                        (passenger transport) and `craft` (handmade delivery)
+                        the column collapses to a 2-col grid via the conditional
+                        grid above so the card doesn't render a misleading "20 kg"
                         pill on every ride request. The cargo label /
-                        Car-icon already make the difference obvious
-                        via `CargoIcon` upstream. */}
-                    {o.cargoType !== 'taxi' && (
+                        ShoppingBag-icon already make the difference obvious. */}
+                    {o.cargoType !== 'taxi' && o.cargoType !== 'craft' && (
                       <MiniStat icon={<Scale size={11} />} value={`${o.weight} ${t.kg}`} />
                     )}
-                    <MiniStat icon={<Package size={11} />} value={(t.cargo as Record<string, string>)[o.cargoType]} />
+                    <MiniStat icon={<Package size={11} />} value={(t.cargo as Record<string, string>)[o.cargoType] || (o.cargoType === 'craft' ? t.craftDelivery : o.cargoType)} />
                   </div>
                   <div className="mt-2.5 flex items-center justify-between rounded-lg bg-primary/5 px-3 py-2">
                     <span className="text-xs font-semibold text-muted-foreground">{t.estimate}</span>

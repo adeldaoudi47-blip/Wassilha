@@ -3,6 +3,9 @@ import { db } from '@/lib/db';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { publicCraftOrderSelect } from '@/lib/dto';
+import { sendPushNotificationBatch } from '@/lib/firebase-admin';
+import { generateOrderCode } from '@/lib/wassilha-data';
+import { GUERRARA_CENTER } from '@/lib/wassilha-data';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,8 +19,15 @@ type Ctx = { params: Promise<{ id: string }> };
 //   confirmed -> ready      (artisan marks product ready)
 //   ready     -> delivered  (customer picks up / receives)
 //   ready     -> cancelled  (customer cancels after confirmation)
+//
+// When status transitions to 'ready' and deliveryOption = 'wassilha_delivery',
+// a delivery Order is automatically created and linked via deliveryOrderId.
 const transitionSchema = z.object({
   status: z.enum(['pending', 'confirmed', 'ready', 'delivered', 'cancelled']),
+  // Optional: customer dropoff address for wassilha_delivery
+  dropoffAddress: z.string().min(2).max(200).optional(),
+  dropoffLat: z.number().min(-90).max(90).optional(),
+  dropoffLng: z.number().min(-180).max(180).optional(),
 });
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -120,6 +130,109 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         select: publicCraftOrderSelect,
       });
       return NextResponse.json(current);
+    }
+
+    // P7: Delivery Integration — when status transitions to 'ready' and
+    // deliveryOption is 'wassilha_delivery', create a delivery Order.
+    if (newStatus === 'ready') {
+      const craftOrder = await db.craftOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          code: true,
+          deliveryOption: true,
+          deliveryOrderId: true,
+          customerId: true,
+          artisan: {
+            select: {
+              addressAr: true,
+              latitude: true,
+              longitude: true,
+              area: { select: { nameAr: true } },
+            },
+          },
+        },
+      });
+
+      if (craftOrder && craftOrder.deliveryOption === 'wassilha_delivery' && !craftOrder.deliveryOrderId) {
+        // Get artisan workshop address as pickup
+        const pickupAddress = craftOrder.artisan.addressAr ||
+          (craftOrder.artisan.area ? `${craftOrder.artisan.area.nameAr} - القرارة` : 'ورشة الحرفي - القرارة');
+
+        // Get dropoff from request body or use Guerrara center as fallback
+        const dropoffAddress = body && typeof body === 'object' && 'dropoffAddress' in body && typeof body.dropoffAddress === 'string'
+          ? body.dropoffAddress
+          : 'عنوان الزبون - القرارة';
+
+        const artisanLat = craftOrder.artisan.latitude ? Number(craftOrder.artisan.latitude) : GUERRARA_CENTER.lat;
+        const artisanLng = craftOrder.artisan.longitude ? Number(craftOrder.artisan.longitude) : GUERRARA_CENTER.lng;
+        const dropoffLat = body && typeof body === 'object' && 'dropoffLat' in body && typeof body.dropoffLat === 'number'
+          ? body.dropoffLat : GUERRARA_CENTER.lat;
+        const dropoffLng = body && typeof body === 'object' && 'dropoffLng' in body && typeof body.dropoffLng === 'number'
+          ? body.dropoffLng : GUERRARA_CENTER.lng;
+
+        // Generate order code
+        let orderCode = generateOrderCode();
+        let attempts = 0;
+        while (await db.order.count({ where: { code: orderCode } }) > 0) {
+          orderCode = generateOrderCode();
+          if (++attempts > 10) break;
+        }
+
+        // Create the delivery Order
+        const deliveryOrder = await db.order.create({
+          data: {
+            code: orderCode,
+            customerId: craftOrder.customerId,
+            cargoType: 'craft', // Distinguish as Hirfa delivery
+            pickup: pickupAddress,
+            dropoff: dropoffAddress,
+            pickupLat: artisanLat,
+            pickupLng: artisanLng,
+            dropoffLat,
+            dropoffLng,
+            weight: 5, // Default weight for craft delivery (kg)
+            price: 300, // Default price for craft delivery
+            status: 'searching',
+            notes: `توصيل منتج حِرفة - طلب ${craftOrder.code}`,
+          },
+        });
+
+        // Link the CraftOrder to the new delivery Order
+        await db.craftOrder.update({
+          where: { id },
+          data: { deliveryOrderId: deliveryOrder.id },
+        });
+
+        // Fan-out: notify available drivers about the new craft delivery
+        void (async () => {
+          try {
+            const availableDrivers = await db.driver.findMany({
+              where: {
+                isOnline: true,
+                isVerified: true,
+                user: { accountStatus: 'active' },
+                OR: [
+                  { serviceType: 'BOTH' },
+                  { serviceType: 'CARGO' },
+                ],
+              },
+              select: { userId: true },
+            });
+
+            if (availableDrivers.length === 0) return;
+
+            await sendPushNotificationBatch(
+              availableDrivers.map((d) => d.userId),
+              'طلب حِرفة جديد',
+              `لديك طلب توصيل منتج حرفي جديد - ${craftOrder.code}`,
+              { type: 'new_craft_order', orderId: deliveryOrder.id, craftOrderId: id, orderCode: deliveryOrder.code }
+            );
+          } catch (e) {
+            console.warn('[craft/status] driver fan-out failed:', e);
+          }
+        })();
+      }
     }
 
     const result = await db.craftOrder.findUnique({

@@ -42,6 +42,16 @@ export const translations = {
     orderPlaced: 'تم تقديم الطلب بنجاح',
     orderPlacedMsg: 'سيتواصل معك الحرفي قريباً',
     insufficientStock: 'الكمية غير متوفرة',
+    // === HIRFA (P7): delivery & reviews =============================
+    craftDelivery: 'توصيل منتج حِرفة',
+    rateCraftOrder: 'قيّم طلبك',
+    orderReady: 'طلبك جاهز للتوصيل',
+    craftDelivered: 'تم توصيل طلبك بنجاح',
+    wassilhaDelivery: 'توصيل وَصِّلها',
+    pickupOption: 'استلام من الورشة',
+    selectDeliveryOption: 'اختر طريقة الاستلام',
+    dropoffAddressRequired: 'يرجى تحديد عنوان التوصيل',
+    ratingSubmitted: 'تم إرسال التقييم بنجاح',
     // === HIRFA artisan application (P4) =============================
     openCraftStore: 'افتح متجرك في حِرفة',
     openCraftStoreSub: 'اعرض منتجاتك اليدوية على زبائن القرارة',
@@ -838,6 +848,16 @@ export const translations = {
     offerSeats: 'Places',
     offerCargo: 'Type de marchandise',
     confirmBook: 'Voulez-vous réserver cette offre ?',
+    // === HIRFA (P7): delivery & reviews (FR) =======================
+    craftDelivery: 'Livraison artisanat',
+    rateCraftOrder: 'Évaluez votre commande',
+    orderReady: 'Votre commande est prête pour la livraison',
+    craftDelivered: 'Votre commande a été livrée avec succès',
+    wassilhaDelivery: 'Livraison Wassilha',
+    pickupOption: 'Retrait à l\'atelier',
+    selectDeliveryOption: 'Choisissez le mode de réception',
+    dropoffAddressRequired: 'Veuillez spécifier l\'adresse de livraison',
+    ratingSubmitted: 'Évaluation envoyée avec succès',
   },
 };
 

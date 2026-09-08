@@ -16,7 +16,11 @@ export type CargoKey =
   // `CARGO_TYPES` table all flow through one shape. The DB column
   // `Order.cargoType` is a free `String`, so no Prisma migration is
   // required — old rows are unaffected.
-  | 'taxi';
+  | 'taxi'
+  // `craft` is the Hirfa handmade delivery type. Orders with this
+  // cargoType are delivery tasks for artisan products. The DB column
+  // is a free String so no migration is needed.
+  | 'craft';
 export type OrderStatus =
   | 'searching'
   // `scheduled` is the initial state of a future-dated booking. The
@@ -295,6 +299,12 @@ export interface CraftOrderPublic {
   customer: { id: string; name: string; phone: string };
   artisan: { id: string; displayName: string; avatarUrl: string | null };
   items: CraftOrderItemPublic[];
+  review?: {
+    id: string;
+    score: number;
+    comment: string | null;
+    createdAt: string;
+  } | null;
 }
 
 export interface CraftOrderListResponse {

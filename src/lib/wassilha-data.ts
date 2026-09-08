@@ -62,6 +62,9 @@ export const CARGO_MULTIPLIERS_DEFAULT: Record<CargoKey, number> = {
   // passenger-service premium, but lower than `furniture` /
   // `construction` since the driver isn't carrying bulky cargo.
   taxi: 1.5,
+  // Craft multiplier (1.0) — same as parcel since handmade items
+  // are typically small and light.
+  craft: 1.0,
 };
 
 // Haversine distance in km
