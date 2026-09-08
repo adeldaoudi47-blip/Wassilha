@@ -1,4 +1,4 @@
-﻿import { cookies } from 'next/headers';
+import { cookies } from 'next/headers';
 import { createHmac, randomBytes, createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { db } from './db';
@@ -12,6 +12,32 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function authSecret() {
   return process.env.AUTH_SECRET || process.env.SESSION_SECRET || 'wassilha-local-auth-secret';
+}
+
+/**
+ * Validates the current session belongs to an ACTIVE artisan (role='artisan'
+ * with an ArtisanProfile in status='active'). Returns the artisan profile id
+ * so guarded routes can scope their queries (ownership checks).
+ *
+ * HIRFA (P5): product CRUD + image upload routes call this gate so the
+ * artisan dashboard is fully server-authorised - hiding the button is never
+ * the security (mirrors requirePrivilegedAdmin for admins).
+ */
+export async function requireActiveArtisan(): Promise<
+  | { ok: true; session: AuthUser; artisanId: string }
+  | { ok: false; status: 401; body: { error: 'unauthorized' } }
+  | { ok: false; status: 403; body: { error: 'forbidden' | 'notAnArtisan' | 'artisanNotActive' } }
+> {
+  const session = await getSession();
+  if (!session) return { ok: false, status: 401, body: { error: 'unauthorized' } };
+  if (session.role !== 'artisan') return { ok: false, status: 403, body: { error: 'forbidden' } };
+  const profile = await db.artisanProfile.findUnique({
+    where: { userId: session.id },
+    select: { id: true, status: true },
+  });
+  if (!profile) return { ok: false, status: 403, body: { error: 'notAnArtisan' } };
+  if (profile.status !== 'active') return { ok: false, status: 403, body: { error: 'artisanNotActive' } };
+  return { ok: true, session, artisanId: profile.id };
 }
 
 // Sessions are stored as SHA-256 hashes server-side; the raw 256-bit random
@@ -81,7 +107,11 @@ export const DEMO_ACCOUNTS: Record<
     phone: '0555123456',
     name: 'سائق تجريبي',
   },
-  admin: {
+  artisan: {
+    phone: '0665987654',
+    name: 'حرفي تجريبي',
+  },
+    admin: {
     phone: '0700000000',
     name: 'إدارة وصّلها',
   },
