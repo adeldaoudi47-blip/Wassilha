@@ -99,20 +99,29 @@ export function ArtisanProductForm({
       <h2 className="text-lg font-black text-foreground">{product ? t.editProduct : t.addProduct}</h2>
 
       {/* Images */}
-      <div className="flex flex-wrap gap-2">
-        {imageUrls.map((u) => (
-          <div key={u} className="relative h-16 w-16 overflow-hidden rounded-xl">
-            <img src={u} alt="" className="h-full w-full object-cover" />
-            <button onClick={() => removeImage(u)} className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white">
-              <X size={10} />
-            </button>
-          </div>
-        ))}
-        {imageUrls.length < 8 && (
-          <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-xl border border-dashed bg-muted text-muted-foreground">
-            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
-            <input type="file" accept="image/*" multiple hidden onChange={(e) => pickImages(e.target.files)} />
-          </label>
+      <div className="space-y-2">
+        <p className="text-xs font-bold text-foreground">{t.uploadMultipleImages}</p>
+        <div className="flex flex-wrap gap-2">
+          {imageUrls.map((u) => (
+            <div key={u} className="relative h-16 w-16 overflow-hidden rounded-xl">
+              <img src={u} alt="" className="h-full w-full object-cover" />
+              <button onClick={() => removeImage(u)} className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white">
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+          {imageUrls.length < 8 && (
+            <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-xl border border-dashed bg-muted text-muted-foreground">
+              {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+              <input type="file" accept="image/*" multiple hidden onChange={(e) => pickImages(e.target.files)} />
+            </label>
+          )}
+        </div>
+        {uploading && (
+          <p className="flex items-center gap-1.5 text-xs text-primary">
+            <Loader2 size={12} className="animate-spin" />
+            {t.uploadingImages}
+          </p>
         )}
       </div>
 

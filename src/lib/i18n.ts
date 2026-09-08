@@ -21,6 +21,8 @@ export const translations = {
     productDeleted: 'تم حذف المنتج',
     imageUploaded: 'تم رفع الصورة',
     uploadFailed: 'تعذر رفع الصورة',
+    uploadMultipleImages: 'اختر صور المنتج (يمكنك اختيار أكثر من صورة)',
+    uploadingImages: 'جاري رفع الصور...',
     stockZeroMade: 'الطلب عند الطلب',
     stockAvailable: 'متوفر',
     // === HIRFA (P6): cart & orders =================================
@@ -858,6 +860,8 @@ export const translations = {
     selectDeliveryOption: 'Choisissez le mode de réception',
     dropoffAddressRequired: 'Veuillez spécifier l\'adresse de livraison',
     ratingSubmitted: 'Évaluation envoyée avec succès',
+    uploadMultipleImages: 'Choisir les photos du produit (sélection multiple possible)',
+    uploadingImages: 'Téléchargement des images...',
   },
 };
 
