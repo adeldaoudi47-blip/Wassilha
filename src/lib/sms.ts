@@ -1,3 +1,5 @@
+import { normalizeAlgerianPhone } from './phone';
+
 type SmsProvider = 'textbee' | 'brevo' | 'whatsapp';
 
 type SmsResult = {
@@ -285,4 +287,72 @@ export async function sendSms(
 
     return await dispatch[fallback](recipient, content);
   }
+}
+
+// --- Meta WhatsApp Cloud API -------------------------------------------------
+//
+// Separate from the UltraMsg gateway above: the AI WhatsApp agent webhook
+// (/api/whatsapp/webhook) runs on the official Meta WhatsApp Cloud API
+// (1000 free conversations/month), while the OTP path stays on UltraMsg.
+// Env vars:
+//   META_WHATSAPP_TOKEN           - system-user access token (Meta dashboard)
+//   META_WHATSAPP_PHONE_NUMBER_ID - sender phone-number id (Meta dashboard)
+export async function sendMetaWhatsAppMessage(
+  phone: string,
+  message: string
+): Promise<{ ok: boolean }> {
+  const token = process.env.META_WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!token || !phoneNumberId) {
+    throw new Error(
+      'META_WHATSAPP_TOKEN or META_WHATSAPP_PHONE_NUMBER_ID is missing'
+    );
+  }
+
+  // Meta expects the international form WITHOUT '+' (e.g. 2135XXXXXXXX).
+  // The webhook passes the canonical local form (0XXXXXXXXX) — reuse the
+  // shared normalizer so any variant still reaches a valid recipient.
+  const local = normalizeAlgerianPhone(phone);
+  if (!local) {
+    throw new Error(`Invalid WhatsApp recipient: ${phone}`);
+  }
+  const to = '213' + local.slice(1);
+
+  const response = await fetch(
+    `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: message },
+      }),
+    }
+  );
+
+  const result = await parseResponse(response);
+
+  if (!response.ok) {
+    const msg = `Meta WhatsApp HTTP ${response.status}: ${JSON.stringify(result)}`;
+    console.error('[Meta WhatsApp] Error:', msg);
+    throw new Error(msg);
+  }
+
+  // Graph API can answer 200 with an embedded error object — treat it as a
+  // failure so the caller/logs reflect reality (same policy as TextBee).
+  const body = (result ?? {}) as { error?: { message?: string } | null };
+  if (body.error) {
+    const msg = `Meta WhatsApp rejected the message: ${body.error.message ?? 'unknown error'}`;
+    console.error('[Meta WhatsApp] Error:', msg);
+    throw new Error(msg);
+  }
+
+  return { ok: true };
 }
