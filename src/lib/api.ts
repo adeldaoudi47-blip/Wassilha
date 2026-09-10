@@ -21,10 +21,14 @@ async function req<T>(
   url: string,
   opts: RequestInit = {}
 ): Promise<T> {
+  // Do NOT force Content-Type on FormData bodies — the browser must set
+  // multipart/form-data with its own boundary, or the API's formData()
+  // parse fails with "Content-Type was not one of multipart/form-data".
+  const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
   const res = await fetch(url, {
     ...opts,
     headers: {
-      'Content-Type': 'application/json',
+      ...(!isFormData && { 'Content-Type': 'application/json' }),
       ...(opts.headers || {}),
     },
     credentials: 'include',
