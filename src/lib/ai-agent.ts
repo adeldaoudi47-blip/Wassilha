@@ -176,6 +176,8 @@ export async function aiAgentReply(
   }
   if (!text) return FALLBACK_REPLY;
 
+  console.log('[AI AGENT] Sending to Gemini:', text);
+
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
@@ -193,6 +195,7 @@ export async function aiAgentReply(
       const calls = result.response.functionCalls();
       if (!calls || calls.length === 0) {
         const reply = result.response.text();
+        console.log('[AI AGENT] Gemini response:', reply);
         return reply && reply.trim() ? reply.trim() : FALLBACK_REPLY;
       }
 
@@ -202,6 +205,7 @@ export async function aiAgentReply(
         functionResponse: { name: string; response: Record<string, unknown> };
       }> = [];
       for (const call of calls) {
+        console.log('[AI AGENT] Gemini requested tool:', call.name);
         const response = await executeTool(
           call.name,
           (call.args ?? {}) as Record<string, unknown>
@@ -215,7 +219,7 @@ export async function aiAgentReply(
     const last = result.response.text();
     return last && last.trim() ? last.trim() : FALLBACK_REPLY;
   } catch (e) {
-    console.error('[AI AGENT] Gemini error:', e);
+    console.error('[AI AGENT] Gemini Error:', e);
     return FALLBACK_REPLY;
   }
 }

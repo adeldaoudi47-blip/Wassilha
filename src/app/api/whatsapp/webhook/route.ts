@@ -125,6 +125,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // DEBUG: fires as soon as sender + text are successfully extracted from
+  // Meta's nested payload (entry[0].changes[0].value.messages[0]).
+  console.log('[WHATSAPP WEBHOOK] Received message:', phone, ':', text);
+
   // Answer Meta fast; the (slow) AI work happens after the response.
   after(async () => {
     try {

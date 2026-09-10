@@ -319,23 +319,32 @@ export async function sendMetaWhatsAppMessage(
   }
   const to = '213' + local.slice(1);
 
-  const response = await fetch(
-    `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: message },
-      }),
-    }
-  );
+  console.log('[META SEND] Sending reply to:', to, '| Message:', message);
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body: message },
+        }),
+      }
+    );
+  } catch (networkError) {
+    // DEBUG: network/DNS failure before Meta even answered.
+    console.error('[META SEND] Error:', networkError);
+    throw networkError;
+  }
 
   const result = await parseResponse(response);
 
