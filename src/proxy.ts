@@ -28,6 +28,13 @@ const EXEMPT_PREFIXES = [
   '/api/auth/verify-otp',
   '/api/auth/forgot-password',
   '/api/auth/apply-driver',
+  // WhatsApp Cloud API webhook (Meta). Facebook's crawler calls GET with
+  // hub.* params from Meta's own IPs and POSTs inbound messages in bursts;
+  // it has no session cookie, so it must never be edge-rate-limited or the
+  // subscription handshake fails (403/429) and messages get dropped.
+  // The route enforces its own security instead (verify-token echo +
+  // optional X-Hub-Signature-256 HMAC check).
+  '/api/whatsapp/webhook',
 ];
 
 interface Bucket {
