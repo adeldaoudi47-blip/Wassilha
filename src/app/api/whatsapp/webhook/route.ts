@@ -1,81 +1,79 @@
-// WASSILHA WhatsApp AI-agent webhook (Meta WhatsApp Cloud API).
+// WASSILHA WhatsApp AI-agent webhook — UltraMsg gateway edition.
 //
-//   GET  -> Meta subscription handshake (hub.challenge echo).
-//   POST -> inbound user messages. Ack 200 immediately, then process
-//           (Gemini + Prisma + reply) inside `after()` so Meta's 20s
-//           webhook timeout is never hit.
+// UltraMsg (already used for the OTPs) is also the inbound gateway for the
+// AI assistant: the instance forwards every received message to this
+// endpoint as a JSON POST. There is NO Meta-style handshake (hub.challenge)
+// to implement — GET is just a plain health check.
 //
 // Env vars (Vercel):
-//   META_WHATSAPP_VERIFY_TOKEN    - the value pasted in Meta's webhook setup
-//   META_WHATSAPP_APP_SECRET      - optional, enables X-Hub-Signature-256 check
-//   GEMINI_API_KEY                - Google AI Studio key (ai-agent.ts)
-//   META_WHATSAPP_TOKEN / META_WHATSAPP_PHONE_NUMBER_ID - reply sending (sms.ts)
-import crypto from 'crypto';
+//   WHATSAPP_API_URL / WHATSAPP_API_TOKEN - UltraMsg instance (send + receive)
+//   GEMINI_API_KEY                        - Google AI Studio key (ai-agent.ts)
 import { NextRequest, NextResponse, after } from 'next/server';
 import { aiAgentReply } from '@/lib/ai-agent';
-import { sendMetaWhatsAppMessage } from '@/lib/sms';
+import { sendWhatsAppMessage } from '@/lib/sms';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
-// --- GET: webhook verification ----------------------------------------------
+// --- GET: plain health check ------------------------------------------------
 
-export async function GET(req: NextRequest) {
-  const sp = req.nextUrl.searchParams;
-  const mode = sp.get('hub.mode');
-  const token = sp.get('hub.verify_token');
-  const challenge = sp.get('hub.challenge');
-
-  if (
-    mode === 'subscribe' &&
-    token &&
-    challenge &&
-    token === process.env.META_WHATSAPP_VERIFY_TOKEN
-  ) {
-    return new NextResponse(challenge, {
-      status: 200,
-      headers: { 'content-type': 'text/plain; charset=utf-8' },
-    });
-  }
-  return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+export async function GET() {
+  return NextResponse.json({ ok: true, service: 'whatsapp-agent' });
 }
 
 // --- POST: inbound messages --------------------------------------------------
 
-type MetaInboundMessage = {
-  from?: string;
-  id?: string;
-  type?: string;
-  text?: { body?: string };
-};
+type UnknownRecord = Record<string, unknown>;
 
-type MetaWebhookBody = {
-  entry?: Array<{
-    changes?: Array<{
-      value?: {
-        messages?: MetaInboundMessage[];
-        statuses?: unknown[];
-      };
-    }>;
-  }>;
-};
-
-// Optional but recommended: verify the request really came from Meta by
-// checking the X-Hub-Signature-256 HMAC. Skipped when the secret is not
-// configured so local/dev testing stays frictionless.
-function verifyMetaSignature(raw: string, header: string | null): boolean {
-  const secret = process.env.META_WHATSAPP_APP_SECRET;
-  if (!secret) return true;
-  if (!header || !header.startsWith('sha256=')) return false;
-
-  const expected =
-    'sha256=' + crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('hex');
-  const a = Buffer.from(expected);
-  const b = Buffer.from(header);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+function asString(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
-// Best-effort duplicate suppression. Meta redelivers unacknowledged webhooks;
-// the Set is per-instance only, but that removes the common double-reply.
+// UltraMsg (and similar gateways) have shipped several slightly different
+// webhook shapes over the years, so look in all the observed places
+// instead of betting on a single one:
+//   { from, body }                             (flat)
+//   { data: { from, body, chatId, id } }       (UltraMsg current)
+//   { message: { from, text: { body } } }      (Meta-like)
+//   { message: 'some text' }                   (string shortcut)
+//   { from, phone, text, body, event_type, ... }
+function extractSenderAndText(payload: unknown): {
+  fromRaw: string | null;
+  text: string | null;
+  id: string | null;
+} {
+  const root = (payload ?? {}) as UnknownRecord;
+  const data = (root.data ?? {}) as UnknownRecord;
+  const msg = (
+    typeof root.message === 'object' && root.message !== null ? root.message : {}
+  ) as UnknownRecord;
+
+  const fromRaw =
+    asString(root.from) ??
+    asString(root.phone) ??
+    asString(root.sender) ??
+    asString(root.chatId) ??
+    asString(data.from) ??
+    asString(data.chatId) ??
+    asString(data.phone) ??
+    asString(msg.from);
+
+  const text =
+    asString(root.body) ??
+    asString(root.text) ??
+    asString(data.body) ??
+    asString(data.text) ??
+    asString(msg.body) ??
+    asString((msg.text as UnknownRecord | undefined)?.body) ??
+    (typeof root.message === 'string' && root.message.trim()
+      ? root.message.trim()
+      : null);
+
+  const id = asString(root.id) ?? asString(data.id) ?? asString(msg.id);
+
+  return { fromRaw, text, id };
+}
+
+// Best-effort duplicate suppression. Gateways redeliver on timeout; the
+// Set is per-instance only, but that removes the common double-reply.
 const seenMessageIds = new Set<string>();
 function alreadySeen(id: string): boolean {
   if (seenMessageIds.has(id)) return true;
@@ -89,52 +87,48 @@ function alreadySeen(id: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // Read the raw body once, then parse: JSON first (UltraMsg default),
+  // falling back to form-urlencoded (some instance configurations).
   const raw = await req.text();
-
-  if (!verifyMetaSignature(raw, req.headers.get('x-hub-signature-256'))) {
-    return NextResponse.json({ error: 'invalidSignature' }, { status: 401 });
-  }
-
-  let body: MetaWebhookBody;
+  let payload: unknown = null;
   try {
-    body = JSON.parse(raw) as MetaWebhookBody;
+    payload = JSON.parse(raw);
   } catch {
-    return NextResponse.json({ error: 'badRequest' }, { status: 400 });
+    payload = Object.fromEntries(new URLSearchParams(raw).entries());
   }
-
-  const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  const text = message?.text?.body?.trim();
-  const rawFrom = message?.from;
-
-  // Delivery/read receipts and non-text messages (audio, images, ...):
-  // acknowledge with 200 so Meta stops retrying, nothing to answer yet.
-  if (!message || !text || !rawFrom) {
-    return NextResponse.json({ ok: true });
-  }
-  if (message.id && alreadySeen(message.id)) {
+  if (!payload || typeof payload !== 'object') {
     return NextResponse.json({ ok: true });
   }
 
-  // Meta sends the sender as international digits WITHOUT '+' (2135XXXXXXXX).
-  // Normalize to the canonical local form (0XXXXXXXXX) used across the app:
-  // the DB lookup (User.phone) and the reply path both rely on it.
-  const phone = normalizeAlgerianPhone(rawFrom);
+  const { fromRaw, text, id } = extractSenderAndText(payload);
+
+  // Delivery/read receipts and non-text events carry no text —
+  // acknowledge with 200 so the gateway stops retrying.
+  if (!fromRaw || !text) {
+    return NextResponse.json({ ok: true });
+  }
+  if (id && alreadySeen(id)) {
+    return NextResponse.json({ ok: true });
+  }
+
+  // UltraMsg sends the sender like `+213XXXXXXXXX` / `213XXXXXXXXX` /
+  // `213XXXXXXXXX@c.us`. Strip any JID suffix, keep digits, then normalize
+  // to the canonical local form (0XXXXXXXXX) used across the app.
+  const digits = fromRaw.replace(/@.*$/, '').replace(/\D/g, '');
+  const phone = normalizeAlgerianPhone(digits);
   if (!phone) {
-    // Non-Algerian number: acknowledge, but the agent only serves +213 users.
-    console.warn('[WHATSAPP WEBHOOK] Unsupported sender number:', rawFrom);
+    console.warn('[WHATSAPP WEBHOOK] Unsupported sender number:', fromRaw);
     return NextResponse.json({ ok: true });
   }
 
-  // DEBUG: fires as soon as sender + text are successfully extracted from
-  // Meta's nested payload (entry[0].changes[0].value.messages[0]).
+  // DEBUG: fires as soon as sender + text are successfully extracted.
   console.log('[WHATSAPP WEBHOOK] Received message:', phone, ':', text);
 
-  // Answer Meta fast; the (slow) AI work happens after the response.
+  // Answer fast; the (slow) AI work happens after the response.
   after(async () => {
     try {
-      console.log('[WHATSAPP WEBHOOK] Message from', phone, ':', text);
       const reply = await aiAgentReply(text, phone);
-      await sendMetaWhatsAppMessage(phone, reply);
+      await sendWhatsAppMessage(phone, reply);
       console.log('[WHATSAPP WEBHOOK] Reply sent to', phone);
     } catch (e) {
       console.error('[WHATSAPP WEBHOOK] Failed to process message:', e);

@@ -44,7 +44,7 @@ export function AppHeader({ title, subtitle, rightSlot }: AppHeaderProps) {
 
   const switchRole = async (role: Role) => {
     try {
-      const { user: u } = await api.loginAs(role);
+      const { user: u } = await api.loginAs(role as 'customer' | 'driver' | 'admin');
       setUser(u);
       toast.success(isAr ? `تم التبديل إلى ${role === 'customer' ? t.customer : role === 'driver' ? t.driver : t.admin}` : `Rôle: ${role}`);
     } catch {

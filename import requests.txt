@@ -1,0 +1,301 @@
+import requests
+import json
+import csv
+import os
+
+LAT = 32.792114
+LON = 4.499495
+RADIUS = 10000
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+OUTPUT_CSV = "el_guerrara_neighborhoods.csv"
+OUTPUT_GEOJSON = "el_guerrara_neighborhoods.geojson"
+
+QUERY = f"""
+[out:json][timeout:120];
+
+(
+  node(around:{RADIUS},{LAT},{LON})["place"="neighbourhood"];
+  way(around:{RADIUS},{LAT},{LON})["place"="neighbourhood"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="neighbourhood"];
+
+  node(around:{RADIUS},{LAT},{LON})["place"="suburb"];
+  way(around:{RADIUS},{LAT},{LON})["place"="suburb"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="suburb"];
+
+  node(around:{RADIUS},{LAT},{LON})["place"="quarter"];
+  way(around:{RADIUS},{LAT},{LON})["place"="quarter"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="quarter"];
+
+  node(around:{RADIUS},{LAT},{LON})["place"="district"];
+  way(around:{RADIUS},{LAT},{LON})["place"="district"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="district"];
+
+  node(around:{RADIUS},{LAT},{LON})["place"="village"];
+  way(around:{RADIUS},{LAT},{LON})["place"="village"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="village"];
+
+  node(around:{RADIUS},{LAT},{LON})["place"="locality"];
+  way(around:{RADIUS},{LAT},{LON})["place"="locality"];
+  relation(around:{RADIUS},{LAT},{LON})["place"="locality"];
+);
+
+out center tags;
+"""
+
+
+def get_coordinates(element):
+
+    if element["type"] == "node":
+        return element.get("lat"), element.get("lon")
+
+    center = element.get("center")
+
+    if center:
+        return center.get("lat"), center.get("lon")
+
+    return None, None
+
+
+def get_name(tags):
+
+    for key in [
+        "name:ar",
+        "name",
+        "name:fr",
+        "name:en"
+    ]:
+        if tags.get(key):
+            return tags[key]
+
+    return ""
+
+
+def main():
+
+    print("=" * 60)
+    print(" WASSILHA - EL GUERRARA NEIGHBORHOODS")
+    print("=" * 60)
+
+    print()
+    print("📍 القرارة:", LAT, LON)
+    print("📏 نصف القطر:", RADIUS, "متر")
+    print()
+
+    print("🌐 الاتصال بـ OpenStreetMap...")
+
+    response = requests.post(
+        OVERPASS_URL,
+        data=QUERY,
+        timeout=180,
+        headers={
+            "User-Agent": "Wassilha-ElGuerrara/1.0"
+        }
+    )
+
+    print("HTTP:", response.status_code)
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    elements = data.get("elements", [])
+
+    print(
+        "📊 العناصر المستلمة:",
+        len(elements)
+    )
+
+    neighborhoods = []
+
+    seen = set()
+
+    for element in elements:
+
+        osm_key = (
+            element.get("type"),
+            element.get("id")
+        )
+
+        if osm_key in seen:
+            continue
+
+        seen.add(osm_key)
+
+        tags = element.get(
+            "tags",
+            {}
+        )
+
+        lat, lon = get_coordinates(
+            element
+        )
+
+        if lat is None or lon is None:
+            continue
+
+        place_type = tags.get(
+            "place",
+            ""
+        )
+
+        item = {
+            "osm_id": element.get("id"),
+            "osm_type": element.get("type"),
+            "name": get_name(tags),
+            "name_ar": tags.get("name:ar", ""),
+            "name_fr": tags.get("name:fr", ""),
+            "name_en": tags.get("name:en", ""),
+            "place_type": place_type,
+            "latitude": lat,
+            "longitude": lon,
+        }
+
+        neighborhoods.append(item)
+
+    # إزالة التكرار بالاسم + الإحداثيات
+    unique = []
+
+    seen_places = set()
+
+    for item in neighborhoods:
+
+        key = (
+            item["name"].strip().lower(),
+            round(float(item["latitude"]), 5),
+            round(float(item["longitude"]), 5)
+        )
+
+        if key in seen_places:
+            continue
+
+        seen_places.add(key)
+
+        unique.append(item)
+
+    neighborhoods = unique
+
+    print()
+    print(
+        "🏘️ الأحياء/المناطق الموجودة في OSM:",
+        len(neighborhoods)
+    )
+
+    # --------------------------------------------------------
+    # CSV
+    # --------------------------------------------------------
+
+    fields = [
+        "osm_id",
+        "osm_type",
+        "name",
+        "name_ar",
+        "name_fr",
+        "name_en",
+        "place_type",
+        "latitude",
+        "longitude"
+    ]
+
+    with open(
+        OUTPUT_CSV,
+        "w",
+        newline="",
+        encoding="utf-8-sig"
+    ) as f:
+
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fields
+        )
+
+        writer.writeheader()
+
+        writer.writerows(
+            neighborhoods
+        )
+
+    # --------------------------------------------------------
+    # GeoJSON
+    # --------------------------------------------------------
+
+    features = []
+
+    for item in neighborhoods:
+
+        properties = dict(item)
+
+        properties.pop("latitude")
+        properties.pop("longitude")
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    item["longitude"],
+                    item["latitude"]
+                ]
+            },
+            "properties": properties
+        })
+
+    geojson = {
+        "type": "FeatureCollection",
+        "name": "El Guerrara Neighborhoods",
+        "features": features
+    }
+
+    with open(
+        OUTPUT_GEOJSON,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            geojson,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+    print()
+    print("✅ CSV:")
+    print(
+        os.path.abspath(
+            OUTPUT_CSV
+        )
+    )
+
+    print()
+    print("✅ GeoJSON:")
+    print(
+        os.path.abspath(
+            OUTPUT_GEOJSON
+        )
+    )
+
+    print()
+    print("=" * 60)
+    print("🏘️ النتائج")
+    print("=" * 60)
+
+    for i, item in enumerate(
+        neighborhoods,
+        1
+    ):
+
+        print(
+            f"{i}. {item['name']} "
+            f"| {item['place_type']} "
+            f"| {item['latitude']}, "
+            f"{item['longitude']}"
+        )
+
+    print()
+    print("✅ انتهى")
+
+
+if __name__ == "__main__":
+    main()

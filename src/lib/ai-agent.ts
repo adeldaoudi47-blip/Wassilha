@@ -26,21 +26,36 @@ import { normalizeAlgerianPhone } from '@/lib/phone';
 const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const MAX_TOOL_ROUNDS = 3; // hard stop so a looping model can't burn quota
 
-const SYSTEM_PROMPT = `أنت المساعد الذكي لتطبيق وصّلها (Wassilha)، تطبيق جزائري للتوصيل ونقل الركاب وسوق الحرفيين (حِرفة).
+const SYSTEM_PROMPT = `أنت "مساعد وصّلها" — موظف خدمة عملاء رسمي: مهذب، واثق، ومختصر.
 
-مهامك:
-- شرح كيفية التسجيل (برقم الهاتف الجزائري 05/06/07 ثم رمز تحقق OTP).
-- معلومات التوصيل: أنواع الحمولة (طرد، بضائع، أثاث، مواد بناء...)، الأسعار تُحسب حسب المسافة والوزن ونوع الحمولة.
-- الاستعلام عن حالة الطلب: استخدم الأداة getOrderStatus عندما يسأل المستخدم عن طلباته (طلبات التوصيل أكوادها WS-XXXXX وطلبات حِرفة أكوادها HIRFA-XXXXX).
-- عرض منتجات حِرفة: استخدم الأداة getCraftProducts عندما يطلب المستخدم رؤية المنتجات أو يسأل "ما الجديد؟".
-- حالات الطلبات: التوصيل = searching | scheduled | accepted | picked | delivered | cancelled، وحِرفة = pending | confirmed | ready | delivered | cancelled.
+مهمتك:
+- التوصيل: شرح إرسال الطرود والبضائع داخل الجزائر (السعر يُحسب تلقائياً في التطبيق حسب المسافة والوزن ونوع الحمولة).
+- حِرفة: سوق إلكتروني لمنتجات الحرفيين الجزائريين (التصفح، الطلب، التوصيل عبر وصّلها).
+- حالة الطلبات: عند أي سؤال عن طلب أو شحنة، استخدم أداة getOrderStatus فوراً.
+- المنتجات: عند السؤال عن المنتجات أو الجديد، استخدم أداة getCraftProducts.
+- التسجيل: رقم هاتف جزائري (05/06/07) ثم رمز تحقق OTP.
 
-قواعد صارمة:
-- كن لطيفاً ومختصراً (2-4 جمل كحد أقصى، إلا عند عرض منتجات/طلبات).
-- رد بالعربية أو الفرنسية حسب لغة رسالة المستخدم.
-- لا تخترع أكواد طلبات أو أسعاراً: الأسعار والطلبات تأتي فقط من الأدوات.
-- لا تشارك بيانات مستخدم آخر ولا معلومات حساسة (أرقام هواتف السائقين، إلخ).
-- إذا لم تعرف الإجابة، اقترح مراسلة فريق الدعم داخل التطبيق.`;
+أسلوب الرد (إلزامي):
+- فصحى مبسطة واضحة إن كتب المستخدم بالعربية، وفرنسية سليمة إن كتب بالفرنسية. ممنوع الدارجة أو العامية.
+- من سطرين إلى أربعة أسطر قصيرة كحد أقصى (يُستثنى عرض قائمة طلبات أو منتجات).
+- ممنوع تماماً رموز التنسيق مثل النجوم (*) والشرطات السفلية (_) — نص عادي فقط.
+- إيموجي واحد كحد أقصى، والأفضل بدونها.
+- لا تشرح قدراتك في كل رد. عند التحية فقط: رد من سطرين + سؤال عن ما يريده المستخدم.
+- إذا كان طلب المستخدم غامضاً، اسأل سؤالاً توضيحياً واحداً قصيراً (مثال: هل تريد إرسال طرد أم تصفح منتجات حِرفة؟).
+- ممنوع اختراع أكواد طلبات أو أسعار أو أسماء منتجات؛ البيانات الحية تأتي من الأدوات فقط.
+- ممنوع منعاً باتاً سؤال المستخدم عن رقم هاتفه — هاتفه مرفق تلقائياً مع كل استعلام والأداة تستخدمه بنفسها.
+- عند عرض طلبات: سطر واحد لكل طلب (الكود، ثم الحالة، ثم الوجهة أو المنتج).
+- عند تعذر شيء: اعتذار بسطر واحد + بديل عملي (إعادة المحاولة لاحقاً أو فريق الدعم داخل التطبيق).
+- اكتب جمل سليمة واضحة فقط؛ إن لم تعرف الجواب فقلها بصراحة ووجّه المستخدم للتطبيق.
+
+تحميل التطبيق (مهم جداً):
+- التطبيق متوفر لأندرويد فقط، ولا يوجد في متجر Google Play — يُحمّل مباشرة من هذا الرابط الرسمي: https://wassilha.vercel.app/wassilha.apk
+- إذا سأل المستخدم عن التطبيق أو كيفية تحميله أو لم يجده في المتجر: أعطه الرابط فوراً مع خطوات التثبيت الثلاث التالية (بدون استخدام الأدوات):
+  1) افتح الرابط في المتصفح وسيبدأ التحميل تلقائياً.
+  2) إن ظهر تحذير "مصادر غير معروفة" اقبل التثبيت من إعدادات المتصفح.
+  3) افتح الملف المحمل وثبّت التطبيق.
+- مستخدمو الآيفون (iOS): لا يوجد تطبيق حالياً — استخدموا الموقع مباشرة من المتصفح: https://wassilha.vercel.app
+- لا تختلق روابط أخرى أبداً؛ استخدم هذا الرابط فقط لأنه الرسمي الوحيد.`;
 
 const FALLBACK_REPLY =
   'مرحباً بك في وصّلها! 👋\nيمكنني مساعدتك في: حالة طلبك، أسعار التوصيل، ومتجر حِرفة للحرفيين.\n' +
@@ -53,7 +68,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: 'getOrderStatus',
     description:
-      'يستعلم عن آخر طلبات المستخدم: آخر طلب توصيل (WS) وآخر طلب حِرفة (HIRFA) وحالتهما الحالية. استخدمها دائماً عندما يسأل المستخدم عن حالة طلبه. مرر رقم هاتف المرسل كما هو.',
+      'يستعلم عن آخر طلبات المستخدم: آخر طلب توصيل (WS) وآخر طلب حِرفة (HIRFA) وحالتهما الحالية. استخدمها دائماً عندما يسأل المستخدم عن حالة طلبه. يُمرر هاتف المرسل تلقائياً من النظام.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
@@ -150,11 +165,16 @@ async function toolGetCraftProducts(): Promise<Record<string, unknown>> {
 
 async function executeTool(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  phone: string
 ): Promise<Record<string, unknown>> {
   try {
     if (name === 'getOrderStatus') {
-      return await toolGetOrderStatus(args as { phone?: unknown });
+      // CORRECTNESS: the sender's phone is KNOWN (normalized by the webhook
+      // and passed down). Force it into the call instead of trusting the
+      // model to copy it from context — models sometimes garble digits and
+      // then wrongly tell the user their "phone is invalid".
+      return await toolGetOrderStatus({ phone });
     }
     if (name === 'getCraftProducts') {
       return await toolGetCraftProducts();
@@ -177,7 +197,7 @@ const OPENAI_TOOLS = [
     function: {
       name: 'getOrderStatus',
       description:
-        'يستعلم عن آخر طلبات المستخدم: آخر طلب توصيل (WS) وآخر طلب حِرفة (HIRFA) وحالتهما الحالية. استخدمها دائماً عندما يسأل المستخدم عن حالة طلبه. مرر رقم هاتف المرسل كما هو.',
+        'يستعلم عن آخر طلبات المستخدم: آخر طلب توصيل (WS) وآخر طلب حِرفة (HIRFA) وحالتهما الحالية. استخدمها دائماً عندما يسأل المستخدم عن حالة طلبه. يُمرر هاتف المرسل تلقائياً من النظام.',
       parameters: {
         type: 'object',
         properties: {
@@ -246,7 +266,7 @@ async function runOpenAICompatible(
         model,
         messages,
         tools: OPENAI_TOOLS,
-        temperature: 0.6,
+        temperature: 0.4,
         max_tokens: 1024,
       }),
     });
@@ -291,7 +311,11 @@ async function runOpenAICompatible(
         } catch {
           args = {};
         }
-        const result = await executeTool(call.function?.name ?? '', args);
+        const result = await executeTool(
+          call.function?.name ?? '',
+          args,
+          phone
+        );
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -468,7 +492,8 @@ async function runGemini(userText: string, phone: string): Promise<string | null
       console.log('[AI AGENT] Gemini requested tool:', call.name);
       const response = await executeTool(
         call.name,
-        (call.args ?? {}) as Record<string, unknown>
+        (call.args ?? {}) as Record<string, unknown>,
+        phone
       );
       parts.push({ functionResponse: { name: call.name, response } });
     }

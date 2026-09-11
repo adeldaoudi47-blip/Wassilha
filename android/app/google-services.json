@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "986542259288",
+    "project_id": "wassilha-18b81",
+    "storage_bucket": "wassilha-18b81.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:986542259288:android:f0ea1d23ecca4c1fa71e2d",
+        "android_client_info": {
+          "package_name": "dz.wassilha.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_ehA5gFfNlLyf43-tS8ulAJxmBITM3xE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

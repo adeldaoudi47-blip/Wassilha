@@ -770,7 +770,7 @@ export function AuthFlow() {
     setLoading(true);
 
     try {
-      const { user } = await api.loginAs(role);
+      const { user } = await api.loginAs(role as 'customer' | 'driver' | 'admin');
 
       if (!user) throw new Error('Authenticated user missing');
 

@@ -73,6 +73,7 @@ node_modules/
 # Capacitor generated
 android/.gradle/
 android/build/
+android/app/build/
 tool-results/
 upload/
 workspace-*
