@@ -18,11 +18,12 @@ import {
 import { db } from '@/lib/db';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
-// Model selection: the "gemini-flash-latest" alias can return 503 under
-// load; per current availability, gemini-1.5-flash is serving again.
-// Operators can override per-deploy with GEMINI_MODEL (e.g. "gemini-pro",
-// "gemini-2.5-flash", "gemini-flash-latest") without code changes.
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+// Model selection: use a SPECIFIC stable model, not an alias. Verified
+// against https://ai.google.dev/gemini-api/docs/models: the 1.5 family is
+// fully removed (404) and the "gemini-flash-latest" alias 503s under load.
+// "gemini-3.6-flash" is Google's documented stable pick. Operators can
+// override per-deploy with GEMINI_MODEL (e.g. "gemini-3.8-flash").
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const MAX_TOOL_ROUNDS = 3; // hard stop so a looping model can't burn quota
 
 const SYSTEM_PROMPT = `أنت المساعد الذكي لتطبيق وصّلها (Wassilha)، تطبيق جزائري للتوصيل ونقل الركاب وسوق الحرفيين (حِرفة).
@@ -319,10 +320,59 @@ async function runGroq(userText: string, phone: string): Promise<string | null> 
     'Groq',
     'https://api.groq.com/openai/v1/chat/completions',
     apiKey,
-    process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    // Verified against https://console.groq.com/docs/models: the Llama
+    // Enterprise models (llama-3.3-70b-versatile etc.) now require "Contact
+    // Sales" access — free/dev-plan keys get 404. The GPT-OSS models ARE
+    // available on the developer plan and support tool use.
+    process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     userText,
     phone
   );
+}
+
+// OpenRouter's free-tier catalog churns constantly (models get pulled
+// every few weeks), so instead of chasing names we SELF-HEAL: when the
+// configured model 404s ("No endpoints found"), we query OpenRouter's
+// public catalog, pick the newest :free model that supports tools, and
+// retry once. The pick is cached for subsequent calls.
+let cachedOpenRouterModel: string | null = null;
+const DEFAULT_OPENROUTER_MODEL = 'google/gemma-2-9b-it:free'; // first attempt
+
+async function discoverOpenRouterFreeModel(): Promise<string | null> {
+  if (cachedOpenRouterModel) return cachedOpenRouterModel;
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      data?: Array<{
+        id?: string;
+        created?: number;
+        supported_parameters?: string[];
+      }>;
+    };
+    const candidates = (data.data ?? [])
+      .filter(
+        (m) =>
+          typeof m.id === 'string' &&
+          m.id.endsWith(':free') &&
+          Array.isArray(m.supported_parameters) &&
+          m.supported_parameters.includes('tools')
+      )
+      .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+      .map((m) => m.id as string);
+    if (candidates.length === 0) return null;
+    cachedOpenRouterModel = candidates[0];
+    console.log(
+      '[AI AGENT] OpenRouter discovered free tools-capable model:',
+      cachedOpenRouterModel
+    );
+    return cachedOpenRouterModel;
+  } catch (e) {
+    console.error('[AI AGENT] OpenRouter model discovery failed:', e);
+    return null;
+  }
 }
 
 async function runOpenRouter(
@@ -336,15 +386,48 @@ async function runOpenRouter(
     );
     return null;
   }
+
+  const headers = {
+    // OpenRouter recommends identifying the app (free tier courtesy rules).
+    'X-Title': 'Wassilha',
+  } as Record<string, string>;
+  const configured = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+
+  try {
+    // First attempt with the configured/default model…
+    return await runOpenAICompatible(
+      'OpenRouter',
+      'https://openrouter.ai/api/v1/chat/completions',
+      apiKey,
+      configured,
+      userText,
+      phone,
+      headers
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Self-heal ONLY on "model missing" 404s — every other error belongs
+    // to the provider chain (auth, quota, outage…).
+    if (!msg.includes('HTTP 404')) throw e;
+    console.warn(
+      '[AI AGENT] OpenRouter model missing:',
+      configured,
+      '— discovering a current free model…'
+    );
+  }
+
+  const discovered = await discoverOpenRouterFreeModel();
+  if (!discovered) {
+    throw new Error('OpenRouter: no free tools-capable model found');
+  }
   return runOpenAICompatible(
     'OpenRouter',
     'https://openrouter.ai/api/v1/chat/completions',
     apiKey,
-    process.env.OPENROUTER_MODEL || 'google/gemma-2-9b-it:free',
+    discovered,
     userText,
     phone,
-    // OpenRouter recommends identifying the app (free tier courtesy rules).
-    { 'X-Title': 'Wassilha' }
+    headers
   );
 }
 
