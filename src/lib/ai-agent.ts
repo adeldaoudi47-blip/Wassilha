@@ -309,9 +309,12 @@ async function runOpenAICompatible(
   return FALLBACK_REPLY;
 }
 
-async function runGroq(userText: string, phone: string): Promise<string> {
+async function runGroq(userText: string, phone: string): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY missing');
+  if (!apiKey) {
+    console.warn('[AI AGENT] Provider Groq skipped: GROQ_API_KEY is missing.');
+    return null;
+  }
   return runOpenAICompatible(
     'Groq',
     'https://api.groq.com/openai/v1/chat/completions',
@@ -322,9 +325,17 @@ async function runGroq(userText: string, phone: string): Promise<string> {
   );
 }
 
-async function runOpenRouter(userText: string, phone: string): Promise<string> {
+async function runOpenRouter(
+  userText: string,
+  phone: string
+): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY missing');
+  if (!apiKey) {
+    console.warn(
+      '[AI AGENT] Provider OpenRouter skipped: OPENROUTER_API_KEY is missing.'
+    );
+    return null;
+  }
   return runOpenAICompatible(
     'OpenRouter',
     'https://openrouter.ai/api/v1/chat/completions',
@@ -340,9 +351,12 @@ async function runOpenRouter(userText: string, phone: string): Promise<string> {
 // --- Public entry point ------------------------------------------------------
 
 // Gemini (the original SDK path). Throws so the chain can continue.
-async function runGemini(userText: string, phone: string): Promise<string> {
+async function runGemini(userText: string, phone: string): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY missing');
+  if (!apiKey) {
+    console.warn('[AI AGENT] Provider Gemini skipped: GEMINI_API_KEY is missing.');
+    return null;
+  }
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
@@ -397,28 +411,33 @@ export async function aiAgentReply(
 
   const chain: Array<{
     name: string;
-    run: (t: string, p: string) => Promise<string>;
-  }> = [];
-  if (process.env.GROQ_API_KEY) chain.push({ name: 'Groq', run: runGroq });
-  if (process.env.OPENROUTER_API_KEY)
-    chain.push({ name: 'OpenRouter', run: runOpenRouter });
-  if (process.env.GEMINI_API_KEY)
-    chain.push({ name: 'Gemini', run: runGemini });
-
-  if (chain.length === 0) {
-    console.error('[AI AGENT] No provider API keys configured.');
-    return BUSY_MESSAGE;
-  }
+    run: (t: string, p: string) => Promise<string | null>;
+  }> = [
+    { name: 'Groq', run: runGroq },
+    { name: 'OpenRouter', run: runOpenRouter },
+    { name: 'Gemini', run: runGemini },
+  ];
 
   for (const provider of chain) {
     console.log('[AI AGENT] Trying provider:', provider.name);
     try {
-      return await provider.run(text, phone);
+      const reply = await provider.run(text, phone);
+      // null = provider skipped (API key missing) — already logged with a
+      // console.warn by the provider itself. Fall through to the next one.
+      if (reply !== null) return reply;
     } catch (e) {
       console.error(`[AI AGENT] Provider ${provider.name} failed:`, e);
     }
   }
 
+  console.error(
+    '[AI AGENT] API Keys status -> Groq:',
+    !!process.env.GROQ_API_KEY,
+    '| OpenRouter:',
+    !!process.env.OPENROUTER_API_KEY,
+    '| Gemini:',
+    !!process.env.GEMINI_API_KEY
+  );
   console.error('[AI AGENT] All providers failed — returning busy message.');
   return BUSY_MESSAGE;
 }
