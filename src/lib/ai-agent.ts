@@ -18,13 +18,11 @@ import {
 import { db } from '@/lib/db';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
-// Model selection: Google RETIRED the whole gemini-1.5 family (the old
-// "gemini-1.5-flash" name now 404s with "not found for API version
-// v1beta"). "gemini-flash-latest" is Google's maintained alias that
-// always points at the current stable Flash model, so it keeps working
-// across future model rotations. Operators can override it per-deploy
-// with GEMINI_MODEL (e.g. "gemini-2.5-flash", "gemini-pro").
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+// Model selection: the "gemini-flash-latest" alias can return 503 under
+// load; per current availability, gemini-1.5-flash is serving again.
+// Operators can override per-deploy with GEMINI_MODEL (e.g. "gemini-pro",
+// "gemini-2.5-flash", "gemini-flash-latest") without code changes.
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const MAX_TOOL_ROUNDS = 3; // hard stop so a looping model can't burn quota
 
 const SYSTEM_PROMPT = `أنت المساعد الذكي لتطبيق وصّلها (Wassilha)، تطبيق جزائري للتوصيل ونقل الركاب وسوق الحرفيين (حِرفة).
@@ -331,7 +329,7 @@ async function runOpenRouter(userText: string, phone: string): Promise<string> {
     'OpenRouter',
     'https://openrouter.ai/api/v1/chat/completions',
     apiKey,
-    process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+    process.env.OPENROUTER_MODEL || 'google/gemma-2-9b-it:free',
     userText,
     phone,
     // OpenRouter recommends identifying the app (free tier courtesy rules).
