@@ -75,11 +75,9 @@ export function AuthFlow() {
   // codeNotFound because the server already consumed the OTP.
   const verifyingRef = useRef(false);
   const [resendTimer, setResendTimer] = useState(0);
-  // When true, the user picked the "Driver" tab on the OTP screen and
-  // should be routed to the driver form on a fresh account instead of
-  // the customer signup. The phone screen no longer has a "Become a
-  // driver" button — the choice is now made on the OTP screen.
-  const [intendsDriver, setIntendsDriver] = useState(false);
+  // NOTE: all new users register as CUSTOMERS by default. There is no role
+  // selector on the OTP screen anymore — driver / artisan registration
+  // happens later from the customer profile screen (upgrade flows).
   // Driver self-registration form fields (filled after OTP verification).
   // Carte grise (vehicle registration) data — replaces the legacy ad-hoc
   // vehicleType / vehicleColor / plate / license inputs.
@@ -123,21 +121,7 @@ export function AuthFlow() {
         if (pendingSignup && verifiedPhone) {
           setPhone(verifiedPhone);
           setStep('signup');
-          // DIAG: a previously-saved driver intent should never bleed
-          // into a recovered customer signup. We no longer force-reset
-          // intendsDriver here because:
-          //   1) The flag is a *client UX* intent captured at button press,
-          //      not a server-side state.
-          //   2) handleVerify branches on `intendsDriver` *at the moment
-          //      of OTP verification*, not on this mount-time restore.
-          //   3) Resetting it here was the only place the flag could be
-          //      silently cleared between two consecutive registrations,
-          //      which is the exact scenario the driver flow hits.
-          //
-          // If a future product decision is to ALWAYS route recovered
-          // pending signups to the customer flow, do that explicitly at
-          // the call site (e.g. inside handleSendOtp), not here.
-          console.log('[AUTH FLOW] pendingSignup restored for phone:', verifiedPhone, '(intendsDriver preserved:', intendsDriver, ')');
+          console.log('[AUTH FLOW] pendingSignup restored for phone:', verifiedPhone);
         }
       })
       .catch(() => {});
@@ -157,14 +141,10 @@ export function AuthFlow() {
   // DIAG: log every step change so we can trace the auth flow end-to-end
   // and see exactly when/why the UI transitions to a particular step.
   useEffect(() => {
-    console.log('[AUTH FLOW] step CHANGED to:', step, '| intendsDriver=', intendsDriver, '| otp.length=', otp.length);
-  }, [step, intendsDriver]);
+    console.log('[AUTH FLOW] step CHANGED to:', step, '| otp.length=', otp.length);
+  }, [step]);
 
   const handleSendOtp = async () => {
-    // FIX: explicit reset — entering the customer path must clear any
-    // previous "intends driver" state so the post-OTP router can't send
-    // a customer into the driver form by accident.
-    setIntendsDriver(false);
     // SECURITY + UX: single normalizer shared with the API €” accepts local,
     // international (+213), 00213 forms, spaces/dashes/invisible marks.
     const clean = normalizeAlgerianPhone(phone);
@@ -231,81 +211,10 @@ export function AuthFlow() {
     }
   };
 
-  // Driver self-registration: identical OTP step as the customer flow, but
-  // after verifying the OTP we route the user into the driver-form step
-  // (which calls /api/auth/apply-driver) instead of the customer signup.
-  // SECURITY: the role is still forced server-side; this is only UX.
-  const handleSendOtpAsDriver = async () => {
-    const clean = normalizeAlgerianPhone(phone);
-    if (!clean) {
-      console.warn('[Driver Flow] Invalid Algerian phone, aborting:', phone);
-      toast.error(
-        isAr
-          ? 'أدخل رقم هاتف جزائري صحيح'
-          : 'Entrez un numéro de téléphone algérien valide'
-      );
-      return;
-    }
-    // DIAG: trace driver-flow entry so we can confirm the user actually
-    // pressed the driver button (vs. the customer one) and follow the
-    // request all the way to the server.
-    console.log('[Driver Flow] Sending OTP as driver for phone:', clean);
-    setLoading(true);
-    // FIX: move the name-clearing *inside* this handler so it always
-    // happens (regardless of which UI entry point calls it) and so the
-    // customer name is never silently wiped from the wrong flow.
-    setName('');
-    setIntendsDriver(true);
-    try {
-      const result = await api.sendOtp(clean);
-      console.log('[Driver Flow] OTP sent successfully for phone:', clean);
-      setPhone(clean);
-      setOtp('');
-      setStep('otp');
-      setResendTimer(30);
-      // SECURITY (V?? — OTP bypass lock-down): the server no longer
-      // returns the OTP in the response. Same generic "code sent"
-      // message as the customer flow — never the digits themselves.
-      toast.success(
-        isAr
-          ? 'تم إرسال رمز التحقق إلى هاتفك عبر واتساب أو رسالة قصيرة'
-          : 'Le code de vérification a été envoyé sur WhatsApp ou par SMS'
-      );
-    } catch (error) {
-      console.error('[Driver Flow] Failed to send OTP:', error);
-      // Same error-code mapping as the customer flow (see handleSendOtp).
-      const code = error instanceof Error ? error.message : '';
-      let ar = 'تعذّر إرسال رمز التحقق. حاول مرة أخرى.';
-      let fr = 'Impossible d’envoyer le code. Réessayez.';
-      switch (code) {
-        case 'tooManyRequests':
-          ar = 'تجاوزت الحد المسموح من المحاولات. حاول لاحقاً.';
-          fr = 'Trop de tentatives, reessayez plus tard.';
-          break;
-        case 'resendCooldown':
-          ar = 'يرجى الانتظار قبل إعادة طلب الرمز.';
-          fr = 'Veuillez patienter avant de renvoyer une demande.';
-          break;
-        case 'invalidPhone':
-          ar = 'رقم الهاتف غير صحيح.';
-          fr = 'Numero de telephone invalide.';
-          break;
-        case 'serverError':
-          ar = 'تعذر إرسال الرمز، تأكد من اتصالك بالإنترنت أو حاول لاحقاً.';
-          fr = 'Envoi du code impossible, verifiez votre connexion et reessayez.';
-          break;
-      }
-      // DIAG: also surface the raw error code in the toast so the user
-      // (and on-call support) can tell exactly which server-side failure
-      // triggered it — without having to crack open the browser console.
-      const surfaced = isAr
-        ? `${ar} (الرمز: ${code || 'غير معروف'})`
-        : `${fr} (code: ${code || 'inconnu'})`;
-      toast.error(surfaced);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // NOTE (role removal): the legacy `handleSendOtpAsDriver` helper was
+  // removed — every OTP now flows through `handleSendOtp` and new users
+  // always land in the customer signup. Driver registration is reached
+  // from the customer profile (upgrade flow) after login.
 
   const handleVerify = async () => {
     if (otp.length !== OTP_LENGTH) {
@@ -338,41 +247,23 @@ export function AuthFlow() {
       );
 
       // DIAG: log every result so we can tell whether the failure to
-      // advance to driver-form is a missing flag, a wrong response shape,
-      // or a successful route that did not propagate to setStep().
+      // advance is a wrong response shape or a successful route that
+      // did not propagate to setStep().
       console.log('[AUTH FLOW] handleVerify result', {
         requiresSignup: result.requiresSignup,
         driverApplicationPending: result.driverApplicationPending,
         driverApplicationRejected: result.driverApplicationRejected,
         hasUser: !!result.user,
-        intendsDriver,
         userPhone: result.user?.phone,
       });
 
       if (result.requiresSignup) {
-        // Fresh account: pick the right next step based on user intent.
-        // The server doesn't know about `intendsDriver` (it's a client-only
-        // UX flag), so for *fresh* accounts the only way to honour the
-        // driver's intent is to trust the client flag and route them to
-        // the driver form. The server will create the driver application
-        // on the subsequent /api/auth/apply-driver call.
-        //
-        // Stale `intendsDriver=true` is prevented by the explicit reset
-        // added at the top of handleSendOtp and at the OTP back-button.
-        console.log('[AUTH FLOW] requiresSignup=true; branching on intendsDriver=', intendsDriver);
-        if (intendsDriver) {
-          // DIAG: confirm the router picked the driver branch (vs. the
-          // customer one) so we can tell whether the user landed in
-          // the right place even if a later step silently fails.
-          console.log('[Driver Flow] OTP verified, moving to driver-form');
-          setOtp('');
-          setStep('driver-form');
-          console.log('[AUTH FLOW] >>> setStep(\'driver-form\') called');
-        } else {
-          console.log('[AUTH FLOW] >>> setStep(\'signup\') called (customer branch)');
-          setOtp('');
-          setStep('signup');
-        }
+        // Fresh account: EVERY new user registers as a customer. The OTP
+        // screen no longer carries a role selector — driver / artisan
+        // registration happens later from the customer profile screen.
+        console.log("[AUTH FLOW] requiresSignup=true; routing to customer 'signup'");
+        setOtp('');
+        setStep('signup');
         return;
       }
 
@@ -1265,12 +1156,6 @@ export function AuthFlow() {
           onClick={() => {
             setStep('phone');
             setOtp('');
-            // FIX: also clear the "intends driver" flag when the user
-            // backs out of the OTP screen. Without this, going back
-            // and re-entering the customer path would still keep
-            // intendsDriver=true (now handled in handleSendOtp too,
-            // but defense in depth).
-            setIntendsDriver(false);
           }}
           className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-sm"
         >
@@ -1338,35 +1223,6 @@ export function AuthFlow() {
           </InputOTP>
         </div>
 
-        <p className="mt-6 text-center text-xs font-semibold text-muted-foreground">
-          {t.selectRole}
-        </p>
-
-        <Tabs
-          value={intendsDriver ? 'driver' : 'customer'}
-          onValueChange={(v) =>
-            setIntendsDriver(v === 'driver')
-          }
-          className="mt-2 w-full"
-        >
-          <TabsList className="inline-flex h-12 w-full rounded-xl p-1">
-            <TabsTrigger
-              value="customer"
-              className="h-full flex-1 rounded-lg text-sm font-bold data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-            >
-              <Package size={16} className="me-1.5 shrink-0" />
-              {t.customerTab}
-            </TabsTrigger>
-            <TabsTrigger
-              value="driver"
-              className="h-full flex-1 rounded-lg text-sm font-bold data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-            >
-              <Bike size={16} className="me-1.5 shrink-0" />
-              {t.driverTab}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
         <Button
           onClick={handleVerify}
           disabled={
@@ -1394,19 +1250,9 @@ export function AuthFlow() {
           ) : (
             <button
               onClick={() => {
-                // FIX: route the resend through the same path the user
-                // originally took. The user now picks the role via the
-                // Tabs on this screen, so `intendsDriver` already
-                // reflects their choice. `handleSendOtp` would reset it
-                // to false, which would dump the driver back into the
-                // customer signup branch on the next verify. The
-                // as-driver variant preserves the flag.
-                if (intendsDriver) {
-                  console.log('[Driver Flow] Resending OTP via driver handler');
-                  handleSendOtpAsDriver();
-                } else {
-                  handleSendOtp();
-                }
+                // Single flow: every user is a customer at signup, so the
+                // resend always goes through the plain customer handler.
+                handleSendOtp();
               }}
               className="text-xs font-bold text-primary hover:underline"
             >
