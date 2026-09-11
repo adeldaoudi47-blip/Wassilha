@@ -35,6 +35,11 @@ const EXEMPT_PREFIXES = [
   // The route enforces its own security instead (verify-token echo +
   // optional X-Hub-Signature-256 HMAC check).
   '/api/whatsapp/webhook',
+  // Telegram bot webhook. Telegram's servers POST updates from their own
+  // IPs with no session cookie; they must never be edge-rate-limited or
+  // updates get dropped. The route enforces its own security instead
+  // (optional X-Telegram-Bot-Api-Secret-Token check).
+  '/api/telegram/webhook',
 ];
 
 interface Bucket {
