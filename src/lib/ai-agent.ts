@@ -1,8 +1,9 @@
-// WASSILHA AI AGENT — the "brain" behind the WhatsApp assistant.
+// WASSILHA AI AGENT — the "brain" behind the WhatsApp/Telegram assistants.
 //
 // Architecture:
-//   WhatsApp Cloud API (Meta) -> /api/whatsapp/webhook -> aiAgentReply()
-//   -> Gemini (gemini-1.5-flash, free tier) with Function Calling
+//   /api/whatsapp/webhook | /api/telegram/webhook -> aiAgentReply()
+//   -> MULTI-PROVIDER FALLBACK: Groq -> OpenRouter -> Gemini -> busy msg
+//   -> Function Calling (same 2 tools everywhere)
 //   -> Prisma queries (live app data) -> final text reply.
 //
 // The model can answer general questions about Wassilha from the system
@@ -45,6 +46,9 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي لتطبيق وصّله�
 const FALLBACK_REPLY =
   'مرحباً بك في وصّلها! 👋\nيمكنني مساعدتك في: حالة طلبك، أسعار التوصيل، ومتجر حِرفة للحرفيين.\n' +
   'Bienvenue sur Wassilha ! Je peux vous aider : statut de commande, tarifs de livraison, et le marché artisanal HIRFA.';
+
+// Returned only when EVERY provider in the chain failed.
+const BUSY_MESSAGE = 'أنا مشغول حالياً، يرجى إعادة المحاولة بعد قليل.';
 
 const toolDeclarations: FunctionDeclaration[] = [
   {
@@ -163,74 +167,260 @@ async function executeTool(
   }
 }
 
+// --- Providers: Groq / OpenRouter (OpenAI-compatible, plain fetch) ----------
+
+// OpenAI-compatible tool schema — Groq and OpenRouter both expose the
+// OpenAI /chat/completions contract. Same two tools as the Gemini
+// declarations above.
+const OPENAI_TOOLS = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'getOrderStatus',
+      description:
+        'يستعلم عن آخر طلبات المستخدم: آخر طلب توصيل (WS) وآخر طلب حِرفة (HIRFA) وحالتهما الحالية. استخدمها دائماً عندما يسأل المستخدم عن حالة طلبه. مرر رقم هاتف المرسل كما هو.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: {
+            type: 'string',
+            description:
+              'رقم هاتف المستخدم المرسل (بالصيغة المحلية 0XXXXXXXXX أو الدولية).',
+          },
+        },
+        required: ['phone'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'getCraftProducts',
+      description:
+        'يعرض أحدث 5 منتجات نشطة في سوق الحرفيين "حِرفة" مع الاسم والسعر والمخزون واسم الحرفي. لا يحتاج أي معطيات.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+];
+
+type OpenAIMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+};
+
+// Shared function-calling loop for every OpenAI-compatible provider.
+// Throws on transport/API failure so the caller can fall through to the
+// next provider in the chain.
+async function runOpenAICompatible(
+  providerName: string,
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  userText: string,
+  phone: string,
+  extraHeaders?: Record<string, string>
+): Promise<string> {
+  const messages: OpenAIMessage[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    {
+      role: 'user',
+      content: `${userText}\n\n(رقم هاتف المرسل: ${phone} — مرره كما هو إذا استدعيت getOrderStatus)`,
+    },
+  ];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+        ...(extraHeaders ?? {}),
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        tools: OPENAI_TOOLS,
+        temperature: 0.6,
+        max_tokens: 1024,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => '')).slice(0, 400);
+      throw new Error(`${providerName} HTTP ${response.status}: ${detail}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: 'function';
+            function: { name: string; arguments: string };
+          }>;
+        };
+      }>;
+    };
+    const message = data.choices?.[0]?.message;
+    if (!message) throw new Error(`${providerName} returned no choices`);
+
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      messages.push({
+        role: 'assistant',
+        content: message.content ?? null,
+        tool_calls: message.tool_calls,
+      });
+      for (const call of message.tool_calls) {
+        console.log(
+          `[AI AGENT] ${providerName} requested tool:`,
+          call.function?.name
+        );
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(call.function?.arguments || '{}') as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          args = {};
+        }
+        const result = await executeTool(call.function?.name ?? '', args);
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+      }
+      continue; // feed tool results back so the model composes the answer
+    }
+
+    const reply = (message.content ?? '').trim();
+    console.log(`[AI AGENT] ${providerName} response:`, reply);
+    return reply || FALLBACK_REPLY;
+  }
+
+  // Model kept calling tools past the cap — static fallback.
+  return FALLBACK_REPLY;
+}
+
+async function runGroq(userText: string, phone: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY missing');
+  return runOpenAICompatible(
+    'Groq',
+    'https://api.groq.com/openai/v1/chat/completions',
+    apiKey,
+    process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    userText,
+    phone
+  );
+}
+
+async function runOpenRouter(userText: string, phone: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY missing');
+  return runOpenAICompatible(
+    'OpenRouter',
+    'https://openrouter.ai/api/v1/chat/completions',
+    apiKey,
+    process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+    userText,
+    phone,
+    // OpenRouter recommends identifying the app (free tier courtesy rules).
+    { 'X-Title': 'Wassilha' }
+  );
+}
+
 // --- Public entry point ------------------------------------------------------
 
+// Gemini (the original SDK path). Throws so the chain can continue.
+async function runGemini(userText: string, phone: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY missing');
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    systemInstruction: SYSTEM_PROMPT,
+    tools: [{ functionDeclarations: toolDeclarations }],
+  });
+
+  const chat = model.startChat();
+  let result = await chat.sendMessage(
+    `${userText}\n\n(رقم هاتف المرسل: ${phone} — مرره كما هو إذا استدعيت getOrderStatus)`
+  );
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const calls = result.response.functionCalls();
+    if (!calls || calls.length === 0) {
+      const reply = result.response.text();
+      console.log('[AI AGENT] Gemini response:', reply);
+      return reply && reply.trim() ? reply.trim() : FALLBACK_REPLY;
+    }
+
+    const parts: Array<{
+      functionResponse: { name: string; response: Record<string, unknown> };
+    }> = [];
+    for (const call of calls) {
+      console.log('[AI AGENT] Gemini requested tool:', call.name);
+      const response = await executeTool(
+        call.name,
+        (call.args ?? {}) as Record<string, unknown>
+      );
+      parts.push({ functionResponse: { name: call.name, response } });
+    }
+    result = await chat.sendMessage(parts);
+  }
+
+  const last = result.response.text();
+  return last && last.trim() ? last.trim() : FALLBACK_REPLY;
+}
+
 /**
- * Takes an inbound WhatsApp message (already normalized phone + raw text)
- * and returns the final assistant reply. Runs the Gemini function-calling
- * loop until the model produces a text answer (bounded by MAX_TOOL_ROUNDS).
+ * Takes an inbound message (already normalized phone/chat id + raw text)
+ * and returns the final assistant reply, trying providers in order:
+ *   Groq -> OpenRouter -> Gemini -> BUSY_MESSAGE.
+ * Every provider runs the SAME system prompt and the SAME two Prisma tools.
  */
 export async function aiAgentReply(
   userText: string,
   phone: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
   const text = userText.trim();
-  if (!apiKey) {
-    console.error('[AI AGENT] GEMINI_API_KEY missing — replying with static help.');
-    return FALLBACK_REPLY;
-  }
   if (!text) return FALLBACK_REPLY;
 
-  console.log(
-    '[AI AGENT] Sending to Gemini (model:',
-    MODEL_NAME,
-    '):',
-    text
-  );
+  const chain: Array<{
+    name: string;
+    run: (t: string, p: string) => Promise<string>;
+  }> = [];
+  if (process.env.GROQ_API_KEY) chain.push({ name: 'Groq', run: runGroq });
+  if (process.env.OPENROUTER_API_KEY)
+    chain.push({ name: 'OpenRouter', run: runOpenRouter });
+  if (process.env.GEMINI_API_KEY)
+    chain.push({ name: 'Gemini', run: runGemini });
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      systemInstruction: SYSTEM_PROMPT,
-      tools: [{ functionDeclarations: toolDeclarations }],
-    });
-
-    const chat = model.startChat();
-    let result = await chat.sendMessage(
-      `${text}\n\n(رقم هاتف المرسل: ${phone} — مرره كما هو إذا استدعيت getOrderStatus)`
-    );
-
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const calls = result.response.functionCalls();
-      if (!calls || calls.length === 0) {
-        const reply = result.response.text();
-        console.log('[AI AGENT] Gemini response:', reply);
-        return reply && reply.trim() ? reply.trim() : FALLBACK_REPLY;
-      }
-
-      // Execute every tool call the model asked for, then hand the results
-      // back so Gemini can compose the final answer.
-      const parts: Array<{
-        functionResponse: { name: string; response: Record<string, unknown> };
-      }> = [];
-      for (const call of calls) {
-        console.log('[AI AGENT] Gemini requested tool:', call.name);
-        const response = await executeTool(
-          call.name,
-          (call.args ?? {}) as Record<string, unknown>
-        );
-        parts.push({ functionResponse: { name: call.name, response } });
-      }
-      result = await chat.sendMessage(parts);
-    }
-
-    // Model kept calling tools past the cap — take whatever text it has.
-    const last = result.response.text();
-    return last && last.trim() ? last.trim() : FALLBACK_REPLY;
-  } catch (e) {
-    console.error('[AI AGENT] Gemini Error:', e);
-    return FALLBACK_REPLY;
+  if (chain.length === 0) {
+    console.error('[AI AGENT] No provider API keys configured.');
+    return BUSY_MESSAGE;
   }
+
+  for (const provider of chain) {
+    console.log('[AI AGENT] Trying provider:', provider.name);
+    try {
+      return await provider.run(text, phone);
+    } catch (e) {
+      console.error(`[AI AGENT] Provider ${provider.name} failed:`, e);
+    }
+  }
+
+  console.error('[AI AGENT] All providers failed — returning busy message.');
+  return BUSY_MESSAGE;
 }
