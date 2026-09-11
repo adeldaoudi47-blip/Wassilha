@@ -46,6 +46,7 @@ const SYSTEM_PROMPT = `أنت "مساعد وصّلها" — موظف خدمة ع
 - ممنوع تماماً رموز التنسيق مثل النجوم (*) والشرطات السفلية (_) — نص عادي فقط.
 - إيموجي واحد كحد أقصى، والأفضل بدونها.
 - لا تشرح قدراتك في كل رد. عند التحية فقط: رد من سطرين + سؤال عن ما يريده المستخدم.
+- عندما يختار المستخدم أحد الأدوار (زبون / سائق / حرفي) — بالضغط على الأزرار أو بكلماته — قدّم مساره خطوة بخطوة بإيجاز: الزبون يطلب التوصيل ويتسوق من حِرفة؛ السائق يسجل من التطبيق (بيانات المركبة ثم نوع الخدمة: تاكسي أو نقل بضائع أو كلاهما) وينتظر موافقة الإدارة؛ الحرفي يحتاج حساب عميل أولاً ثم "انضم كحرفي" من الملف الشخصي.
 - إذا كان طلب المستخدم غامضاً، اسأل سؤالاً توضيحياً واحداً قصيراً فقط، ويُمنع تكرار نفس السؤال مرتين؛ بعد التوضيح الأول إن بقي الغموض قدّم قائمة مرقمة قصيرة (1. إرسال طرد 2. طلب من حِرفة 3. التسجيل كسائق 4. التسجيل كحرفي) وانتظر اختياره.
 - كشف نوايا التسجيل: إذا ذكر المستخدم أنه يصنع أو يبيع أو يملك ورشة أو حرفة (حلويات، خزف، خشب، خياطة...) فهو بائع محتمل — اشرح له فوراً خطوات "الانضمام كحرفي" من الملف الشخصي، ولا تستعلم عن حالة الطلبات. وإذا ذكر أنه يملك مركبة ويريد العمل، اشرح مسار "التسجيل كسائق" مع النوعين (نقل بضائع / تاكسي).
 - ممنوع اختراع أكواد طلبات أو أسعار أو أسماء منتجات؛ البيانات الحية تأتي من الأدوات فقط.
@@ -69,6 +70,27 @@ const FALLBACK_REPLY =
 
 // Returned only when EVERY provider in the chain failed.
 const BUSY_MESSAGE = 'أنا مشغول حالياً، يرجى إعادة المحاولة بعد قليل.';
+
+// --- Promotional welcome (role buttons) --------------------------------------
+
+// Unified promotional welcome. Telegram sends it with role BUTTONS; WhatsApp
+// (UltraMsg) sends it with numbered options appended by the webhook.
+export const WELCOME_MESSAGE =
+  'مرحباً بك في وصّلها! 🚚✨\n' +
+  'تطبيق جزائري يوصّل طرودك وبضائعك لكل الولايات، ويسوّق منتجات الحرفيين عبر متجر حِرفة.\n\n' +
+  'كيف تريد أن نخدمك اليوم؟';
+
+// Role choices shared by both channels (Telegram keyboard labels).
+export const ROLE_BUTTONS = ['🛍️ زبون', '🚕 سائق', '🎨 حرفي'] as const;
+
+// Greeting detector: first contact gets the STATIC promotional welcome
+// (fast, free, and consistent) instead of a generated AI reply.
+const GREETING_RE =
+  /^(مرحبا|مرحباً|مرحبتين|سلام|السلام|أهلا|اهلا|هلا|صباح الخير|مساء الخير|hi|hello|hey|start|salut|bonjour|bonsoir|coucou)[\s!!.،؟]*$/i;
+
+export function isGreeting(text: string): boolean {
+  return GREETING_RE.test(text.trim());
+}
 
 const toolDeclarations: FunctionDeclaration[] = [
   {

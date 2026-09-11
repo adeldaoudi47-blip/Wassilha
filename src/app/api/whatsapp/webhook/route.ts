@@ -9,7 +9,7 @@
 //   WHATSAPP_API_URL / WHATSAPP_API_TOKEN - UltraMsg instance (send + receive)
 //   GEMINI_API_KEY                        - Google AI Studio key (ai-agent.ts)
 import { NextRequest, NextResponse, after } from 'next/server';
-import { aiAgentReply } from '@/lib/ai-agent';
+import { aiAgentReply, isGreeting, WELCOME_MESSAGE, ROLE_BUTTONS } from '@/lib/ai-agent';
 import { sendWhatsAppMessage } from '@/lib/sms';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
@@ -127,6 +127,20 @@ export async function POST(req: NextRequest) {
   // Answer fast; the (slow) AI work happens after the response.
   after(async () => {
     try {
+      // Greetings get the STATIC promotional welcome. UltraMsg has no
+      // reliable WhatsApp buttons, so the three role choices are appended
+      // as numbered plain-text options.
+      if (isGreeting(text)) {
+        const options = ROLE_BUTTONS.map(
+          (label, i) => `${i + 1}) ${label.slice(label.indexOf(' ') + 1)}`
+        ).join('\n');
+        await sendWhatsAppMessage(
+          phone,
+          `${WELCOME_MESSAGE}\n${options}`
+        );
+        console.log('[WHATSAPP WEBHOOK] Welcome sent to', phone);
+        return;
+      }
       const reply = await aiAgentReply(text, phone);
       await sendWhatsAppMessage(phone, reply);
       console.log('[WHATSAPP WEBHOOK] Reply sent to', phone);

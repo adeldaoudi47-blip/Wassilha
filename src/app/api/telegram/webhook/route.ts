@@ -12,8 +12,8 @@
 //   TELEGRAM_WEBHOOK_SECRET  - optional; when set, the X-Telegram-Bot-Api-
 //                              Secret-Token header sent by Telegram must match.
 import { NextRequest, NextResponse, after } from 'next/server';
-import { aiAgentReply } from '@/lib/ai-agent';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { aiAgentReply, isGreeting } from '@/lib/ai-agent';
+import { sendTelegramMessage, sendTelegramWelcome } from '@/lib/telegram';
 
 type TelegramUpdate = {
   update_id?: number;
@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
   // Answer Telegram fast; the (slow) AI work happens after the response.
   after(async () => {
     try {
+      // Greetings get the STATIC promotional welcome with role buttons —
+      // fast, consistent, and no AI call needed.
+      if (isGreeting(text)) {
+        await sendTelegramWelcome(chatId);
+        console.log('[TELEGRAM WEBHOOK] Welcome sent to', chatId);
+        return;
+      }
       // The agent's getOrderStatus tool needs a Wassilha-registered phone;
       // on Telegram we only have the chat id. If the user asks about an
       // order, Gemini will ask for their phone in the chat and then call
