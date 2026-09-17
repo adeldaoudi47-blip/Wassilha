@@ -169,7 +169,7 @@ export function CustomerProfile() {
         />
       )}
 
-<      {/* ROLE VIEW SWITCH (return path): shown only when a driver/artisan
+      {/* ROLE VIEW SWITCH (return path): shown only when a driver/artisan
           is browsing in customer mode (viewMode === 'customer'). Tapping it
           restores their real dashboard — no DB role change involved. */}
       {viewMode === 'customer' && user && (user.role === 'driver' || user.role === 'artisan') && (
