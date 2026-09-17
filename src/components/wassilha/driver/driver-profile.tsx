@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, Bike, Star, MapPin, ShieldCheck, BadgeCheck, LogOut, Pencil, Loader2 } from 'lucide-react';
+import { Phone, Bike, Star, MapPin, ShieldCheck, BadgeCheck, LogOut, Pencil, Loader2, ShoppingBag } from 'lucide-react';
 import { useT } from '../use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -20,6 +20,7 @@ export function DriverProfile() {
   const { t, isAr } = useT();
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
+  const setViewMode = useAppStore((s) => s.setViewMode);
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -139,6 +140,16 @@ export function DriverProfile() {
           value={t.location}
         />
       </Card>
+
+      {/* ROLE VIEW SWITCH (UI-only): browse the app as a customer without
+          changing the driver role in the DB. Reversible from the customer
+          profile ("retour au mode chauffeur"). */}
+      <Button
+        onClick={() => setViewMode('customer')}
+                className="w-full bg-primary text-primary-foreground hover:opacity-90"
+      >
+        <ShoppingBag size={16} className="me-2" /> {t.switchToCustomer}
+      </Button>
 
       <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">
         <LogOut size={16} className="me-2" /> {t.logout}

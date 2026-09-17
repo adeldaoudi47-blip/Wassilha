@@ -3,7 +3,8 @@
 import { Home, ClipboardList, User, Bike, Wallet, LayoutDashboard, Users, Package, Tags, ShieldCheck, MapPin, CalendarClock, Hammer, Scissors, Store, ShoppingBag, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from './use-t';
-import { useNavStore } from '@/lib/store';
+import { useAppStore, useNavStore } from '@/lib/store';
+import { Button } from '@/components/ui/button';
 import { AppHeader } from './app-header';
 import type { Role } from '@/lib/types';
 
@@ -118,8 +119,32 @@ export function AppShell({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+    const { t } = useT();
+  const user = useAppStore((s) => s.user);
+  const viewMode = useAppStore((s) => s.viewMode);
+  const setViewMode = useAppStore((s) => s.setViewMode);
+  // Sticky Return Banner: always reachable. Shown only when a driver/artisan
+  // is browsing in customer mode (viewMode === 'customer'). Tapping it flips
+  // back to the real dashboard without any DB/session role change.
+  const inCustomerView =
+    viewMode === 'customer' && user && (user.role === 'driver' || user.role === 'artisan');
+  const returnLabel = user?.role === 'driver' ? t.switchToDriver : t.switchToArtisan;
+
   return (
     <div className="flex min-h-screen flex-col">
+      {inCustomerView && (
+        <div className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-primary/20 bg-primary/5 px-3 py-2.5 text-xs">
+          <span className="text-muted-foreground">{t.customerViewMode}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-primary text-primary hover:bg-primary/10"
+            onClick={() => setViewMode('default')}
+          >
+            {returnLabel}
+          </Button>
+        </div>
+      )}
       <AppHeader title={title} subtitle={subtitle} />
       <main className="wassilha-scroll mx-auto w-full max-w-3xl flex-1 px-4 py-4 pb-24">{children}</main>
       <BottomNav role={role} />

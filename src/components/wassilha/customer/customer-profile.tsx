@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers, Hammer } from 'lucide-react';
+import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers, Hammer, ArrowLeftRight } from 'lucide-react';
 import { useT } from '../use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -19,6 +19,8 @@ export function CustomerProfile() {
   const { t, isAr } = useT();
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
+  const viewMode = useAppStore((s) => s.viewMode);
+  const setViewMode = useAppStore((s) => s.setViewMode);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showArtisanApply, setShowArtisanApply] = useState(false);
@@ -165,6 +167,19 @@ export function CustomerProfile() {
             setUser(null);
           }}
         />
+      )}
+
+<      {/* ROLE VIEW SWITCH (return path): shown only when a driver/artisan
+          is browsing in customer mode (viewMode === 'customer'). Tapping it
+          restores their real dashboard — no DB role change involved. */}
+      {viewMode === 'customer' && user && (user.role === 'driver' || user.role === 'artisan') && (
+        <Button
+          onClick={() => setViewMode('default')}
+          className="w-full bg-primary text-primary-foreground hover:bg-brand-dark"
+        >
+          <ArrowLeftRight size={16} className="me-2" />
+          {user.role === 'driver' ? t.switchToDriver : t.switchToArtisan}
+        </Button>
       )}
 
 <Button onClick={handleLogout} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/5">

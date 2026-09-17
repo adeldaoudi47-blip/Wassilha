@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Package, Loader2, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, Loader2, Clock, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useT } from '../use-t';
-import { useNavStore } from '@/lib/store';
+import { useAppStore, useNavStore } from '@/lib/store';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -21,6 +21,7 @@ export function ArtisanDashboard() {
   const { t, isAr } = useT();
   const artisanTab = useNavStore((s) => s.artisanTab);
   const setArtisanTab = useNavStore((s) => s.setArtisanTab);
+  const setViewMode = useAppStore((s) => s.setViewMode);
   const [products, setProducts] = useState<CraftProductPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<CraftProductPublic | null>(null);
@@ -92,6 +93,16 @@ export function ArtisanDashboard() {
           {t.newOrder}
         </button>
       </div>
+
+      {/* ROLE VIEW SWITCH (UI-only): browse + order like a customer without
+          changing the artisan role in the DB. Reversible from the customer
+          profile ("retour au mode artisan"). */}
+      <Button
+        onClick={() => setViewMode('customer')}
+                className="w-full bg-primary text-primary-foreground hover:opacity-90"
+      >
+        <ShoppingBag size={16} className="me-2" /> {t.switchToCustomer}
+      </Button>
 
       {subTab === 'orders' ? (
         <ArtisanOrders />
