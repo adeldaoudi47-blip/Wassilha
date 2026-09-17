@@ -2,12 +2,19 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser, Lang, Role } from './types';
 
-// Persisted UI state: auth + language
+// Persisted UI state: auth + language + role-view toggle
+// `viewMode` is a PURELY CLIENT-SIDE view switch: a driver/artisan can
+// browse the app with the customer UI without user.role changing in the
+// DB or in the session (see setViewMode below).
+type ViewMode = 'default' | 'customer';
+
 interface AppState {
   user: AuthUser | null;
   lang: Lang;
+  viewMode: ViewMode;
   setLang: (lang: Lang) => void;
   setUser: (user: AuthUser | null) => void;
+  setViewMode: (mode: ViewMode) => void;
   logout: () => void;
 }
 
@@ -16,9 +23,13 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       user: null,
       lang: 'ar',
+      viewMode: 'default',
       setLang: (lang) => set({ lang }),
       setUser: (user) => set({ user }),
-      logout: () => set({ user: null }),
+      setViewMode: (viewMode) => set({ viewMode }),
+      // Logging out resets the view so the next session opens on the
+      // user's real role dashboard.
+      logout: () => set({ user: null, viewMode: 'default' }),
     }),
     { name: 'wassilha-store' }
   )

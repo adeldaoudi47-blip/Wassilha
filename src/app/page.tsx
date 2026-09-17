@@ -27,11 +27,13 @@ import { AdminArtisanApplications } from '@/components/wassilha/admin/admin-arti
 import { AdminFleetMap } from '@/components/wassilha/admin/admin-fleet-map';
 import { ArtisanDashboard } from '@/components/wassilha/craft/artisan-dashboard';
 import { CraftCart } from '@/components/wassilha/craft/craft-cart';
+import type { Role } from '@/lib/types';
 
 export default function Home() {
   const { t, isRtl } = useT();
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
+  const viewMode = useAppStore((s) => s.viewMode);
   const customerTab = useNavStore((s) => s.customerTab);
   const driverTab = useNavStore((s) => s.driverTab);
   const adminTab = useNavStore((s) => s.adminTab);
@@ -69,11 +71,20 @@ export default function Home() {
   }
 
   // Render based on role + active tab
+  //
+  // ROLE VIEW SWITCH (UI-only): a driver/artisan who flipped `viewMode` to
+  // 'customer' browses the app with the CUSTOMER ui + bottom nav. This never
+  // touches user.role in the DB or in the session — it is a pure view toggle.
+  const effectiveRole: Role =
+    (user.role === 'driver' || user.role === 'artisan') && viewMode === 'customer'
+      ? 'customer'
+      : user.role;
+
   let title = t.home;
   let subtitle: string | undefined;
   let content: React.ReactNode = null;
 
-  if (user.role === 'customer') {
+  if (effectiveRole === 'customer') {
     if (customerTab === 'home') { title = t.home; subtitle = t.tagline; content = <CustomerHome />; }
     else if (customerTab === 'hirfa') { title = t.hirfa; subtitle = t.hirfaMarketplace; content = <HirfaHome />; }
     else if (customerTab === 'track') { title = t.track; content = <CustomerTrack />; }
@@ -82,7 +93,7 @@ export default function Home() {
     // TRIP OFFERS: dedicated tab for browsing driver-published offers.
     else if (customerTab === 'offers') { title = t.tripOffers; content = <CustomerOffers />; }
     else if (customerTab === 'cart') { title = t.cart; content = <CraftCart />; }
-  } else if (user.role === 'driver') {
+  } else if (effectiveRole === 'driver') {
     if (driverTab === 'requests') { title = t.incomingRequests; subtitle = t.location; content = <DriverRequests />; }
     else if (driverTab === 'trips') { title = t.myTrips; content = <DriverTrips />; }
     else if (driverTab === 'earnings') { title = t.earnings; content = <DriverEarnings />; }
@@ -98,7 +109,7 @@ export default function Home() {
     else if (adminTab === 'drivers') { title = t.drivers; content = <AdminDrivers />; }
     else if (adminTab === 'orders') { title = t.orders; content = <AdminOrders />; }
     else if (adminTab === 'pricing') { title = t.pricing; content = <AdminPricing />; }
-  } else if (user.role === 'artisan') {
+  } else if (effectiveRole === 'artisan') {
     if (artisanTab === 'dashboard') { title = t.artisanDashboard; subtitle = t.hirfa; content = <ArtisanDashboard />; }
     else if (artisanTab === 'products') { title = t.myProducts; content = <ArtisanDashboard />; }
     else if (artisanTab === 'orders') { title = t.newOrder; content = <ArtisanDashboard />; }
@@ -106,7 +117,7 @@ export default function Home() {
   }
 
   return (
-    <AppShell role={user.role} title={title} subtitle={subtitle}>
+    <AppShell role={effectiveRole} title={title} subtitle={subtitle}>
       {content}
     </AppShell>
   );
