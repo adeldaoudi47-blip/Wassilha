@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { z } from 'zod';
 import { requireActiveArtisan } from '@/lib/auth';
 import { publicCraftProductSelect } from '@/lib/dto';
+import { allocateProductSlug } from '@/lib/slug-allocate';
 
 // GET /api/craft/products
 // Public browse endpoint for the HIRFA marketplace.
@@ -131,8 +132,12 @@ export async function POST(req: NextRequest) {
         isFeatured: parsed.data.isFeatured,
       },
     });
-    return NextResponse.json(product, { status: 201 });
+    // Stable public product slug — generated ONCE at creation, unique within
+    // this store, and never regenerated on rename (URL stability).
+    const slug = await allocateProductSlug(parsed.data.nameAr, gate.artisanId, product.id);
+    await db.craftProduct.update({ where: { id: product.id }, data: { slug } });
+    return NextResponse.json({ ...product, slug }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
   }
-  };
+}

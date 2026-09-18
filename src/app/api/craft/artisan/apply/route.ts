@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { normalizeAlgerianPhone } from '@/lib/phone';
+import { allocateStoreSlug } from '@/lib/slug-allocate';
 
 // POST /api/craft/artisan/apply
 //
@@ -99,6 +100,10 @@ export async function POST(req: NextRequest) {
         appliedAt: new Date(),
       },
     });
+    // Stable public store slug — generated ONCE at apply time, never
+    // regenerated (renaming the store later does NOT change the URL).
+    const slug = await allocateStoreSlug(displayName, created.id);
+    await db.artisanProfile.update({ where: { id: created.id }, data: { slug } });
       console.log('[Craft Apply] Created artisan application:', created.id);
     return NextResponse.json({ ok: true, status: 'pending' }, { status: 201 });
   } catch (e) {

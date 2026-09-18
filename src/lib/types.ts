@@ -312,6 +312,13 @@ export interface CraftOrderListResponse {
   total: number;
 }
 
+// HIRFA Phase 2B: the checkout splits a multi-store cart into ONE order per
+// store (a CraftOrder has a single artisanId). Single-store checkouts get an
+// array of exactly one element — the client treats both cases the same way.
+export interface CraftOrderCreateResponse {
+  orders: CraftOrderPublic[];
+}
+
 export interface CraftArtisanApplication {
   id: string;
   userId: string;
@@ -326,3 +333,94 @@ export interface CraftArtisanApplication {
   area: { nameAr: string; nameFr: string | null } | null;
   user: { id: string; name: string; phone: string; avatar: string | null };
 }
+
+// ---------------------------------------------------------------------------
+// HIRFAA Phase 1 (Marketplace): public store-front shapes (no auth required).
+// These mirror the dto.ts selects: NO userId / phone / coords / owner id.
+// ---------------------------------------------------------------------------
+export interface PublicArtisanTile {
+  id: string;
+  slug: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  rating: number;
+  totalSales: number;
+  productCount: number;
+  area: { nameAr: string; nameFr: string | null } | null;
+}
+
+export interface PublicStoreFront {
+  id: string;
+  slug: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  bioAr: string | null;
+  bioFr: string | null;
+  rating: number;
+  totalSales: number;
+  area: { nameAr: string; nameFr: string | null } | null;
+  products: PublicProduct[];
+  productCount: number;
+}
+
+export interface PublicProduct {
+  id: string;
+  slug: string | null;
+  nameAr: string;
+  nameFr: string | null;
+  price: number;
+  images: string[];
+  stock: number;
+  isFeatured: boolean;
+  createdAt: string;
+  category: { id: string; nameAr: string; nameFr: string | null; slug: string | null } | null;
+  artisan: PublicArtisanTile;
+}
+
+export interface PublicProductListResponse {
+  products: PublicProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  // HIRFA Phase 2A: the API echoes the normalised filters it applied, so a
+  // client can render exactly what the server filtered on.
+  filters?: {
+    q: string;
+    category: string;
+    area: string;
+    priceMin: number | null;
+    priceMax: number | null;
+    sort: string;
+  };
+}
+
+export type PublicStoreTile = PublicArtisanTile;
+
+// HIRFAA Phase 1: the logged-in artisan's own store (dashboard "متجري" card).
+export interface MyStoreInfo {
+  id: string;
+  slug: string | null;
+  displayName: string;
+  status: string;
+  avatarUrl: string | null;
+}
+
+// HIRFA Phase 2A: REAL aggregate counts for the seller's own store, straight
+// from CraftAnalyticsEvent. A fresh store legitimately sees zeros.
+export interface CraftStoreStats {
+  storeViews: number;
+  productViews: number;
+  shares: number;
+  copies: number;
+}
+
+// HIRFA Phase 2A: a public delivery area tile (search "Area" filter).
+export interface CraftAreaPublic {
+  id: string;
+  nameAr: string;
+  nameFr: string | null;
+  slug: string;
+  sortOrder: number;
+}
+

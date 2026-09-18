@@ -25,6 +25,15 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // HIRFA Phase 1: product/store images are served from Vercel Blob.
+  // Without this, `next/image` throws "hostname is not configured" and the
+  // public marketplace pages (/craft) SSR-crash with a 500.
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "**.vercel-storage.com" },
+      { protocol: "https", hostname: "**.public.blob.vercel-storage.com" },
+    ],
+  },
   async headers() {
     return [
       {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { getSession } from '@/lib/auth';
 import { publicCraftOrderSelect } from '@/lib/dto';
 
@@ -46,8 +47,16 @@ export async function POST(req: NextRequest) {
     }
     const productIds = Array.from(merged.keys());
 
-    // Transaction: verify stock, create order, decrement stock
-    const order = await db.$transaction(async (tx) => {
+    // Transaction: verify stock, create order(s), decrement stock.
+    //
+    // HIRFA Phase 2B: the public cart may legitimately hold products from
+    // SEVERAL stores. A CraftOrder belongs to ONE artisan (the schema models a
+    // single artisanId per order), so items are grouped by their owning artisan
+    // and ONE order is created per store. Before this, a multi-store checkout
+    // attributed the whole cart to the FIRST product's artisan: the other
+    // seller's stock was decremented but they never saw the order. Everything
+    // stays inside one transaction, so a failure leaves no partial state.
+    const created = await db.$transaction(async (tx) => {
       const products = await tx.craftProduct.findMany({
         where: { id: { in: productIds }, isActive: true, artisan: { status: 'active' } },
         select: { id: true, price: true, stock: true, artisanId: true, nameAr: true },
@@ -61,50 +70,61 @@ export async function POST(req: NextRequest) {
         if (!product || product.stock < qty) throw new Error('insufficientStock');
       }
 
-      // Compute totalPrice server-side from DB prices
-      let totalPrice = 0;
+      // Group line items by the artisan who actually owns each product.
+      const byArtisan = new Map<string, Map<string, number>>();
       for (const [pid, qty] of merged) {
-        totalPrice += stockMap.get(pid)!.price * qty;
+        const owner = stockMap.get(pid)!.artisanId;
+        if (!byArtisan.has(owner)) byArtisan.set(owner, new Map());
+        byArtisan.get(owner)!.set(pid, qty);
       }
 
-      // Generate unique order code
-      let code = generateOrderCode();
-      let attempts = 0;
-      while (await tx.craftOrder.count({ where: { code } }) > 0) {
-        code = generateOrderCode();
-        if (++attempts > 10) throw new Error('codeGenFailed');
-      }
+      const orders: Prisma.CraftOrderGetPayload<{ select: typeof publicCraftOrderSelect }>[] = [];
+      for (const [artisanId, lineItems] of byArtisan) {
+        // Compute totalPrice server-side from DB prices for THIS store only.
+        let totalPrice = 0;
+        for (const [pid, qty] of lineItems) totalPrice += stockMap.get(pid)!.price * qty;
 
-      const order = await tx.craftOrder.create({
-        data: {
-          code,
-          customerId: session.id,
-          artisanId: products[0].artisanId,
-          status: 'pending',
-          deliveryOption,
-          totalPrice: Math.round(totalPrice),
-          notes: notes ?? null,
-          items: {
-            create: Array.from(merged).map(([pid, qty]) => ({
-              productId: pid,
-              quantity: qty,
-              unitPrice: stockMap.get(pid)!.price,
-            })),
+        // Generate unique order code
+        let code = generateOrderCode();
+        let attempts = 0;
+        while (await tx.craftOrder.count({ where: { code } }) > 0) {
+          code = generateOrderCode();
+          if (++attempts > 10) throw new Error('codeGenFailed');
+        }
+
+        const order = await tx.craftOrder.create({
+          data: {
+            code,
+            customerId: session.id,
+            artisanId,
+            status: 'pending',
+            deliveryOption,
+            totalPrice: Math.round(totalPrice),
+            notes: notes ?? null,
+            items: {
+              create: Array.from(lineItems).map(([pid, qty]) => ({
+                productId: pid,
+                quantity: qty,
+                unitPrice: stockMap.get(pid)!.price,
+              })),
+            },
           },
-        },
-        select: publicCraftOrderSelect,
-      });
+          select: publicCraftOrderSelect,
+        });
+        orders.push(order);
+      }
 
-      // Decrement stock
+      // Decrement stock once per product (after every order is created, so a
+      // failure between stores rolls the whole transaction back).
       for (const [pid, qty] of merged) {
         await tx.craftProduct.update({ where: { id: pid }, data: { stock: { decrement: qty } } });
       }
 
-      return order;
+      return orders;
     });
 
-    void notifyArtisanNewOrder(order.artisan.id, order.code);
-    return NextResponse.json(order, { status: 201 });
+    for (const o of created) void notifyArtisanNewOrder(o.artisan.id, o.code);
+    return NextResponse.json({ orders: created }, { status: 201 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === 'productNotFound') return NextResponse.json({ error: 'productNotFound' }, { status: 400 });

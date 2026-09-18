@@ -18,12 +18,21 @@ export function CustomerCraftOrders() {
   const [ratingOrderId, setRatingOrderId] = useState<string | null>(null);
   const [ratingOrderArtisan, setRatingOrderArtisan] = useState<string | null>(null);
 
-  const load = () => {
-    setLoading(true);
+  const fetchOrders = () => {
     api.getCraftOrders().then((res) => setOrders(res.orders)).catch(() => toast.error(t.fetchError)).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  // Retry path (after a rating submit): resets the spinner synchronously.
+  const load = () => {
+    setLoading(true);
+    fetchOrders();
+  };
+
+  useEffect(() => {
+    // Initial fetch: state updates happen inside promise callbacks only
+    // (no synchronous setState in the effect body).
+    fetchOrders();
+  }, []);
 
   const statusColor = (s: string) => {
     const colors: Record<string, string> = { pending: 'bg-amber-100 text-amber-800', confirmed: 'bg-sky-100 text-sky-800', ready: 'bg-emerald-100 text-emerald-800', delivered: 'bg-green-100 text-green-800', cancelled: 'bg-red-100 text-red-800' };

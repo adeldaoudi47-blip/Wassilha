@@ -143,10 +143,21 @@ export const tripOfferDriverSelect = {
 
 
 // ---------------------------------------------------------------------------
-// HIRFA (craft) - public projections. Artisan contact phone, owning user id
+// HIRFA marketplace (craft) - public projections. Artisan contact phone, owning user id
 // and exact workshop coords/address are intentionally excluded: customers
 // see the neighbourhood (area name) only.
+//
+// HIRFAA Phase 1: added craftCategorySelect — the category taxonomy projection
+// used by the PUBLIC marketplace/storefront. Mirrors the fields already exposed
+// by the existing CraftCategory model (id/nameAr/nameFr/slug/sortOrder).
 // ---------------------------------------------------------------------------
+export const craftCategorySelect = {
+  id: true,
+  nameAr: true,
+  nameFr: true,
+  slug: true,
+  sortOrder: true,
+} as const;
 export const publicArtisanSelect = {
   id: true,
   displayName: true,
@@ -216,6 +227,51 @@ export const publicCraftProductSelect = {
   stock: true,
   isFeatured: true,
   createdAt: true,
-  category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
+    category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
   artisan: { select: publicArtisanSelect },
+} as const;
+
+// ---------------------------------------------------------------------------
+// HIRFAA Phase 1 (Marketplace): public projections for the store-front.
+// Reuses the existing privacy posture of publicArtisanSelect/publicCraftProductSelect:
+// NEVER returns userId, artisan phone, exact coordinates, or owner id.
+// bioAr/bioFr are marketing text (collected at apply-time) and are safe to expose.
+// ---------------------------------------------------------------------------
+export const publicArtisanStoreSelect = {
+  id: true,
+  displayName: true,
+  avatarUrl: true,
+  bioAr: true,
+  bioFr: true,
+  slug: true,
+  rating: true,
+  totalSales: true,
+  area: { select: { nameAr: true, nameFr: true } },
+} as const;
+
+// A product tile as surfaced on the public store-front / marketplace.
+// Same fields as publicCraftProductSelect PLUS the public slugs needed for
+// clean URLs + store attribution without leaking PII.
+export const marketplaceProductSelect = {
+  id: true,
+  slug: true,
+  nameAr: true,
+  nameFr: true,
+  price: true,
+  images: true,
+  stock: true,
+  isFeatured: true,
+  createdAt: true,
+  category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
+  artisan: {
+    select: {
+      id: true,
+      slug: true,
+      displayName: true,
+      avatarUrl: true,
+      rating: true,
+      totalSales: true,
+      area: { select: { nameAr: true, nameFr: true } },
+    },
+  },
 } as const;

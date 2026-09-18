@@ -4,6 +4,7 @@ import type {
   AdminStats,
   AuthUser,
   DriverProfile,
+  MyStoreInfo,
   Order,
   PricingConfig,
   TripOffer,
@@ -13,8 +14,15 @@ import type {
   CraftProductPublic,
   CraftArtisanApplication,
   CraftOrderPublic,
+  PublicStoreFront,
+  PublicProduct,
+  PublicProductListResponse,
+  PublicStoreTile,
   CraftOrderListResponse,
+  CraftOrderCreateResponse,
   CraftOrderStatus,
+  CraftStoreStats,
+  CraftAreaPublic,
 } from './types';
 
 async function req<T>(
@@ -473,7 +481,7 @@ export const api = {
     dropoffLat?: number;
     dropoffLng?: number;
     notes?: string;
-  }) => req<CraftOrderPublic>("/api/craft/orders", { method: "POST", body: JSON.stringify(data) }),
+  }) => req<CraftOrderCreateResponse>("/api/craft/orders", { method: "POST", body: JSON.stringify(data) }),
   getCraftOrders: () =>
     req<CraftOrderListResponse>("/api/craft/orders"),
   updateCraftOrderStatus: (id: string, status: CraftOrderStatus, dropoffAddress?: string, dropoffLat?: number, dropoffLng?: number) =>
@@ -488,4 +496,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ score, comment }),
     }),
+
+  // HIRFAA Phase 1 (Marketplace): PUBLIC store-front queries.
+  // These hit the read-only public endpoints (no auth required).
+  getStoreFront: (slug: string) =>
+    req<PublicStoreFront>(`/api/craft/stores/${encodeURIComponent(slug)}`),
+  getProductBySlug: (storeSlug: string, productSlug: string) =>
+    req<PublicProduct>(`/api/craft/stores/${encodeURIComponent(storeSlug)}/product/${encodeURIComponent(productSlug)}`),
+  listMarketplaceProducts: (params?: { featured?: true; page?: number; pageSize?: number }) => {
+    const qp = new URLSearchParams();
+    if (params?.featured) qp.set('featured', '1');
+    if (params?.page) qp.set('page', String(params.page));
+    if (params?.pageSize) qp.set('pageSize', String(params.pageSize));
+    const qs = qp.toString();
+    return req<PublicProductListResponse>(`/api/craft/marketplace/products${qs ? `?${qs}` : ''}`);
+  },
+  listMarketplaceStores: () =>
+    req<PublicStoreTile[]>(`/api/craft/marketplace/stores`),
+
+  // HIRFAA Phase 1: the logged-in artisan's own store info (for the
+  // "متجري / My store" share section in the dashboard).
+  getMyStore: () => req<MyStoreInfo>("/api/craft/artisan/me"),
+  // HIRFA Phase 2A: the artisan's own REAL analytics totals (never faked).
+  getMyStoreStats: () => req<CraftStoreStats>("/api/craft/artisan/me/stats"),
+  // HIRFA Phase 2A: public delivery areas for the search "Area" filter.
+  getCraftAreas: () => req<CraftAreaPublic[]>("/api/craft/areas"),
+  // HIRFA Phase 2A: anonymous event tracking (page views / shares). Fire and
+  // forget at the call sites; the endpoint is PII-free.
+  trackCraftEvent: (payload: { type: string; storeId?: string; productId?: string }) =>
+    req<{ ok: boolean }>("/api/craft/analytics", { method: "POST", body: JSON.stringify(payload) }),
 };

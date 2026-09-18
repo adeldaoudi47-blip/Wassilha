@@ -490,7 +490,13 @@ model ArtisanProfile {
   id          String        @id @default(cuid())
   userId      String        @unique
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName String
+    displayName String
+  // Public, URL-safe, stable store slug. Generated ONCE (on apply / backfill)
+  // and NEVER regenerated from displayName changes, so a public store URL
+  // (/craft/<slug>) stays stable for life. NULL is allowed during the brief
+  // backfill window; the app treats NULL as fall-back to id-based URL so it
+  // never breaks for existing stores before they are backfilled.
+    slug        String?         @unique
   bioAr       String?       @db.Text
   bioFr       String?       @db.Text
   // Contact number shown to customers (falls back to user.phone).
@@ -517,6 +523,10 @@ model ArtisanProfile {
   products    CraftProduct[]
   craftOrders CraftOrder[]
   craftReviews CraftReview[]
+  // HIRFA Phase 2A: anonymous marketplace analytics events scoped to this
+  // store (store views, shares, link copies). artisanId is nullable on the
+  // event side so a product/store row deletion never orphans an event row.
+  analyticsEvents CraftAnalyticsEvent[]
 
   @@index([status])
 }
@@ -539,17 +549,47 @@ model CraftProduct {
   images        String[]
   // Handmade stock is often a single piece; the API layer enforces
   // stock >= 0 and decrements it on order confirmation.
-  stock         Int            @default(1)
+    stock         Int            @default(1)
   isActive      Boolean        @default(true)
   isFeatured    Boolean        @default(false)
+  // Public, URL-safe, stable product slug. Generated ONCE (backfill / on create)
+  // and never regenerated from name changes, so product URLs stay stable.
+  // Unique within the artisan's shop; NULL is allowed during backfill window.
+  slug          String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   items         CraftOrderItem[]
+  // HIRFA Phase 2A: anonymous product-view / share events for this product.
+  analyticsEvents CraftAnalyticsEvent[]
 
-  @@index([artisanId])
+    @@index([artisanId])
+  @@index([artisanId, slug])
   @@index([categoryId, isActive])
   @@index([isActive])
+}
+
+/// HIRFA Phase 2A — anonymous, PII-free marketplace analytics.
+/// One row per tracked interaction: a store view, a product view, a share
+/// click, or a "copy link" click. artisanId is set for every event we track
+/// today (it identifies the store the event is about); productId is only set
+/// for product-level events. No user ids, phones, IPs or cookies are stored.
+model CraftAnalyticsEvent {
+  id        String   @id @default(cuid())
+  // The store the event is about.
+  artisanId String?
+  artisan   ArtisanProfile? @relation(fields: [artisanId], references: [id], onDelete: Cascade)
+  // Set for product_view / product share events, null for store-level events.
+  productId String?
+  product   CraftProduct? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // store_view | product_view | share | copy_link (free String, mirroring the
+  // status-column convention used elsewhere in this schema).
+  eventType String
+  createdAt DateTime @default(now())
+
+  @@index([artisanId, eventType])
+  @@index([productId, eventType])
+  @@index([eventType, createdAt])
 }
 
 /// A customer order placed on the HIRFA marketplace. Deliberately

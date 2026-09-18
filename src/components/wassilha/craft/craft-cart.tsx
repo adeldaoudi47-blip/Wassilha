@@ -43,20 +43,24 @@ export function CraftCart() {
     if (items.length === 0) return;
     setSubmitting(true);
     try {
-      const order = await api.createCraftOrder({
+      const res = await api.createCraftOrder({
         items: items.map((i) => ({ productId: i.productId, quantity: i.qty })),
         deliveryOption: 'pickup',
       });
       clear();
-      toast.success(t.orderPlaced, { description: t.orderPlacedMsg });
-      // Future: navigate to order tracking
-      console.log('Order placed:', order.code);
+      // Phase 2B: the server splits a multi-store cart into one order per store.
+      const n = res.orders?.length ?? 1;
+      toast.success(t.orderPlaced, {
+        description: n > 1
+          ? (isAr ? `تم إنشاء ${n} طلبات لكل متجر على حدة` : `${n} commandes créées, une par boutique`)
+          : t.orderPlacedMsg,
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === 'insufficientStock' || msg.includes('insufficientStock')) {
         toast.error(t.insufficientStock);
       } else if (msg === 'productNotFound') {
-        toast.error(isAr ? 'منتج غير مouvez pas' : 'Produit introuvable');
+        toast.error(isAr ? 'المنتج غير موجود' : 'Produit introuvable');
       } else {
         toast.error(isAr ? 'فشل تقديم الطلب' : 'Échec de la commande');
       }
