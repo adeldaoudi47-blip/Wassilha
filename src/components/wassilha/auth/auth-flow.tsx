@@ -47,6 +47,24 @@ const OTP_LENGTH = 6;
 const ENABLE_DEMO_LOGIN =
   process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
 
+// SAFE REDIRECT: the cart's "login to buy" CTA passes ?redirect=/craft/cart
+// so a guest can resume checkout right after authenticating. Only same-
+// origin absolute paths are honoured: anything with a scheme (https://evil),
+// a protocol-relative host (//evil), or a backslash is rejected, so the OTP
+// flow can never be turned into an open redirect by a crafted link.
+function readSafeRedirect(): string | null {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('redirect');
+  if (!raw) return null;
+  // Block anything that could escape the origin.
+  if (/:\/\//.test(raw) || raw.startsWith('//') || raw.startsWith('\\')) {
+    return null;
+  }
+  // Must be an absolute path on this origin.
+  if (!raw.startsWith('/')) return null;
+  return raw;
+}
+
 export function AuthFlow() {
   const { t, isAr } = useT();
   const setUser = useAppStore((s) => s.setUser);
@@ -257,15 +275,12 @@ export function AuthFlow() {
         userPhone: result.user?.phone,
       });
 
-      if (result.requiresSignup) {
-        // Fresh account: EVERY new user registers as a customer. The OTP
-        // screen no longer carries a role selector — driver / artisan
-        // registration happens later from the customer profile screen.
-        console.log("[AUTH FLOW] requiresSignup=true; routing to customer 'signup'");
-        setOtp('');
-        setStep('signup');
-        return;
-      }
+      // NOTE (auto-create): /api/auth/verify-otp no longer returns
+      // `requiresSignup` — a phone that passes OTP is provisioned as an
+      // active customer server-side (see that route). So the only way out
+      // of the OTP screen now is either a logged-in user or the pending /
+      // rejected driver states below. The legacy `setStep('signup')`
+      // branch was removed along with the signup screen.
 
       // Driver self-registration flow: existing user is a pending/rejected
       // driver. The server refused to issue a session and told us the
@@ -282,6 +297,20 @@ export function AuthFlow() {
 
       if (!result.user) throw new Error('Authenticated user missing');
       setUser(result.user);
+
+      // Direct login: the OTP screen is the whole auth flow now (no signup
+      // step in between), so on success we drop the user straight into the
+      // app. `page.tsx` renders <AuthFlow/> only while there is no session
+      // user, so committing the user here flips the UI to the home screen.
+      // If the caller passed a safe return URL (e.g. the cart "login to
+      // buy" CTA sends ?redirect=/craft/cart), honour it after login.
+      const redirectTo = readSafeRedirect();
+      if (redirectTo) {
+        // Full-page navigation so the target route (which may be a
+        // separate server-rendered page like /craft/cart) boots cleanly.
+        window.location.href = redirectTo;
+        return;
+      }
 
       toast.success(
         isAr
@@ -583,8 +612,11 @@ export function AuthFlow() {
     setLoading(true);
     try {
       const result = await api.verifyOtp(forgotPhone, otp);
-      if (result.requiresSignup) {
-        toast.error(isAr ? 'Account not found' : 'Compte non trouve');
+      if (result.requiresSignup || result.created) {
+        // The phone is not tied to any account. verify-otp auto-creates one
+        // for the login flow, but this is the password-RESET path — there is
+        // nothing to reset on a brand-new account, so refuse as before.
+        toast.error(isAr ? 'الحساب غير موجود' : 'Compte non trouvé');
         return;
       }
       if (!result.user) throw new Error('Missing user');

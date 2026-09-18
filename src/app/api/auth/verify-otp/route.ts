@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { setPhoneVerification, setSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -142,12 +142,73 @@ export async function POST(req: NextRequest) {
           phone,
         });
       }
-      // New user (or pre-signup incomplete customer) — go to signup.
+
+      // AUTO-CREATE / ACTIVATE (signup screen removed): the caller has just
+      // proven they control this phone with a valid 6-digit OTP — the same
+      // proof of ownership the legacy `complete-signup` endpoint relied on
+      // (it read the phone from the verification cookie this route sets
+      // just below). So instead of returning `requiresSignup: true` and
+      // pushing the customer to an email/password screen, provision the
+      // account right here:
+      //   role          = "customer" (FORCED server-side; never trusted from
+      //                              the request body — same rule as
+      //                              complete-signup / apply-driver)
+      //   accountStatus = "active"   (a verified phone IS the activation)
+      //   phoneVerified = true
+      // Two sub-cases share this branch:
+      //   - brand-new phone                    -> CREATE
+      //   - pre-existing incomplete customer   -> ACTIVATE in place
+      //     (the phone already exists in the DB, so a plain `create` would
+      //      trip the @unique constraint; we update the existing row
+      //      instead, keeping its id/name)
+      // SECURITY: an existing `driver` never reaches here — the branch
+      // above already returned for them.
+      const record =
+        user
+          ? await db.user.update({
+              where: { id: user.id },
+              data: {
+                // Honour a name typed on the phone screen when present;
+                // otherwise keep whatever the row already has.
+                name:
+                  typeof name === 'string' && name.trim().length > 0
+                    ? name.trim()
+                    : user.name,
+                accountStatus: 'active',
+                phoneVerified: true,
+              },
+            })
+          : await db.user.create({
+              data: {
+                phone,
+                name: typeof name === 'string' && name.trim().length > 0 ? name.trim() : '',
+                // SECURITY: forced by the server.
+                role: 'customer',
+                accountStatus: 'active',
+                phoneVerified: true,
+              },
+            });
+
+      // Keep the phone-verification cookie consistent with the legacy
+      // behaviour: it is still what the "upgrade to driver" flow reads
+      // later (see /api/auth/apply-driver, gate A).
       await setPhoneVerification(phone);
-      return NextResponse.json({
-        requiresSignup: true,
-        phone,
-      });
+      await setSession(record.id);
+
+      const autoUser: AuthUser = {
+        id: record.id,
+        phone: record.phone,
+        name: record.name,
+        role: record.role as Role,
+        avatar: record.avatar,
+      };
+
+      // `created` tells the caller this row was just provisioned. The login
+      // flow ignores it; the "forgot password" flow uses it to keep the
+      // original "account not found" UX for unknown phones instead of
+      // silently creating + logging in a brand-new account through the
+      // reset screen.
+      return NextResponse.json({ user: autoUser, created: !user });
     }
 
     await setSession(user.id);

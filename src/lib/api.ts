@@ -71,6 +71,10 @@ export const api = {
     req<{
       user?: AuthUser;
       requiresSignup?: boolean;
+      // Set by /api/auth/verify-otp when it just provisioned the account
+      // (auto-create, signup screen removed). The login flow ignores it;
+      // the "forgot password" flow uses it to keep refusing unknown phones.
+      created?: boolean;
       phone?: string;
       // Set by /api/auth/verify-otp when the phone belongs to a driver whose
       // application has not yet been approved. The frontend uses these flags

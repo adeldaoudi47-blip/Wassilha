@@ -1,23 +1,54 @@
 'use client';
 
-import { Minus, Plus, ShoppingBag, Trash2, Loader2 } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Trash2, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useT } from '../use-t';
 import { useCraftCart } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { AuthUser } from '@/lib/types';
 
 // HIRFA (P6): customer cart & checkout. Displays cart items from the
 // client-side Zustand store, lets the customer adjust quantity or remove
 // items, then calls POST /api/craft/orders to place the order. The server
 // recomputes all prices and verifies stock (OWASP V7).
+//
+// GUEST CHECKOUT GUARD: placing an order requires a session (the API
+// resolves the customer from the session cookie, not from the cart
+// payload). The component therefore checks /api/auth/me on mount; while
+// the check is in flight we keep the checkout button disabled, and if no
+// session exists we render the "please log in" CTA instead of the pay
+// button. The login link carries ?redirect=/craft/cart so the buyer lands
+// back here the moment their OTP succeeds.
 export function CraftCart() {
   const { t, isAr } = useT();
   const items = useCraftCart((s) => s.items);
   const removeItem = useCraftCart((s) => s.removeItem);
   const clear = useCraftCart((s) => s.clear);
   const [submitting, setSubmitting] = useState(false);
+  // Session state: 'checking' while /api/auth/me is in flight, then the
+  // resolved user or null (guest). Kept local: the cart is also embedded in
+  // the logged-in SPA tab AND on the public /craft/cart page, so we cannot
+  // assume the parent already booted the auth state.
+  const [me, setMe] = useState<AuthUser | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .me()
+      .then(({ user }) => {
+        if (!cancelled) setMe(user);
+      })
+      .catch(() => {
+        // Network/API failure: fail closed (treat as guest) so checkout is
+        // never enabled without a verified session.
+        if (!cancelled) setMe(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const adjustQty = (productId: string, delta: number) => {
     const item = items.find((i) => i.productId === productId);
@@ -41,6 +72,9 @@ export function CraftCart() {
 
   const handleCheckout = async () => {
     if (items.length === 0) return;
+    // Defense in depth: the UI hides the button for guests, but the order
+    // API resolves the customer from the session — never trust the button.
+    if (!me) return;
     setSubmitting(true);
     try {
       const res = await api.createCraftOrder({
@@ -134,14 +168,46 @@ export function CraftCart() {
       </div>
 
       {/* Checkout */}
-      <Button
-        onClick={handleCheckout}
-        disabled={submitting}
-        className="h-12 w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-700"
-      >
-        {submitting && <Loader2 size={16} className="me-1 animate-spin" />}
-        {t.checkout}
-      </Button>
+      {me === null ? (
+        // GUEST: no session. Orders are keyed to a session customer, so we
+        // block checkout and funnel the buyer through the (now signup-free)
+        // phone-OTP login, sending them back to the cart afterwards.
+        <div className="space-y-3">
+          <div
+            role="alert"
+            className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            {isAr
+              ? 'يرجى تسجيل الدخول لإتمام الطلب'
+              : 'Veuillez vous connecter pour finaliser la commande'}
+          </div>
+          <a href="/?redirect=/craft/cart" className="block">
+            <Button
+              className="h-12 w-full rounded-2xl bg-primary text-sm font-extrabold text-white"
+              size="lg"
+            >
+              <LogIn size={16} className="me-2" />
+              {isAr ? 'تسجيل الدخول / Se connecter' : 'Se connecter'}
+            </Button>
+          </a>
+        </div>
+      ) : (
+        <Button
+          onClick={handleCheckout}
+          // Disabled while the session check is in flight (me === undefined)
+          // or while the order is submitting — checkout must never be
+          // reachable without a verified session.
+          disabled={submitting || me === undefined}
+          className="h-12 w-full rounded-2xl bg-emerald-600 text-sm font-extrabold text-white hover:bg-emerald-700"
+        >
+          {submitting && <Loader2 size={16} className="me-1 animate-spin" />}
+          {me === undefined
+            ? isAr
+              ? 'جارٍ التحقق…'
+              : 'Vérification…'
+            : t.checkout}
+        </Button>
+      )}
     </div>
   );
 }
