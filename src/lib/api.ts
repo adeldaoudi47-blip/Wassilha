@@ -102,6 +102,12 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
   me: () => req<{ user: AuthUser | null }>('/api/auth/me'),
+  // OPTIONAL PROFILE COMPLETION: updates the logged-in user's name and/or
+  // avatar. Always multipart/form-data — the avatar is a real file the server
+  // uploads to Vercel Blob; a client-supplied URL is never trusted. On success
+  // the server returns the fresh AuthUser so the store can replace it.
+  updateMe: (data: FormData) =>
+    req<{ user: AuthUser }>('/api/auth/me', { method: 'PATCH', body: data }),
   pendingSignup: () =>
     req<{ pendingSignup: boolean; phone: string | null }>('/api/auth/pending-signup'),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),

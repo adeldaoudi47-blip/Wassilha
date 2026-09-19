@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 
@@ -68,15 +68,19 @@ export function AppHeader({ title, subtitle, rightSlot }: AppHeaderProps) {
             <DropdownMenuTrigger asChild>
               <button className="rounded-full ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
                 <Avatar className="h-9 w-9 border-2 border-primary/20">
+                  {/* Profile completion is optional: a fresh customer may have
+                      no avatar and an empty name, so fall back to a generic
+                      icon instead of rendering a blank circle. */}
+                  {user.avatar && <AvatarImage src={user.avatar} alt="" />}
                   <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
-                    {user.name.charAt(0)}
+                    {user.name.charAt(0) || <User size={14} />}
                   </AvatarFallback>
                 </Avatar>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="flex flex-col gap-0.5">
-                <span className="text-sm font-semibold">{user.name}</span>
+                <span className="text-sm font-semibold">{user.name || (isAr ? 'زبون' : 'Client')}</span>
                 <span className="text-xs font-normal text-muted-foreground" dir="ltr">{user.phone}</span>
                 <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                   {user.role === 'customer' ? t.customer : user.role === 'driver' ? t.driver : t.admin}

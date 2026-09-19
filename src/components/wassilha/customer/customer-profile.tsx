@@ -1,6 +1,6 @@
 'use client';
 
-import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers, Hammer, ArrowLeftRight } from 'lucide-react';
+import { Phone, MapPin, Clock, ShieldCheck, Headphones, Bike, Package, Layers, Hammer, ArrowLeftRight, User, Camera, Sparkles } from 'lucide-react';
 import { useT } from '../use-t';
 import { useAppStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { BrandLogo } from '../brand-logo';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { UpgradeDriverDialog } from './upgrade-driver-dialog';
 import { ApplyArtisanDialog } from './apply-artisan-dialog';
@@ -40,17 +41,88 @@ export function CustomerProfile() {
     setUser(null);
   };
 
+  // OPTIONAL PROFILE COMPLETION state: a customer created via the OTP
+  // auto-create flow starts with an empty name + no avatar, so this tab is
+  // where they fill those in (and edit them later). Nothing is required to
+  // use the app — these fields are purely optional.
+  const [profileName, setProfileName] = useState(user?.name ?? '');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // Keep the input in sync whenever the session user changes (e.g. right
+  // after login, or after another tab saved the profile).
+  useEffect(() => {
+    setProfileName(user?.name ?? '');
+  }, [user?.name]);
+
+  // Revoke the previous local object URL on every re-pick so the preview
+  // never leaks a blob reference.
+  const handlePickAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setAvatarFile(file);
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    const trimmed = profileName.trim();
+    if (trimmed.length > 50) {
+      toast.error(isAr ? 'الاسم طويل جداً (50 حرفاً كحد أقصى)' : 'Nom trop long (50 max)');
+      return;
+    }
+    if (!trimmed && !avatarFile) {
+      toast.error(isAr ? 'أدخل اسماً أو اختر صورة' : 'Saisissez un nom ou une image');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const fd = new FormData();
+      fd.append('name', trimmed);
+      if (avatarFile) fd.append('avatar', avatarFile);
+      const { user: updated } = await api.updateMe(fd);
+      setUser(updated);
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      toast.success(isAr ? 'تم حفظ ملفك الشخصي' : 'Profil enregistré');
+    } catch {
+      toast.error(isAr ? 'تعذر حفظ الملف الشخصي' : "Échec de l'enregistrement");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Profile header */}
       <Card className="overflow-hidden p-0">
         <div className="bg-gradient-to-br from-primary to-brand-dark p-5 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-2xl font-black backdrop-blur">
-              {user?.name.charAt(0)}
-            </div>
+            {user?.avatar ? (
+              <img
+                src={user.avatar}
+                alt=""
+                className="h-16 w-16 rounded-2xl object-cover"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
+                {user?.name ? (
+                  <span className="text-2xl font-black">
+                    {user.name.charAt(0).toUpperCase()}
+                  </span>
+                ) : (
+                  <User size={26} />
+                )}
+              </div>
+            )}
             <div>
-              <p className="text-lg font-bold">{user?.name}</p>
+              <p className="text-lg font-bold">
+                {user?.name || (isAr ? 'زبون جديد' : 'Nouveau client')}
+              </p>
               <p className="flex items-center gap-1.5 text-sm text-primary-foreground/80" dir="ltr">
                 <Phone size={12} /> +213 {user?.phone}
               </p>
@@ -64,6 +136,58 @@ export function CustomerProfile() {
           <Stat label={t.totalOrders} value={String(stats.total)} />
           <Stat label={t.deliveredOrders} value={String(stats.delivered)} />
           <Stat label={t.revenue} value={`${formatDzd(stats.spent)}`} suffix={t.dzd} />
+        </div>
+      </Card>
+
+      {/* OPTIONAL PROFILE COMPLETION (and later edits): a customer is
+          auto-created with an empty name, so a fresh user gets a gentle
+          nudge here. The same card lets any user change their name and
+          avatar at any time — nothing is required to use the app. */}
+      <Card className="p-4">
+        {!user?.name && (
+          <div className="mb-3 rounded-xl bg-amber-50 p-2.5 text-center text-xs font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+            {isAr ? 'أكمل ملفك الشخصي' : 'Complétez votre profil'}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <label className="relative shrink-0 cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={handlePickAvatar}
+            />
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="" className="h-14 w-14 rounded-full object-cover" />
+            ) : user?.avatar ? (
+              <img src={user.avatar} alt="" className="h-14 w-14 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <Camera size={20} className="text-muted-foreground" />
+              </div>
+            )}
+          </label>
+          <Input
+            value={profileName}
+            onChange={(e) => setProfileName(e.target.value)}
+            placeholder={isAr ? 'الاسم (اختياري)' : 'Nom (facultatif)'}
+            maxLength={50}
+            className="flex-1"
+          />
+          <Button
+            onClick={handleSaveProfile}
+            disabled={savingProfile}
+            className="shrink-0"
+            size="sm"
+          >
+            {savingProfile ? (
+              <Sparkles className="animate-spin" size={16} />
+            ) : isAr ? (
+              'حفظ'
+            ) : (
+              'Enregistrer'
+            )}
+          </Button>
         </div>
       </Card>
 

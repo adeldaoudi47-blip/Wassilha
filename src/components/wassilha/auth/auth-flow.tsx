@@ -260,8 +260,7 @@ export function AuthFlow() {
     try {
       const result = await api.verifyOtp(
         phone,
-        otp,
-        name || undefined
+        otp
       );
 
       // DIAG: log every result so we can tell whether the failure to

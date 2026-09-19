@@ -7,7 +7,7 @@ import type { AuthUser, Role } from '@/lib/types';
 
 export async function POST(req: NextRequest) {
   try {
-    const { phone: rawPhone, code, name } = await req.json();
+    const { phone: rawPhone, code } = await req.json();
 
     // DIAG: trace every verify-otp attempt so we can correlate it with the
     // client-side [Driver Flow] / [Verify OTP] logs and see whether a second
@@ -163,31 +163,33 @@ export async function POST(req: NextRequest) {
       //      instead, keeping its id/name)
       // SECURITY: an existing `driver` never reaches here — the branch
       // above already returned for them.
-      const record =
-        user
-          ? await db.user.update({
-              where: { id: user.id },
-              data: {
-                // Honour a name typed on the phone screen when present;
-                // otherwise keep whatever the row already has.
-                name:
-                  typeof name === 'string' && name.trim().length > 0
-                    ? name.trim()
-                    : user.name,
-                accountStatus: 'active',
-                phoneVerified: true,
-              },
-            })
-          : await db.user.create({
-              data: {
-                phone,
-                name: typeof name === 'string' && name.trim().length > 0 ? name.trim() : '',
-                // SECURITY: forced by the server.
-                role: 'customer',
-                accountStatus: 'active',
-                phoneVerified: true,
-              },
-            });
+      // OPTIONAL PROFILE (frictionless onboarding): a brand-new customer is
+      // provisioned with an EMPTY name — the phone/OTP screens no longer ask
+      // for one, and any `name` sent in the request body is simply ignored
+      // (not destructured above, so older clients keep working untouched).
+      // The account is created ACTIVE so the user lands directly in the app;
+      // name + avatar can be completed at any time from the
+      // "حسابي / Mon compte" tab via PATCH /api/auth/me.
+      const record = user
+        ? await db.user.update({
+            where: { id: user.id },
+            // Activation in place: preserve whatever name the pre-existing
+            // incomplete customer already has — never wipe it.
+            data: {
+              accountStatus: 'active',
+              phoneVerified: true,
+            },
+          })
+        : await db.user.create({
+            data: {
+              phone,
+              name: '',
+              // SECURITY: forced by the server.
+              role: 'customer',
+              accountStatus: 'active',
+              phoneVerified: true,
+            },
+          });
 
       // Keep the phone-verification cookie consistent with the legacy
       // behaviour: it is still what the "upgrade to driver" flow reads
