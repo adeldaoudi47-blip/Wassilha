@@ -1,4 +1,4 @@
-﻿import type { Lang } from './types';
+import type { Lang } from './types';
 
 export const translations = {
   ar: {
@@ -87,6 +87,20 @@ export const translations = {
     loadMore: 'المزيد',
     currencyDzd: 'دج',
     results: 'نتائج البحث',
+    // === HIRFA marketplace: stores (P8) =============================
+    // The marketplace home now surfaces STORES, not just products, and every
+    // store tile / product card links to the public store page /craft/<slug>.
+    featuredStores: 'المتاجر المميزة',
+    allStores: 'كل المتاجر',
+    visitStore: 'زيارة المتجر',
+    storeRatingLabel: 'التقييم',
+    noStores: 'لا توجد متاجر بعد',
+    editStoreInfo: 'تعديل بيانات المتجر',
+    storePublicLink: 'الرابط العام للمتجر',
+    manageProducts: 'إدارة المنتجات',
+    storeUpdated: 'تم تحديث بيانات المتجر',
+    storeNameMin: 'أدخل اسم المتجر (حرفان على الأقل)',
+    saveStoreInfo: 'حفظ',
     dir: 'rtl' as const,
     appName: 'وَصِّلها',
     appSub: 'WASSILHA',
@@ -516,6 +530,18 @@ export const translations = {
     loadMore: 'Plus',
     currencyDzd: 'DA',
     results: 'Résultats',
+    // === HIRFA marketplace: stores (P8) - French mirrors ============
+    featuredStores: 'Boutiques en vedette',
+    allStores: 'Toutes les boutiques',
+    visitStore: 'Visiter la boutique',
+    storeRatingLabel: 'Note',
+    noStores: 'Aucune boutique pour le moment',
+    editStoreInfo: 'Modifier les infos de la boutique',
+    storePublicLink: 'Lien public de la boutique',
+    manageProducts: 'Gérer les produits',
+    storeUpdated: 'Les infos de la boutique ont été mises à jour',
+    storeNameMin: 'Saisissez le nom de la boutique (2 caractères minimum)',
+    saveStoreInfo: 'Enregistrer',
     dir: 'ltr' as const,
     appName: 'WASSILHA',
     appSub: 'وَصِّلها',

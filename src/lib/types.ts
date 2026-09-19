@@ -223,6 +223,10 @@ export interface CraftCategoryPublic {
 
 export interface ArtisanPublic {
   id: string;
+  // HIRFA marketplace: the stable public store slug so a product card can
+  // link straight to /craft/<slug>. NULL only during the backfill window;
+  // callers fall back to the id-based URL via getStoreUrl().
+  slug: string | null;
   displayName: string;
   avatarUrl: string | null;
   rating: number;

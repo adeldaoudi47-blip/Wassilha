@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Hammer, Heart } from 'lucide-react';
+import { Hammer, Heart, Store } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { getStoreUrl } from '@/lib/craft-urls';
 import { useT } from '../use-t';
 import type { CraftProductPublic } from '@/lib/types';
 
@@ -66,8 +68,23 @@ export function ProductCard({
       </div>
       <div className="space-y-0.5 p-2.5">
         <p className="truncate text-sm font-bold text-foreground">{name}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {t.craftedBy} {product.artisan.displayName}
+        {/* STORE LINK: tapping the artisan name opens the public store page
+            (/craft/<slug>) instead of the product detail. stopPropagation keeps
+            the card's own onOpen from also firing. The slug is stable for life
+            (never regenerated on rename), so the link never rots. */}
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="shrink-0">{t.craftedBy}</span>
+          <Link
+            href={getStoreUrl(product.artisan.slug, product.artisan.id)}
+            onClick={(e) => e.stopPropagation()}
+            prefetch={false}
+            className="group/store flex min-w-0 items-center gap-1 transition-colors hover:text-primary"
+          >
+            <Store size={11} className="shrink-0" />
+            <span className="truncate font-semibold underline-offset-2 group-hover/store:underline">
+              {product.artisan.displayName}
+            </span>
+          </Link>
         </p>
         <p className="text-sm font-extrabold text-primary">
           {product.price} {t.currencyDzd}

@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ListSkeleton } from '../skeleton';
 import { ArtisanProductForm } from './artisan-product-form';
 import { ArtisanOrders } from './artisan-orders';
+import { ArtisanProfileCard } from './artisan-profile-card';
 import { ShareButton } from './share-button';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { getStoreAbsoluteUrl } from '@/lib/craft-urls';
@@ -70,6 +71,37 @@ export function ArtisanDashboard() {
       toast.error(isAr ? 'تعذر حذف المنتج' : 'Suppression impossible');
     }
   };
+
+  // Artisan "حسابي" tab (P8): the store's PUBLIC identity — display name,
+  // store avatar, stable public link — with an optional edit form, plus a
+  // direct jump into product management. Rendered INSTEAD of the
+  // products/orders lists, which live on their own tabs.
+  if (artisanTab === 'profile') {
+    return (
+      <div className="space-y-4">
+        {myStore ? (
+          <ArtisanProfileCard
+            myStore={myStore}
+            isAr={isAr}
+            onUpdated={setMyStore}
+            onManageProducts={() => setArtisanTab('products')}
+          />
+        ) : (
+          <div className="space-y-3">
+            <ListSkeleton count={2} />
+          </div>
+        )}
+
+        {/* ROLE VIEW SWITCH: browse + order like a customer (UI-only). */}
+        <Button
+          onClick={() => setViewMode('customer')}
+          className="w-full bg-primary text-primary-foreground hover:opacity-90"
+        >
+          <ShoppingBag size={16} className="me-2" /> {t.switchToCustomer}
+        </Button>
+      </div>
+    );
+  }
 
   if (loading && products.length === 0) {
     return (<div className="space-y-3"><ListSkeleton count={3} /></div>);

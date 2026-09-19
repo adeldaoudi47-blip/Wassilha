@@ -527,6 +527,11 @@ export const api = {
   // HIRFAA Phase 1: the logged-in artisan's own store info (for the
   // "متجري / My store" share section in the dashboard).
   getMyStore: () => req<MyStoreInfo>("/api/craft/artisan/me"),
+  // HIRFA (P8): optional store profile edit — display name + store avatar.
+  // Multipart so the avatar is uploaded as a real file (Vercel Blob); a
+  // client-supplied URL is never accepted. Returns the fresh store info.
+  updateMyStore: (data: FormData) =>
+    req<MyStoreInfo>("/api/craft/artisan/me", { method: "PATCH", body: data }),
   // HIRFA Phase 2A: the artisan's own REAL analytics totals (never faked).
   getMyStoreStats: () => req<CraftStoreStats>("/api/craft/artisan/me/stats"),
   // HIRFA Phase 2A: public delivery areas for the search "Area" filter.

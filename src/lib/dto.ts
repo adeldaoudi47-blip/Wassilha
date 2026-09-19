@@ -160,6 +160,7 @@ export const craftCategorySelect = {
 } as const;
 export const publicArtisanSelect = {
   id: true,
+  slug: true,
   displayName: true,
   avatarUrl: true,
   rating: true,

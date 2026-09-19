@@ -5,11 +5,12 @@
 // live DB through the public projections.
 import { getLocale } from '@/lib/locale';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
+import { getStoreUrl } from '@/lib/craft-urls';
 import { db } from '@/lib/db';
 import { marketplaceProductSelect, craftCategorySelect } from '@/lib/dto';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import { BrandLogo } from '@/components/wassilha/brand-logo';
 import { LangToggle } from '@/components/wassilha/lang-toggle';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -182,7 +183,7 @@ export default async function CraftMarketplacePage({
             {data.stores.map((s) => (
               <Link
                 key={s.id}
-                href={s.slug ? `/craft/${encodeURIComponent(s.slug)}` : '#'}
+                href={getStoreUrl(s.slug, s.id)}
                 className="group block rounded-xl border border-border p-3 text-center transition hover:bg-muted/50"
               >
                 <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-border">
@@ -201,10 +202,18 @@ export default async function CraftMarketplacePage({
                   )}
                 </div>
                 <p className="truncate text-sm font-bold">{s.displayName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {s.productCount}{' '}
-                  {s.productCount === 1 ? t.productCountOne : t.productCount}
-                </p>
+                <div className="mt-0.5 flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
+                  <Star size={11} className="fill-amber-400 text-amber-400" />
+                  <span className="font-bold text-foreground">{s.rating.toFixed(1)}</span>
+                  <span className="opacity-50">·</span>
+                  <span>
+                    {s.productCount}{' '}
+                    {s.productCount === 1 ? t.productCountOne : t.productCount}
+                  </span>
+                </div>
+                <span className="mt-1.5 inline-block text-[11px] font-bold text-primary underline-offset-2 group-hover:underline">
+                  {t.visitStore}
+                </span>
               </Link>
             ))}
           </div>
