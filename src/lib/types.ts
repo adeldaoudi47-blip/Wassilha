@@ -430,3 +430,58 @@ export interface CraftAreaPublic {
   sortOrder: number;
 }
 
+
+// ---------------------------------------------------------------------------
+// In-app notification center (Phase 1).
+//
+// `type` is a free String column (no migration to add a new kind) - this union
+// is the TS source of truth and MUST stay in sync with the values emitted by
+// src/lib/notifications.ts.
+// ---------------------------------------------------------------------------
+export type NotificationType =
+  | 'order'
+  | 'craft_order'
+  | 'driver_application'
+  | 'artisan_application'
+  | 'system';
+
+// Optional deep-link payload stored alongside a notification. `i18n` holds the
+// keys + params that produced title/body, so a future French render can
+// re-resolve them client-side with no schema change.
+export interface NotificationI18nRef {
+  titleKey: string;
+  bodyKey: string;
+  params?: Record<string, string | number>;
+}
+
+export interface NotificationData {
+  orderId?: string;
+  artisanId?: string;
+  productId?: string;
+  code?: string;
+  i18n?: NotificationI18nRef;
+  [key: string]: unknown;
+}
+
+// One notification row as returned by notificationSelect / the API.
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  data: NotificationData | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+// GET /api/notifications response. `unreadCount` rides along so the bell badge
+// can be rendered from the same request the list came from; `hasMore` enables
+// "load more" without a second round trip.
+export interface NotificationListResponse {
+  notifications: AppNotification[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}

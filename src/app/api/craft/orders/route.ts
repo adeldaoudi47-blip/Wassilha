@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { getSession } from '@/lib/auth';
 import { publicCraftOrderSelect } from '@/lib/dto';
+import { createNotification } from '@/lib/notifications';
 
 // POST /api/craft/orders
 // Customer-only. Creates a craft order from the client-side cart.
@@ -128,7 +129,22 @@ export async function POST(req: NextRequest) {
       return orders;
     });
 
-    for (const o of created) void notifyArtisanNewOrder(o.artisan.id, o.code);
+    // HIRFA (notification center): tell each artisan they have a new
+    // order. `o.artisan.id` is the ArtisanProfile id, but notifications
+    // target a USER, so the owning user ids are resolved once here (one
+    // round trip, not one per order).
+    const artisanProfileIds = created.map((o) => o.artisan.id);
+    const artisans = artisanProfileIds.length
+      ? await db.artisanProfile.findMany({
+          where: { id: { in: artisanProfileIds } },
+          select: { id: true, userId: true },
+        })
+      : [];
+    const artisanUserId = new Map(artisans.map((a) => [a.id, a.userId]));
+    for (const o of created) {
+      const artisanOwner = artisanUserId.get(o.artisan.id);
+      if (artisanOwner) void notifyArtisanNewOrder(artisanOwner, o.id, o.code);
+    }
     return NextResponse.json({ orders: created }, { status: 201 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -170,6 +186,24 @@ function generateOrderCode(): string {
   return `HIRFA-${code}`;
 }
 
-async function notifyArtisanNewOrder(_artisanId: string, _orderCode: string) {
-  // Future: FCM push notification
+// Fire-and-forget in-app notification for the artisan: it must never block
+// the customer's checkout response. Push (FCM) is still a future addition;
+// the notification-center row is the durable, always-delivered path.
+async function notifyArtisanNewOrder(userId: string, orderId: string, orderCode: string) {
+  try {
+    await createNotification({
+      userId,
+      type: 'craft_order',
+      title: 'لديك طلب جديد',
+      body: 'تحقق من متجرك',
+      data: {
+        orderId,
+        code: orderCode,
+        i18n: { titleKey: 'newCraftOrder', bodyKey: 'newCraftOrderBody' },
+      },
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[craft/orders] artisan notification failed:', e);
+  }
 }

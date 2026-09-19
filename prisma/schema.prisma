@@ -45,6 +45,10 @@ model User {
   artisan          ArtisanProfile?
   craftOrders      CraftOrder[]    @relation("CraftCustomerOrders")
   craftReviewsGiven CraftReview[] @relation("CraftReviewer")
+  // In-app notification center: every notification targets exactly one user
+  // (customer, driver, artisan or admin). Cascade-deleted with its owner so a
+  // closed account leaves no orphan rows. See the Notification model below.
+  notifications     Notification[]
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
@@ -671,4 +675,37 @@ model CraftReview {
   @@index([toId])
   @@index([fromId])
   @@index([craftOrderId])
+}
+
+/// In-app notification center entry. One row per notification per user.
+///
+/// `type` is a free String (mirrors Order.status / CraftOrder.status) so new
+/// notification kinds never need a migration; the TS union in
+/// src/lib/types.ts is the single source of truth for the allowed values:
+///   "order" | "craft_order" | "driver_application" |
+///   "artisan_application" | "system"
+///
+/// `data` carries optional deep-link payload (orderId, artisanId, code, ...)
+/// plus, when the emitter knows them, the i18n keys + params used to render
+/// title/body, so a future French render can re-resolve them client-side:
+///   { "i18n": { "titleKey": "...", "bodyKey": "...", "params": { ... } } }
+///
+/// The three indexes serve the three access patterns of the center:
+///   @@index([userId])      list a user's notifications
+///   @@index([isRead])      the unread badge count
+///   @@index([createdAt])   newest-first pagination
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   // "order" | "craft_order" | "driver_application" | "artisan_application" | "system"
+  data      Json?    // بيانات إضافية (مثل orderId, artisanId, إلخ)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
 }

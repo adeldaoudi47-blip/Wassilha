@@ -457,6 +457,26 @@ export const translations = {
     offerSeats: 'مقاعد',
     offerCargo: 'نوع البضاعة',
     confirmBook: 'هل تريد حجز هذا العرض؟',
+    // === Notification Center (Phase 2) ==============================
+    // UI strings for the bell + center, AND the message keys referenced by
+    // `data.i18n` on each row (see src/lib/notifications.ts). The stored
+    // title/body are finished Arabic; these keys let the French render
+    // re-resolve them client-side with no schema change.
+    notifications: 'الإشعارات',
+    markAllRead: 'تعليم الكل كمقروء',
+    noNotifications: 'لا توجد إشعارات',
+    orderAccepted: 'تم قبول طلبك',
+    driverOnTheWay: 'السائق في طريقه إليك الآن',
+    driverArrived: 'وصل السائق',
+    driverArrivedBody: 'لقد وصل السائق إلى نقطة الاستلام، يرجى التوجه إليه',
+    orderDelivered: 'تم تسليم الطلب',
+    orderDeliveredBody: 'شكراً لاستخدامك وَصِّلها. نأمل أن نراك مرة أخرى!',
+    applicationApproved: 'تمت الموافقة على طلبك',
+    applicationApprovedBody: 'مرحباً بك في وَصِّلها! يمكنك الآن البدء في استقبال الطلبات',
+    storeApproved: 'تمت الموافقة على متجرك',
+    storeApprovedBody: 'يمكنك الآن إضافة منتجاتك',
+    newCraftOrder: 'لديك طلب جديد',
+    newCraftOrderBody: 'تحقق من متجرك',
   },
   fr: {
     // === HIRFA artisan dashboard (P5) - French mirrors ============
@@ -896,6 +916,24 @@ export const translations = {
     ratingSubmitted: 'Évaluation envoyée avec succès',
     uploadMultipleImages: 'Choisir les photos du produit (sélection multiple possible)',
     uploadingImages: 'Téléchargement des images...',
+    // === Notification Center (Phase 2) - French mirrors =============
+    // Mirrors the Arabic keys above (same order) so a future audit stays
+    // trivial. Referenced by `data.i18n` on each notification row.
+    notifications: 'Notifications',
+    markAllRead: 'Tout marquer comme lu',
+    noNotifications: 'Aucune notification',
+    orderAccepted: 'Commande acceptée',
+    driverOnTheWay: 'Le chauffeur est en route',
+    driverArrived: 'Le chauffeur est arrivé',
+    driverArrivedBody: 'Le chauffeur est arrivé au point de prise en charge',
+    orderDelivered: 'Commande livrée',
+    orderDeliveredBody: 'Merci d\'avoir utilisé Wassilha. À bientôt !',
+    applicationApproved: 'Demande approuvée',
+    applicationApprovedBody: 'Bienvenue sur Wassilha ! Vous pouvez commencer à recevoir des commandes',
+    storeApproved: 'Votre boutique a été approuvée',
+    storeApprovedBody: 'Vous pouvez maintenant ajouter vos produits',
+    newCraftOrder: 'Nouvelle commande',
+    newCraftOrderBody: 'Consultez votre boutique',
   },
 };
 

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
+import { createNotification } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -57,6 +58,22 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     ).catch((e) => {
       // eslint-disable-next-line no-console
       console.warn('[orders/pickup] push failed:', e);
+    });
+    // In-app notification center row: mirrors the push so a customer
+    // without push permission still learns the driver has arrived.
+    void createNotification({
+      userId: updated.customerId,
+      type: 'order',
+      title: 'وصل السائق',
+      body: 'لقد وصل السائق إلى نقطة الاستلام، يرجى التوجه إليه.',
+      data: {
+        orderId: updated.id,
+        code: updated.code,
+        i18n: { titleKey: 'driverArrived', bodyKey: 'driverArrivedBody' },
+      },
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/pickup] notification failed:', e);
     });
     return NextResponse.json(updated);
   } catch (e) {

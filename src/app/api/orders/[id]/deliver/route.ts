@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
+import { createNotification } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -81,6 +82,22 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     ).catch((e) => {
       // eslint-disable-next-line no-console
       console.warn('[orders/deliver] push failed:', e);
+    });
+    // In-app notification center row: closes the loop for customers who
+    // can't receive push (FCM unset / permission denied).
+    void createNotification({
+      userId: updated.customerId,
+      type: 'order',
+      title: 'تم تسليم الطلب',
+      body: 'شكراً لاستخدامك وَصِّلها. نأمل أن نراك مرة أخرى!',
+      data: {
+        orderId: updated.id,
+        code: updated.code,
+        i18n: { titleKey: 'orderDelivered', bodyKey: 'orderDeliveredBody' },
+      },
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/deliver] notification failed:', e);
     });
     return NextResponse.json(updated);
   } catch (e) {

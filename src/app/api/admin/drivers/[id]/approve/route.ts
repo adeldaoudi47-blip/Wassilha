@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
 import { sendPushNotification } from '@/lib/firebase-admin';
+import { createNotification } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -60,6 +61,21 @@ export async function PATCH(_req, { params }) {
       'مرحباً بك في وَصِّلها! يمكنك الآن تسجيل الدخول والبدء في استقبال الطلبات.',
       { type: 'driver_approved', driverId: updated.id }
     );
+    // In-app notification center row: the driver may have uninstalled the
+    // app / revoked push, but they will see the approval the next time they
+    // sign in. Fire-and-forget — never blocks the approval response.
+    void createNotification({
+      userId: updated.userId,
+      type: 'driver_application',
+      title: 'تمت الموافقة على طلبك',
+      body: 'مرحباً بك في وَصِّلها! يمكنك الآن تسجيل الدخول والبدء في استقبال الطلبات.',
+      data: {
+        i18n: { titleKey: 'applicationApproved', bodyKey: 'applicationApprovedBody' },
+      },
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[admin/drivers/approve] notification failed:', e);
+    });
     return NextResponse.json(toDriverProfile(updated));
   } catch (e) {
     console.error('[WASSILHA APPROVE-DRIVER] Server error:', e);

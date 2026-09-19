@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
+import { createNotification } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -73,6 +74,24 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     ).catch((e) => {
       // eslint-disable-next-line no-console
       console.warn('[orders/accept] push failed:', e);
+    });
+    // In-app notification center row (fire-and-forget, same reliability
+    // contract as the push above): the customer still sees "order accepted"
+    // in their bell even when FCM is unavailable or the user opted out of
+    // push. `data.i18n` lets the center re-render this in French.
+    void createNotification({
+      userId: updated.customerId,
+      type: 'order',
+      title: 'تم قبول طلبك',
+      body: 'السائق في طريقه إليك الآن.',
+      data: {
+        orderId: updated.id,
+        code: updated.code,
+        i18n: { titleKey: 'orderAccepted', bodyKey: 'driverOnTheWay' },
+      },
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[orders/accept] notification failed:', e);
     });
     return NextResponse.json(updated);
   } catch (e) {

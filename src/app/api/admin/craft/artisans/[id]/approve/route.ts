@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
 import { sendPushNotification } from '@/lib/firebase-admin';
+import { createNotification } from '@/lib/notifications';
 import { allocateStoreSlug } from '@/lib/slug-allocate';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -31,6 +32,18 @@ export async function PATCH(_req: NextRequest, { params }: Ctx) {
     ]);
 
     void sendPushNotification(row.userId, 'حِرفة', 'تمت الموافقة على متجرك في حِرفة! يمكنك الآن إضافة منتجاتك.', { type: 'artisan_approved' }).catch(() => undefined);
+    // In-app notification center row: same moment, durable record — the
+    // artisan reads it from their bell even if the push never landed.
+    void createNotification({
+      userId: row.userId,
+      type: 'artisan_application',
+      title: 'تمت الموافقة على متجرك',
+      body: 'يمكنك الآن إضافة منتجاتك.',
+      data: {
+        artisanId: id,
+        i18n: { titleKey: 'storeApproved', bodyKey: 'storeApprovedBody' },
+      },
+    }).catch(() => undefined);
     return NextResponse.json({ ok: true, id, status: 'active' });
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });

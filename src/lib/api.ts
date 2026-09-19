@@ -23,6 +23,7 @@ import type {
   CraftOrderStatus,
   CraftStoreStats,
   CraftAreaPublic,
+  NotificationListResponse,
 } from './types';
 
 async function req<T>(
@@ -542,4 +543,28 @@ export const api = {
   // forget at the call sites; the endpoint is PII-free.
   trackCraftEvent: (payload: { type: string; storeId?: string; productId?: string }) =>
     req<{ ok: boolean }>("/api/craft/analytics", { method: "POST", body: JSON.stringify(payload) }),
+
+  // In-app notification center (Phase 1): the signed-in user's own
+  // notifications. Every call is session-scoped server-side, so a client can
+  // never reach another user's center.
+  getNotifications: (params?: { page?: number; pageSize?: number; unreadOnly?: boolean }) => {
+    const qp = new URLSearchParams();
+    if (params?.page) qp.set('page', String(params.page));
+    if (params?.pageSize) qp.set('pageSize', String(params.pageSize));
+    if (params?.unreadOnly) qp.set('unreadOnly', '1');
+    const qs = qp.toString();
+    return req<NotificationListResponse>(`/api/notifications${qs ? `?${qs}` : ''}`);
+  },
+  // Cheapest possible badge refresh: returns only the count, no rows.
+  getUnreadNotificationCount: () =>
+    req<{ unreadCount: number }>('/api/notifications/unread-count'),
+  // Marks one notification read (or unread when isRead=false).
+  markNotificationRead: (id: string, isRead = true) =>
+    req<{ ok: boolean; id: string; isRead: boolean }>(`/api/notifications/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isRead }),
+    }),
+  // Marks every unread notification of the caller as read ("Mark all read").
+  markAllNotificationsRead: () =>
+    req<{ ok: boolean; updated: number }>('/api/notifications/read-all', { method: 'POST' }),
 };

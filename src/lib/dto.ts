@@ -278,3 +278,21 @@ export const marketplaceProductSelect = {
     },
   },
 } as const;
+// ---------------------------------------------------------------------------
+// In-app notification center (Phase 1).
+//
+// Deliberately leaks NO user relation: the API routes scope every query by
+// session.id, so returning the owner's own row is pointless - and if this
+// select were ever joined to `user`, one mistake would serialize someone
+// else's account. `data` is the deep-link payload (+ optional i18n keys) and
+// is safe to return verbatim.
+// ---------------------------------------------------------------------------
+export const notificationSelect = {
+  id: true,
+  type: true,
+  title: true,
+  body: true,
+  data: true,
+  isRead: true,
+  createdAt: true,
+} as const;
