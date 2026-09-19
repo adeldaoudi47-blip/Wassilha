@@ -40,6 +40,7 @@ export function ArtisanProductForm({
     price: product ? String(product.price) : '',
     categoryId: product?.category?.id ?? '',
     stock: product ? String(product.stock) : '',
+    isMadeToOrder: product?.isMadeToOrder ?? false,
   });
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const Back = isAr ? ArrowRight : ArrowLeft;
@@ -80,7 +81,10 @@ export function ArtisanProductForm({
         price: Math.round(price),
         categoryId: form.categoryId,
         images: imageUrls,
-        stock: Number(form.stock) || 0,
+        // Made-to-order products are crafted on demand: stock is meaningless
+        // for them, so it is zeroed and never checked at checkout.
+        stock: form.isMadeToOrder ? 0 : Number(form.stock) || 0,
+        isMadeToOrder: form.isMadeToOrder,
       };
       if (product) await api.updateCraftProduct(product.id, payload);
       else await api.createCraftProduct(payload);
@@ -133,7 +137,34 @@ export function ArtisanProductForm({
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productDescription} (FR)</label><Textarea value={form.descriptionFr} onChange={(e) => set('descriptionFr', e.target.value)} rows={3} maxLength={2000} /></div>
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productCategory}</label><Select value={form.categoryId} onValueChange={(v) => set('categoryId', v)}><SelectTrigger className="w-full"><SelectValue placeholder={t.chooseArea} /></SelectTrigger><SelectContent>{categories.map((c) => (<SelectItem key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameFr || c.nameAr}</SelectItem>))}</SelectContent></Select></div>
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productPrice}</label><Input value={form.price} onChange={(e) => set('price', e.target.value)} inputMode="numeric" dir="ltr" placeholder="300" /></div>
-        <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productStock} (0 = {t.madeToOrder})</label><Input value={form.stock} onChange={(e) => set('stock', e.target.value)} inputMode="numeric" dir="ltr" placeholder="1" /></div>
+        {/* "حسب الطلب" toggle: crafted on demand, so stock is ignored everywhere. */}
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-muted/30 p-2.5">
+          <input
+            type="checkbox"
+            checked={form.isMadeToOrder}
+            onChange={() => setForm((f) => ({ ...f, isMadeToOrder: !f.isMadeToOrder }))}
+            className="mt-0.5 h-4 w-4 accent-emerald-600"
+          />
+          <span className="space-y-0.5">
+            <span className="block text-xs font-bold text-foreground">{t.isMadeToOrderLabel}</span>
+            <span className="block text-[11px] text-muted-foreground">{t.madeToOrderHint}</span>
+          </span>
+        </label>
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-foreground">{t.productStock} (0 = {t.madeToOrder})</label>
+          <Input
+            value={form.stock}
+            onChange={(e) => set('stock', e.target.value)}
+            inputMode="numeric"
+            dir="ltr"
+            placeholder="1"
+            disabled={form.isMadeToOrder}
+            className={form.isMadeToOrder ? 'opacity-40' : ''}
+          />
+          {form.isMadeToOrder && (
+            <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">{t.madeToOrderHint}</p>
+          )}
+        </div>
         <Button onClick={handleSubmit} disabled={submitting} className="h-12 w-full rounded-xl bg-emerald-600 text-sm font-black text-white hover:bg-emerald-700">
           {submitting && <Loader2 size={16} className="me-1 animate-spin" />}{t.saveProduct}
         </Button>

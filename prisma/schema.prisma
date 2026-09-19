@@ -552,6 +552,11 @@ model CraftProduct {
     stock         Int            @default(1)
   isActive      Boolean        @default(true)
   isFeatured    Boolean        @default(false)
+  // HIRFA: "حسب الطلب" (made to order). When true the product is crafted on
+  // demand, so stock is ignored everywhere (artisan form, product card/detail,
+  // cart, checkout) and ordering is always allowed; the orders API neither
+  // checks nor decrements stock for such products.
+  isMadeToOrder Boolean        @default(false)
   // Public, URL-safe, stable product slug. Generated ONCE (backfill / on create)
   // and never regenerated from name changes, so product URLs stay stable.
   // Unique within the artisan's shop; NULL is allowed during backfill window.

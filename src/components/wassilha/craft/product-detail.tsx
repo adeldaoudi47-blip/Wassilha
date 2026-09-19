@@ -27,7 +27,8 @@ export function ProductDetail({
   const description = isAr
     ? product.descriptionAr
     : product.descriptionFr || product.descriptionAr;
-  const madeToOrder = product.stock <= 0;
+  // "حسب الطلب": explicitly crafted on demand, or legacy stock-less items.
+  const madeToOrder = product.isMadeToOrder || product.stock <= 0;
   const images = product.images && product.images.length > 0 ? product.images : [];
 
   const handleAdd = () => {

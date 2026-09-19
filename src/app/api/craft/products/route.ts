@@ -100,6 +100,7 @@ const createSchema = z.object({
   images: z.array(z.string().url()).max(8).default([]),
   stock: z.number().int().min(0).max(100_000).default(1),
   isFeatured: z.boolean().default(false),
+  isMadeToOrder: z.boolean().default(false),
 });
 
 export async function POST(req: NextRequest) {
@@ -130,6 +131,7 @@ export async function POST(req: NextRequest) {
         images: parsed.data.images,
         stock: parsed.data.stock,
         isFeatured: parsed.data.isFeatured,
+        isMadeToOrder: parsed.data.isMadeToOrder,
       },
     });
     // Stable public product slug — generated ONCE at creation, unique within

@@ -9,6 +9,7 @@ export interface ProductTile {
   images: string[];
   stock: number;
   isFeatured: boolean;
+  isMadeToOrder: boolean;
   createdAt: Date;
   category: { id: string; nameAr: string; nameFr: string | null; slug: string | null } | null;
   artisan: {

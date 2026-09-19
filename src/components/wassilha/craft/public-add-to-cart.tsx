@@ -17,6 +17,7 @@ export interface PublicAddToCartProduct {
   price: number;
   image?: string;
   stock: number;
+  isMadeToOrder?: boolean;
 }
 
 export function PublicAddToCart({
@@ -35,7 +36,9 @@ export function PublicAddToCart({
   const addItem = useCraftCart((s) => s.addItem);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
-  const outOfStock = product.stock <= 0;
+  // Made-to-order products are crafted on demand: ordering is always allowed
+  // and stock is never a blocker for them.
+  const outOfStock = !product.isMadeToOrder && product.stock <= 0;
 
   const handleAdd = () => {
     if (outOfStock) return;
@@ -63,7 +66,7 @@ export function PublicAddToCart({
         </button>
         <span className="min-w-[2rem] text-center text-sm font-black">{qty}</span>
         <button
-          onClick={() => setQty((q) => Math.min(product.stock, q + 1))}
+          onClick={() => setQty((q) => Math.min(product.isMadeToOrder ? 99 : product.stock, q + 1))}
           disabled={outOfStock}
           className="h-9 w-9 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-40"
           aria-label="+"
@@ -79,6 +82,11 @@ export function PublicAddToCart({
         {added ? <Check size={16} /> : <Plus size={16} />}
         {outOfStock ? t.outOfStock : added ? t.copied : t.addToCart}
       </button>
+      {product.isMadeToOrder && (
+        <p className="text-center text-[11px] font-bold text-amber-600 dark:text-amber-400">
+          {t.madeToOrderHint}
+        </p>
+      )}
       <button
         onClick={handleGoToCart}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 text-sm font-bold text-primary hover:bg-primary/5"

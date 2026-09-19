@@ -227,6 +227,7 @@ export const publicCraftProductSelect = {
   images: true,
   stock: true,
   isFeatured: true,
+  isMadeToOrder: true,
   createdAt: true,
     category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
   artisan: { select: publicArtisanSelect },
@@ -262,6 +263,7 @@ export const marketplaceProductSelect = {
   images: true,
   stock: true,
   isFeatured: true,
+  isMadeToOrder: true,
   createdAt: true,
   category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
   artisan: {

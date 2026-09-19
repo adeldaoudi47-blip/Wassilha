@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const created = await db.$transaction(async (tx) => {
       const products = await tx.craftProduct.findMany({
         where: { id: { in: productIds }, isActive: true, artisan: { status: 'active' } },
-        select: { id: true, price: true, stock: true, artisanId: true, nameAr: true },
+        select: { id: true, price: true, stock: true, artisanId: true, nameAr: true, isMadeToOrder: true },
       });
 
       if (products.length !== productIds.length) throw new Error('productNotFound');
@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
       const stockMap = new Map(products.map((p) => [p.id, p]));
       for (const [pid, qty] of merged) {
         const product = stockMap.get(pid);
-        if (!product || product.stock < qty) throw new Error('insufficientStock');
+        // Made-to-order products are crafted on demand: stock is never a
+        // limiting factor for them, so only stock-tracked products are checked.
+        if (!product || (!product.isMadeToOrder && product.stock < qty)) throw new Error('insufficientStock');
       }
 
       // Group line items by the artisan who actually owns each product.
@@ -116,7 +118,10 @@ export async function POST(req: NextRequest) {
 
       // Decrement stock once per product (after every order is created, so a
       // failure between stores rolls the whole transaction back).
+      // Made-to-order products have no physical stock, so they are skipped.
       for (const [pid, qty] of merged) {
+        const p = stockMap.get(pid);
+        if (p?.isMadeToOrder) continue;
         await tx.craftProduct.update({ where: { id: pid }, data: { stock: { decrement: qty } } });
       }
 

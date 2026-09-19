@@ -244,6 +244,7 @@ export interface CraftProductPublic {
   images: string[];
   stock: number;
   isFeatured: boolean;
+  isMadeToOrder: boolean;
   createdAt: string;
   category: { id: string; nameAr: string; nameFr: string | null; slug: string };
   artisan: ArtisanPublic;
@@ -376,6 +377,7 @@ export interface PublicProduct {
   images: string[];
   stock: number;
   isFeatured: boolean;
+  isMadeToOrder: boolean;
   createdAt: string;
   category: { id: string; nameAr: string; nameFr: string | null; slug: string | null } | null;
   artisan: PublicArtisanTile;

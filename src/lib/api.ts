@@ -463,6 +463,7 @@ export const api = {
     images?: string[];
     stock?: number;
     isFeatured?: boolean;
+    isMadeToOrder?: boolean;
   }) => req<CraftProductPublic>("/api/craft/products", { method: "POST", body: JSON.stringify(data) }),
   getMyCraftProducts: () => req<CraftProductPublic[]>("/api/craft/products/mine"),
   updateCraftProduct: (id: string, data: Partial<{
@@ -475,6 +476,7 @@ export const api = {
     images: string[];
     stock: number;
     isFeatured: boolean;
+    isMadeToOrder?: boolean;
   }>) => req<CraftProductPublic>(`/api/craft/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteCraftProduct: (id: string) => req<{ ok: boolean; id: string }>(`/api/craft/products/${id}`, { method: "DELETE" }),
   uploadCraftImage: (file: File) => {

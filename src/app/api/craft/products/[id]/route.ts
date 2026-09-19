@@ -27,6 +27,7 @@ const updateSchema = z.object({
   images: z.array(z.string().url()).max(8).optional(),
   stock: z.number().int().min(0).max(100_000).optional(),
   isFeatured: z.boolean().optional(),
+  isMadeToOrder: z.boolean().optional(),
 }).refine((v) => Object.keys(v).length > 0, { message: 'emptyUpdate' });
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
@@ -42,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     if (!parsed.success) return NextResponse.json({ error: 'invalidInput', issues: parsed.error.issues }, { status: 400 });
     const data = parsed.data;
     if (data.categoryId) { const category = await db.craftCategory.findUnique({ where: { id: data.categoryId }, select: { isActive: true } }); if (!category || !category.isActive) return NextResponse.json({ error: 'invalidCategory' }, { status: 400 }); }
-    const updated = await db.craftProduct.update({ where: { id }, data: { ...(data.nameAr ? { nameAr: data.nameAr } : {}), ...(data.nameFr !== undefined ? { nameFr: data.nameFr } : {}), ...(data.descriptionAr !== undefined ? { descriptionAr: data.descriptionAr } : {}), ...(data.descriptionFr !== undefined ? { descriptionFr: data.descriptionFr } : {}), ...(data.price !== undefined ? { price: data.price } : {}), ...(data.categoryId ? { categoryId: data.categoryId } : {}), ...(data.images !== undefined ? { images: data.images } : {}), ...(data.stock !== undefined ? { stock: data.stock } : {}), ...(data.isFeatured !== undefined ? { isFeatured: data.isFeatured } : {}) } });
+    const updated = await db.craftProduct.update({ where: { id }, data: { ...(data.nameAr ? { nameAr: data.nameAr } : {}), ...(data.nameFr !== undefined ? { nameFr: data.nameFr } : {}), ...(data.descriptionAr !== undefined ? { descriptionAr: data.descriptionAr } : {}), ...(data.descriptionFr !== undefined ? { descriptionFr: data.descriptionFr } : {}), ...(data.price !== undefined ? { price: data.price } : {}), ...(data.categoryId ? { categoryId: data.categoryId } : {}), ...(data.images !== undefined ? { images: data.images } : {}), ...(data.stock !== undefined ? { stock: data.stock } : {}), ...(data.isFeatured !== undefined ? { isFeatured: data.isFeatured } : {}), ...(data.isMadeToOrder !== undefined ? { isMadeToOrder: data.isMadeToOrder } : {}) } });
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });

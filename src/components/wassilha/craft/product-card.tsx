@@ -20,7 +20,8 @@ export function ProductCard({
   const { t, isAr } = useT();
   const [fav, setFav] = useState(false);
   const name = isAr ? product.nameAr : product.nameFr || product.nameAr;
-  const madeToOrder = product.stock <= 0;
+  // "حسب الطلب": explicitly crafted on demand, or legacy stock-less items.
+  const madeToOrder = product.isMadeToOrder || product.stock <= 0;
   const img = product.images && product.images.length > 0 ? product.images[0] : null;
 
   return (

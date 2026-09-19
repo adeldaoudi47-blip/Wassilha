@@ -227,7 +227,11 @@ function ProductGrid({ products, lang }: { products: ProductTile[]; lang: 'ar' |
             <p className="text-sm font-extrabold text-primary">
               {p.price.toLocaleString('fr-DZ')} {isRtl ? 'د.ج' : 'DZD'}
             </p>
-            {p.stock <= 0 && <p className="text-[10px] font-bold text-destructive">{t.outOfStock}</p>}
+            {p.isMadeToOrder ? (
+              <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{t.madeToOrder}</p>
+            ) : (
+              p.stock <= 0 && <p className="text-[10px] font-bold text-destructive">{t.outOfStock}</p>
+            )}
           </Link>
         );
       })}

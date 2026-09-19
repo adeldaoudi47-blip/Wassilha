@@ -28,6 +28,7 @@ interface LoadedProduct {
   price: number;
   images: string[];
   stock: number;
+  isMadeToOrder: boolean;
   category: { nameAr: string; nameFr: string | null } | null;
   store: { id: string; slug: string | null; displayName: string; avatarUrl: string | null; rating: number };
 }
@@ -57,6 +58,7 @@ async function loadProduct(storeSlug: string, productSlug: string): Promise<Load
       price: true,
       images: true,
       stock: true,
+      isMadeToOrder: true,
       category: { select: { nameAr: true, nameFr: true } },
     },
   });
@@ -201,8 +203,12 @@ export default async function PublicProductPage({
           <p className="text-2xl font-black text-primary">
             {p.price.toLocaleString('fr-DZ')} {isRtl ? 'د.ج' : 'DZD'}
           </p>
-          <p className={`text-xs font-bold ${p.stock > 0 ? 'text-emerald-600' : 'text-destructive'}`}>
-            {p.stock > 0 ? `${t.inStock} (${p.stock})` : t.outOfStock}
+          <p className={`text-xs font-bold ${p.isMadeToOrder || p.stock > 0 ? 'text-emerald-600' : 'text-destructive'}`}>
+            {p.isMadeToOrder
+              ? t.madeToOrder
+              : p.stock > 0
+                ? `${t.inStock} (${p.stock})`
+                : t.outOfStock}
           </p>
 
           {description && (
@@ -233,7 +239,7 @@ export default async function PublicProductPage({
             lang={lang}
             storeSlug={p.store.slug || `store-${p.store.id.slice(0, 8)}`}
             productSlug={p.slug || `product-${p.id.slice(0, 8)}`}
-            product={{ productId: p.id, nameAr: p.nameAr, price: p.price, image: p.images?.[0], stock: p.stock }}
+            product={{ productId: p.id, nameAr: p.nameAr, price: p.price, image: p.images?.[0], stock: p.stock, isMadeToOrder: p.isMadeToOrder }}
           />
 
           <ShareButton
@@ -270,7 +276,7 @@ export default async function PublicProductPage({
               url: productUrl,
               priceCurrency: 'DZD',
               price: p.price,
-              availability: p.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+              availability: p.isMadeToOrder || p.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             },
           }),
         }}
