@@ -95,16 +95,28 @@ interface CraftCartState {
   clear: () => void;
 }
 
-export const useCraftCart = create<CraftCartState>((set) => ({
-  items: [],
-  addItem: (item, qty = 1) =>
-    set((s) => {
-      const existing = s.items.find((i) => i.productId === item.productId);
-      const items = existing
-        ? s.items.map((i) => (i.productId === item.productId ? { ...i, qty: i.qty + qty } : i))
-        : [...s.items, { ...item, qty }];
-      return { items };
+// C8 (cart persistence): the cart is wrapped in `persist` so a page
+// refresh / app kill no longer empties it — an abandoned cart was
+// directly costing store sales. This store holds NO PII and NO auth
+// data (only productId/name/price/image/qty), and the server recomputes
+// every price at checkout, so a stale or edited cache can never be
+// trusted for pricing. `wassilha-craft-cart` is a separate storage key
+// from the auth store (`wassilha-store`) on purpose.
+export const useCraftCart = create<CraftCartState>()(
+  persist(
+    (set) => ({
+      items: [],
+      addItem: (item, qty = 1) =>
+        set((s) => {
+          const existing = s.items.find((i) => i.productId === item.productId);
+          const items = existing
+            ? s.items.map((i) => (i.productId === item.productId ? { ...i, qty: i.qty + qty } : i))
+            : [...s.items, { ...item, qty }];
+          return { items };
+        }),
+      removeItem: (productId) => set((s) => ({ items: s.items.filter((i) => i.productId !== productId) })),
+      clear: () => set({ items: [] }),
     }),
-  removeItem: (productId) => set((s) => ({ items: s.items.filter((i) => i.productId !== productId) })),
-  clear: () => set({ items: [] }),
-}));
+    { name: 'wassilha-craft-cart' }
+  )
+);

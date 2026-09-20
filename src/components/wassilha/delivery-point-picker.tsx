@@ -34,6 +34,13 @@ export type DeliveryPointPickerProps = {
    * center.
    */
   coordsForArea?: Readonly<Record<string, DeliveryCoords>>;
+  /**
+   * C1: optional per-POINT coordinates, keyed by `point.id`. Checked
+   * before `coordsForArea` so a precisely geocoded landmark wins over its
+   * area centroid. Absent ids fall through to the area, then the city
+   * center.
+   */
+  pointCoords?: Readonly<Record<string, DeliveryCoords>>;
   onSelect: (point: DeliveryPointOption, coords: DeliveryCoords) => void;
   /**
    * Whether to render the chrome in RTL. The app is Arabic-first so this
@@ -68,6 +75,7 @@ export function DeliveryPointPicker({
   points,
   fallbackCoords,
   coordsForArea,
+  pointCoords,
   onSelect,
   isRtl = true,
   placeholderArea = '🔎 ابحث عن حي...',
@@ -174,7 +182,12 @@ export function DeliveryPointPicker({
             key={point.id}
             type="button"
             onClick={() => {
-              const resolved = coordsForArea?.[point.areaId] ?? fallbackCoords;
+              // C1: prefer a verified per-point coordinate, then the
+              // per-area centroid, then the city-centre fallback.
+              const resolved =
+                pointCoords?.[point.id] ??
+                coordsForArea?.[point.areaId] ??
+                fallbackCoords;
               onSelect(point, resolved);
             }}
             className="w-full rounded-xl border p-4 text-right hover:bg-muted"

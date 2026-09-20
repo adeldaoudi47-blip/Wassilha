@@ -1,7 +1,16 @@
 import type { CargoKey } from './types';
 
-// El Guerrara, Ghardaïa locations (lat/lng centered on 32.7833, 3.7667)
-export const GUERRARA_CENTER = { lat: 32.7833, lng: 3.7667 };
+// El Guerrara (القرارة), Ghardaïa — VERIFIED town centroid.
+// Source: OpenStreetMap relation 4874055 ("القرارة / El Guerrara", town,
+// place_rank 16, importance 0.34), confirmed three ways: forward search in
+// French and Arabic, and reverse geocode of the point itself (→
+// "RN 124, 11 décembre, القرارة, دائرة القرارة, غرداية").
+// The PREVIOUS value { lat: 32.7833, lng: 3.7667 } was wrong: reverse
+// geocoding it returns بريان (Berriane), a different town ~64 km WEST of
+// El Guerrara. The latitude was only ~0.5 km off, but the longitude was
+// off by ~0.72°. That meant every free-text address fallback, the demo
+// seed coordinates, and the map's default centre all pointed at Berriane.
+export const GUERRARA_CENTER = { lat: 32.7885786, lng: 4.4882869 };
 
 export const GUERRARA_LOCATIONS = [
   'حي 05 جويلية - القرارة',
@@ -14,16 +23,19 @@ export const GUERRARA_LOCATIONS = [
   'حي الواحة - القرارة',
 ];
 
-// Approximate coords for each location (for the stylized map)
+// Approximate coords for each location (for the stylized map). These keep
+// their original stylized SPREAD but have been re-anchored on the verified
+// GUERRARA_CENTER above — previously they clustered ~64 km too far west,
+// around Berriane, so picking any of them panned the map to the wrong town.
 export const GUERRARA_COORDS: Record<number, { lat: number; lng: number }> = {
-  0: { lat: 32.789, lng: 3.758 },
-  1: { lat: 32.7833, lng: 3.7667 },
-  2: { lat: 32.778, lng: 3.772 },
-  3: { lat: 32.771, lng: 3.766 },
-  4: { lat: 32.786, lng: 3.778 },
-  5: { lat: 32.774, lng: 3.755 },
-  6: { lat: 32.768, lng: 3.78 },
-  7: { lat: 32.792, lng: 3.77 },
+  0: { lat: 32.7943, lng: 4.4796 },
+  1: { lat: 32.7886, lng: 4.4883 },
+  2: { lat: 32.7833, lng: 4.4936 },
+  3: { lat: 32.7763, lng: 4.4876 },
+  4: { lat: 32.7913, lng: 4.4996 },
+  5: { lat: 32.7793, lng: 4.4766 },
+  6: { lat: 32.7733, lng: 4.5016 },
+  7: { lat: 32.7973, lng: 4.4916 },
 };
 
 export interface CargoMeta {
@@ -92,9 +104,45 @@ export function calcPrice(
   return Math.round((base + distance * perKm) * multiplier);
 }
 
+// Human-friendly, unambiguous alphabet: no 0/O and no 1/I, so codes stay
+// legible when a customer reads one out over the phone.
+const ORDER_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+function randomCodeBytes(length: number): Uint8Array {
+  const arr = new Uint8Array(length);
+  // Web Crypto is available in Node 19+ and in every modern browser over
+  // https/localhost. We deliberately do NOT `import` node:crypto: this
+  // module is also bundled into client components, and a Node builtin
+  // import would break the browser build. The Math.random fallback only
+  // covers ancient runtimes; uniqueness, not secrecy, is the goal here.
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < length; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  return arr;
+}
+
+/**
+ * Collision-resistant human-readable order code: `WS-XXXXXX`.
+ *
+ * The previous version drew a 5-digit decimal number — only 100 000
+ * possible codes. `Order.code` is `@unique`, so by the birthday paradox a
+ * 50% collision chance was reached at roughly 12 000 orders, and every
+ * collision threw Prisma `P2002` and 500-ed the whole order creation.
+ *
+ * This draws 8 symbols from a 32-symbol alphabet → 2^40 (~1.1 trillion)
+ * codes. `256 % 32 === 0`, so the modulo below introduces no bias. The
+ * 50% collision point is now ~1.2 million orders, and callers still retry
+ * on `P2002` (see `src/app/api/orders/route.ts`) as defence in depth.
+ */
 export function generateOrderCode(): string {
-  const n = Math.floor(10000 + Math.random() * 89999);
-  return `WS-${n}`;
+  const bytes = randomCodeBytes(8);
+  let body = '';
+  for (let i = 0; i < 8; i++) {
+    body += ORDER_CODE_ALPHABET[bytes[i] % 32];
+  }
+  return `WS-${body}`;
 }
 
 export function formatDzd(n: number): string {

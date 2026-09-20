@@ -11,7 +11,7 @@ import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
-  CARGO_TYPES, GUERRARA_CENTER, calcPrice, formatDzd,
+  CARGO_TYPES, GUERRARA_CENTER, calcPrice, formatDzd, haversineKm,
 } from '@/lib/wassilha-data';
 import { emitOrderCreated } from '@/lib/realtime';
 import type { DeliveryAreaOption, DeliveryPointOption, DeliveryCoords } from '../delivery-point-picker';
@@ -40,6 +40,10 @@ import { cn } from '@/lib/utils';
 import type { CargoKey, PricingConfig } from '@/lib/types';
 import { DeliveryPointPicker } from '../delivery-point-picker';
 import { deliveryAreas, deliveryPoints } from '@/lib/delivery-data';
+// C1: verified OSM coordinates. Both maps ship EMPTY until
+// `scripts/geocode-delivery-points.ts` is run (we never fabricate coords);
+// the picker then falls back to GUERRARA_CENTER for every point.
+import { AREA_COORDS, POINT_COORDS } from '@/lib/area-coords.generated';
 
 // Pre-bake the picker data: the local const arrays are tuples, the picker
 // wants a richer shape (id, nameAr, nameFr, type, areaId). Slugs become
@@ -62,13 +66,11 @@ const PICKER_POINTS: ReadonlyArray<DeliveryPointOption> = deliveryPoints.map(
   }),
 );
 
-// Per-area fallback coords. Verified centers are added in a follow-up PR
-// once the admin tooling is in place; until then every point resolves to
-// the city center. This is documented in the README and the picker UI
-// shows the resolved coords so the customer can confirm.
-const COORDS_FOR_AREA: Readonly<Record<string, DeliveryCoords>> = {
-  // Verified centroids will go here. None are fabricated at this stage.
-};
+// C1 — the verified coordinates now live in `area-coords.generated.ts`
+// (populated by scripts/geocode-delivery-points.ts from OpenStreetMap).
+// Until that script is run both maps are empty BY DESIGN — the project
+// never fabricates coordinates — so every point resolves to the verified
+// GUERRARA_CENTER and pricing is flat rather than wrong.
 
 export function CustomerHome() {
   const { t, isAr, isRtl } = useT();
@@ -106,13 +108,29 @@ export function CustomerHome() {
   const [userLocation, setUserLocation] =
     useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
+  // C1 (real per-km pricing): coordinates chosen via the delivery-point
+  // picker. Free-text typing can't produce coordinates, so these stay
+  // `null` then and distance falls back to the flat default below.
+  const [pickupCoords, setPickupCoords] =
+    useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffCoords, setDropoffCoords] =
+    useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     api.getPricing().then(setPricing).catch(() => toast.error(isAr ? 'تعذر تحميل التسعير' : 'Tarifs indisponibles'));
   }, [isAr]);
 
-  // Free-text inputs have no coords, so distance falls back to the default.
-  const distance = useMemo(() => 0.8, []);
+  // Free-text inputs have no coords, so distance falls back to the flat
+  // default. When the customer used the picker for BOTH ends we compute a
+  // real Haversine distance — this is the whole point of C1: the estimate
+  // the customer sees now matches what the server will charge (the server
+  // recomputes from these same coordinates, see src/lib/pricing.ts).
+  const distance = useMemo(() => {
+    if (pickupCoords && dropoffCoords) {
+      return haversineKm(pickupCoords, dropoffCoords);
+    }
+    return 0.8;
+  }, [pickupCoords, dropoffCoords]);
 
   const estimatedPrice = useMemo(() => {
     if (!pricing) return 0;
@@ -172,6 +190,18 @@ export function CustomerHome() {
         ...(isTaxi ? {} : { weight }),
         distance,
         price: estimatedPrice,
+        // C1: forward the picker's verified coordinates so the server can
+        // recompute the authoritative Haversine distance + price. Absent
+        // for free-text addresses; the server then falls back to the town
+        // centroid (and a flat default) exactly as before.
+        ...(pickupCoords ? {
+          pickupLat: pickupCoords.lat,
+          pickupLng: pickupCoords.lng,
+        } : {}),
+        ...(dropoffCoords ? {
+          dropoffLat: dropoffCoords.lat,
+          dropoffLng: dropoffCoords.lng,
+        } : {}),
         // Notes are only relevant for cargo (fragile, "2nd floor",
         // etc.). For taxis the field is hidden in the UI; we still
         // pass an empty string so the server stores `null`.
@@ -722,14 +752,17 @@ export function CustomerHome() {
             areas={PICKER_AREAS}
             points={PICKER_POINTS}
             fallbackCoords={GUERRARA_CENTER as DeliveryCoords}
-            coordsForArea={COORDS_FOR_AREA}
+            coordsForArea={AREA_COORDS}
+            pointCoords={POINT_COORDS}
             isRtl={isRtl}
-            onSelect={(point) => {
+            onSelect={(point, coords) => {
               const label = isAr ? point.nameAr : (point.nameFr ?? point.nameAr);
               if (pickerFor === 'pickup') {
                 setPickupText(label);
+                setPickupCoords(coords);
               } else if (pickerFor === 'dropoff') {
                 setDropoffText(label);
+                setDropoffCoords(coords);
               }
               setPickerFor(null);
             }}

@@ -138,10 +138,14 @@ const customers: {
         cargoType: cargo,
         pickup: locations[pi],
         dropoff: locations[di],
-        pickupLat: 32.78 + (Math.random() - 0.5) * 0.03,
-        pickupLng: 3.76 + (Math.random() - 0.5) * 0.03,
-        dropoffLat: 32.78 + (Math.random() - 0.5) * 0.03,
-        dropoffLng: 3.76 + (Math.random() - 0.5) * 0.03,
+        // Re-anchored on the verified El Guerrara centroid (see
+        // GUERRARA_CENTER in src/lib/wassilha-data.ts). The old 3.76
+        // longitude seeded demo orders ~64 km too far west, around
+        // Berriane, so the demo map + distances were both wrong.
+        pickupLat: 32.7886 + (Math.random() - 0.5) * 0.03,
+        pickupLng: 4.4883 + (Math.random() - 0.5) * 0.03,
+        dropoffLat: 32.7886 + (Math.random() - 0.5) * 0.03,
+        dropoffLng: 4.4883 + (Math.random() - 0.5) * 0.03,
         weight: [20, 50, 80, 120, 200][i % 5],
         distance,
         price,

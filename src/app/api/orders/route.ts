@@ -8,6 +8,33 @@ import { sendPushNotification, sendPushNotificationBatch } from '@/lib/firebase-
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
+/**
+ * C7 — retry a Prisma write that can fail with `P2002` (unique-constraint
+ * collision). `generateOrderCode()` now draws from a ~2^40 space, so a
+ * collision is effectively unreachable — but regenerating + retrying costs
+ * nothing and guarantees a booking can never 500 on a rare collision.
+ * The factory callback (rather than pre-built args) is what lets Prisma
+ * infer the exact `select`-narrowed return type at the call site.
+ */
+async function retryOnUniqueViolation<T>(
+  factory: () => Promise<T>,
+  regenerate: () => void,
+  maxAttempts = 4,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await factory();
+    } catch (err) {
+      if (attempt < maxAttempts - 1 && (err as { code?: string } | null)?.code === 'P2002') {
+        regenerate();
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+
 const VALID_CARGO: CargoKey[] = [
   'parcel',
   'goods',
@@ -209,47 +236,57 @@ export async function POST(req: NextRequest) {
       cargoType: cargoType as CargoKey,
     });
 
-    const order = await db.order.create({
-      data: {
-        code: generateOrderCode(),
-        customerId: session.id,
-        cargoType,
-        pickup,
-        dropoff,
-        pickupLat,
-        pickupLng,
-        dropoffLat,
-        dropoffLng,
-        weight:
-          typeof data.weight === 'number' && data.weight >= 0
-            ? Math.round(data.weight)
-            : 20,
-        // SECURITY (V7): server-computed; any client-supplied price is
-        // ignored. The Prisma Order model has both distance and
-        // price columns, so we persist the recomputed values here.
-        distance: distanceKm,
-        price,
-        // SCHEDULED BOOKINGS: when `scheduledAt` is a future date
-        // (validated by Zod above), the order waits in `scheduled`
-        // state and the driver fan-out below is skipped. The
-        // dispatcher (or a cron-like job, out of scope here) flips
-        // the status to `searching` when the time approaches.
-        // A null `scheduledAt` (or a past date) keeps the legacy
-        // immediate flow with `status='searching'`.
-        status: data.scheduledAt ? 'scheduled' : 'searching',
-        scheduledAt: data.scheduledAt ?? null,
-        notes:
-          typeof data.notes === 'string' && data.notes.trim()
-            ? data.notes.trim()
-            : null,
-
+    // C7: `Order.code` is @unique. generateOrderCode() now draws from a
+    // ~2^40 space, so a collision is effectively impossible; the retry
+    // wrapper below still regenerates the code on a Prisma P2002 so a
+    // booking can never fail on one.
+    let orderCode = generateOrderCode();
+    const order = await retryOnUniqueViolation(
+      () =>
+        db.order.create({
+          data: {
+            code: orderCode,
+            customerId: session.id,
+            cargoType,
+            pickup,
+            dropoff,
+            pickupLat,
+            pickupLng,
+            dropoffLat,
+            dropoffLng,
+            weight:
+              typeof data.weight === 'number' && data.weight >= 0
+                ? Math.round(data.weight)
+                : 20,
+            // SECURITY (V7): server-computed; any client-supplied price is
+            // ignored. The Prisma Order model has both distance and
+            // price columns, so we persist the recomputed values here.
+            distance: distanceKm,
+            price,
+            // SCHEDULED BOOKINGS: when `scheduledAt` is a future date
+            // (validated by Zod above), the order waits in `scheduled`
+            // state and the driver fan-out below is skipped. The
+            // dispatcher (or a cron-like job, out of scope here) flips
+            // the status to `searching` when the time approaches.
+            // A null `scheduledAt` (or a past date) keeps the legacy
+            // immediate flow with `status='searching'`.
+            status: data.scheduledAt ? 'scheduled' : 'searching',
+            scheduledAt: data.scheduledAt ?? null,
+            notes:
+              typeof data.notes === 'string' && data.notes.trim()
+                ? data.notes.trim()
+                : null,
+          },
+          select: {
+            ...publicOrderSelect,
+            customer: { select: publicUserSelect },
+            driver: { select: publicUserSelect },
+          },
+        }),
+      () => {
+        orderCode = generateOrderCode();
       },
-      select: {
-        ...publicOrderSelect,
-        customer: { select: publicUserSelect },
-        driver: { select: publicUserSelect },
-      },
-    });
+    );
 
     // Fire-and-forget: notify every online, verified, active driver that
     // a new order is looking for a triporteur. The push helper itself
