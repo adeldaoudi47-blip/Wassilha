@@ -7,6 +7,7 @@ import {
   type ActionPerformed,
   type RegistrationError,
 } from '@capacitor/push-notifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 // One-time flag (per page load) so we don't re-prompt on every navigation
 // in the same session. Persisting the "asked" state to localStorage is
@@ -113,14 +114,32 @@ export function initPushNotificationListeners(): void {
     console.warn('[push-notifications] registration error:', err.error);
   });
 
-  // Foreground push: a notification arrived while the app was open. The
-  // native UI already shows it; we just log + expose a hook for future
-  // in-app toasts.
+  // Foreground push: a notification arrived while the app is open. On Android
+  // the FCM service does NOT raise a system notification while the app is in
+  // the foreground, so we re-post it as a local notification to guarantee it
+  // still lands in the top notification bar — same UX as when the app is
+  // closed. Wrapped in try/catch: a display failure must never break the
+  // token registration or the OTP flows.
   PushNotifications.addListener(
     'pushNotificationReceived',
-    (notification: PushNotificationSchema) => {
+    async (notification: PushNotificationSchema) => {
       // eslint-disable-next-line no-console
       console.log('[push-notifications] received in foreground:', notification);
+      try {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: Date.now(),
+              title: notification.title || 'وصّلها',
+              body: notification.body || '',
+              smallIcon: 'ic_launcher',
+            },
+          ],
+        });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[push-notifications] failed to post local notification:', e);
+      }
     }
   );
 
