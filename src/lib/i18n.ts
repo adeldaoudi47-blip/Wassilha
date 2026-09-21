@@ -44,6 +44,7 @@ export const translations = {
     orderPlaced: 'تم تقديم الطلب بنجاح',
     orderPlacedMsg: 'سيتواصل معك الحرفي قريباً',
     insufficientStock: 'الكمية غير متوفرة',
+    outOfStock: 'نفد المخزون',
     // === HIRFA (P7): delivery & reviews =============================
     craftDelivery: 'توصيل منتج حِرفة',
     rateCraftOrder: 'قيّم طلبك',
@@ -519,6 +520,7 @@ export const translations = {
     orderPlaced: 'Commande passée avec succès',
     orderPlacedMsg: "L'artisan vous contactera bientôt",
     insufficientStock: 'Stock insuffisant',
+    outOfStock: 'Rupture de stock',
     // === HIRFA artisan application (P4) - French mirrors ============
     openCraftStore: 'Ouvrir votre boutique HIRFA',
     openCraftStoreSub: 'Vendez vos produits artisanaux aux clients d’El Guerrara',

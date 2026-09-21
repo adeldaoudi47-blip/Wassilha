@@ -27,11 +27,19 @@ export function ProductDetail({
   const description = isAr
     ? product.descriptionAr
     : product.descriptionFr || product.descriptionAr;
-  // "حسب الطلب": explicitly crafted on demand, or legacy stock-less items.
-  const madeToOrder = product.isMadeToOrder || product.stock <= 0;
+  // "حسب الطلب": explicitly crafted on demand — stock is irrelevant for it.
+  // A stock-tracked product at 0 is OUT OF STOCK, not made-to-order: the old
+  // `|| product.stock <= 0` gave every sold-out item a misleading amber
+  // "made to order" badge and let the buyer add it → 409 at checkout.
+  const madeToOrder = product.isMadeToOrder;
+  const outOfStock = !product.isMadeToOrder && product.stock <= 0;
   const images = product.images && product.images.length > 0 ? product.images : [];
 
   const handleAdd = () => {
+    // Guard: a stock-tracked product at 0 must never enter the cart — the
+    // server rejects it with 409 insufficientStock at checkout. Made-to-order
+    // items pass through (stock is meaningless for them).
+    if (outOfStock) return;
     addItem({
       productId: product.id,
       nameAr: name,
@@ -67,10 +75,12 @@ export function ProductDetail({
             'absolute top-3 start-3 rounded-full px-2.5 py-1 text-[11px] font-bold shadow-sm',
             madeToOrder
               ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
-              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+              : outOfStock
+                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300"
+                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
           )}
         >
-          {madeToOrder ? t.madeToOrder : t.readyToOrder}
+          {madeToOrder ? t.madeToOrder : outOfStock ? t.outOfStock : t.readyToOrder}
         </span>
       </div>
       {images.length > 1 && (
@@ -102,10 +112,12 @@ export function ProductDetail({
               "rounded-full px-2.5 py-1 text-[11px] font-bold",
               madeToOrder
                 ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
-                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                : outOfStock
+                  ? "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300"
+                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
             )}
           >
-            {madeToOrder ? t.madeToOrder : t.readyToOrder}
+            {madeToOrder ? t.madeToOrder : outOfStock ? t.outOfStock : t.readyToOrder}
           </span>
         </div>
       </div>
@@ -148,13 +160,14 @@ export function ProductDetail({
       {/* Add to cart */}
       <button
         onClick={handleAdd}
+        disabled={outOfStock}
         className={cn(
-          "flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-extrabold text-white shadow-lg transition-transform active:scale-[0.98]",
+          "flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-extrabold text-white shadow-lg transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
           added ? "bg-emerald-600" : "bg-primary"
         )}
       >
         {added ? <Check size={18} /> : <ShoppingBag size={18} />}
-        {added ? t.addedToCart : t.addToCart}
+        {outOfStock ? t.outOfStock : added ? t.addedToCart : t.addToCart}
       </button>
     </div>
   );

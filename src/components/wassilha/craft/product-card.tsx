@@ -20,8 +20,12 @@ export function ProductCard({
   const { t, isAr } = useT();
   const [fav, setFav] = useState(false);
   const name = isAr ? product.nameAr : product.nameFr || product.nameAr;
-  // "حسب الطلب": explicitly crafted on demand, or legacy stock-less items.
-  const madeToOrder = product.isMadeToOrder || product.stock <= 0;
+  // "حسب الطلب": explicitly crafted on demand — stock is irrelevant for it.
+  // A stock-tracked product at 0 is OUT OF STOCK, not made-to-order: the old
+  // `|| product.stock <= 0` gave every sold-out item a misleading amber
+  // "made to order" badge (and the cart accepted it → 409 at checkout).
+  const madeToOrder = product.isMadeToOrder;
+  const outOfStock = !product.isMadeToOrder && product.stock <= 0;
   const img = product.images && product.images.length > 0 ? product.images[0] : null;
 
   return (
@@ -61,10 +65,12 @@ export function ProductCard({
             'absolute bottom-2 start-2 rounded-full px-2 py-0.5 text-[10px] font-bold',
             madeToOrder
               ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
-              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+              : outOfStock
+                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300"
+                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
           )}
         >
-          {madeToOrder ? t.madeToOrder : t.readyToOrder}
+          {madeToOrder ? t.madeToOrder : outOfStock ? t.outOfStock : t.readyToOrder}
         </span>
       </div>
       <div className="space-y-0.5 p-2.5">
