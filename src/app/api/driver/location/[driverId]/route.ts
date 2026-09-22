@@ -7,7 +7,7 @@ import { getSession } from '@/lib/auth';
 // Returns the last known GPS position of the given driver (the one persisted
 // on the Driver row by /api/driver/location). Used by the customer tracking
 // page to seed the live driver marker with a fresh value before the first
-// socket.io tick arrives.
+// Pusher tick arrives.
 //
 // Auth: any authenticated user can read this (customers, drivers, admins).
 // In the future this could be tightened to only allow participants of an

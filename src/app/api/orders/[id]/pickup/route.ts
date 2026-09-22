@@ -4,6 +4,7 @@ import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import { createNotification } from '@/lib/notifications';
+import { emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -75,6 +76,8 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
       // eslint-disable-next-line no-console
       console.warn('[orders/pickup] notification failed:', e);
     });
+    // C4: realtime status broadcast (see orders/accept for rationale).
+    emitOrderStatus(updated);
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json(

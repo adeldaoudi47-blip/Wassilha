@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { AdminDriverLocation } from '@/lib/types';
+import { onAdminDriverLocation } from '@/lib/realtime';
 
 // Leaflet touches `window` at module init, so the inner map component
 // is loaded only on the client. Mirrors the dynamic-import pattern used
@@ -61,6 +62,36 @@ export function AdminFleetMap() {
     load();
     const id = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(id);
+  }, []);
+
+  // C4 — realtime driver positions via Pusher.
+  //
+  // Every POST /api/driver/location triggers `driver:location` on the admin
+  // channel (see pusher-server.emitDriverLocation). Merging those ticks here
+  // keeps markers smooth between the 15s polls, so an active driver's marker
+  // moves continuously instead of jumping every 15s. The 15s poll stays as the
+  // catch-all (it also refreshes lastSeenAt / counts for offline drivers that
+  // stop sending fixes entirely).
+  useEffect(() => {
+    const off = onAdminDriverLocation((p) => {
+      setDrivers((prev) =>
+        prev.some((d) => d.id === p.driverId)
+          ? prev.map((d) =>
+              d.id === p.driverId
+                ? {
+                    ...d,
+                    currentLat: p.lat,
+                    currentLng: p.lng,
+                    // Mark the fix as fresh so the marker stays green and the
+                    // "live" count doesn't dip while the driver is moving.
+                    lastSeenAt: new Date().toISOString(),
+                  }
+                : d,
+            )
+          : prev,
+      );
+    });
+    return off;
   }, []);
 
   // Recompute "stale" status every 30s without re-fetching. Drivers

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
+import { emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -44,6 +45,11 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         driver: { select: publicUserSelect },
       },
     });
+    // C4: realtime status broadcast. Cancellation is the one status change the
+    // *customer* can make, so the driver's request list must clear in real
+    // time — otherwise a driver could tap Accept on an order that is already
+    // gone. Fire-and-forget: the DB row already committed.
+    emitOrderStatus(updated);
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json(

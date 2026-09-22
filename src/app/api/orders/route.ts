@@ -5,7 +5,8 @@ import { getSession } from '@/lib/auth';
 import { generateOrderCode, GUERRARA_CENTER } from '@/lib/wassilha-data';
 import { computeOrderPrice } from '@/lib/pricing';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
-import { fanOutNewOrder } from '@/lib/dispatch';
+import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
+import { emitOrderNewRequest } from '@/lib/pusher-server';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
 /**
@@ -307,6 +308,15 @@ export async function POST(req: NextRequest) {
           pickup: order.pickup,
           dropoff: order.dropoff,
         });
+        // C4 — realtime new-order event. customer-home used to emit
+        // `order:created` from the client; with Pusher the client cannot
+        // publish, so the route triggers the same eligible-driver list that
+        // the push fan-out just computed. Drivers' request lists update
+        // instantly without waiting for their 5s poll fallback.
+        emitOrderNewRequest(
+          order,
+          await findAvailableDrivers(order.cargoType),
+        );
       } catch (e) {
         // eslint-disable-next-line no-console
         console.warn('[orders] driver fan-out notify failed:', e);

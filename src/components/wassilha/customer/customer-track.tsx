@@ -55,7 +55,7 @@ export function CustomerTrack() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [driverProgress, setDriverProgress] = useState(0);
-  // Latest GPS fix broadcasted by the driver via socket.io. We use this
+  // Latest GPS fix broadcasted by the driver via Pusher. We use this
   // (instead of the abstract progress value) to position the driver marker
   // on the real Leaflet map.
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -101,9 +101,15 @@ export function CustomerTrack() {
     };
   }, [loadOrder]);
 
-  // Realtime: listen for order status + driver location
+  // Realtime: listen for order status + driver location.
+  //
+  // Under Pusher these listeners are bound to this order's private channel
+  // (the subscription is opened by the effect below when the order becomes
+  // accepted/picked). The old socket.io versions were global listeners, which
+  // is why the `id === order.id` guards below exist — they are now redundant
+  // but harmless, so they stay as defence in depth.
   useEffect(() => {
-    const offStatus = onOrderStatus((updated) => {
+    const offStatus = onOrderStatus(order?.id ?? '', (updated) => {
       if (order && updated.id === order.id) {
         setOrder(updated);
         if (updated.status === 'delivered') {
@@ -111,7 +117,7 @@ export function CustomerTrack() {
         }
       }
     });
-    const offLoc = onDriverLocation((p) => {
+    const offLoc = onDriverLocation(order?.id ?? '', (p) => {
       if (order && p.orderId === order.id) {
         // Update the real GPS marker. We still keep `driverProgress` so
         // any non-map UI (e.g. progress bar) keeps working.
@@ -139,7 +145,7 @@ export function CustomerTrack() {
 
   // Seed the live driver marker with the last known position persisted on
   // the Driver row (if any) so the map shows something useful before the
-  // first socket.io tick arrives.
+  // first Pusher tick arrives.
   useEffect(() => {
     if (!order || !order.driverId) return;
     if (driverCoords) return; // already have a fresher value
@@ -163,7 +169,7 @@ export function CustomerTrack() {
           setDriverCoords({ lat: j.currentLat, lng: j.currentLng });
         }
       } catch {
-        // Ignore — socket.io will deliver the first live tick shortly.
+        // Ignore — Pusher will deliver the first live tick shortly.
       }
     })();
     return () => {

@@ -4,6 +4,7 @@ import { sendPushNotification } from '@/lib/firebase-admin';
 import { getSession } from '@/lib/auth';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import { createNotification } from '@/lib/notifications';
+import { emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -93,6 +94,12 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
       // eslint-disable-next-line no-console
       console.warn('[orders/accept] notification failed:', e);
     });
+    // C4: realtime status broadcast. Under socket.io this came from the
+    // driver's client emitting `order:status` after the 200 response; moving
+    // it server-side means the customer's tracking screen updates even if the
+    // driver's socket was never connected. Fire-and-forget like the two
+    // side-effects above: the DB write already committed.
+    emitOrderStatus(updated);
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json(

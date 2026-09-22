@@ -7,8 +7,8 @@ import { ensureRealtime, broadcastDriverLocation } from '@/lib/realtime-server';
 // Body: { lat: number, lng: number, orderId?: string, accuracy?: number }
 //
 // Updates the Driver row with the latest GPS fix and broadcasts the new
-// position to every connected socket.io client subscribed to this driver's
-// current order (or the orderId provided in the body if any).
+// position to every Pusher client subscribed to this driver's current order
+// (or the orderId provided in the body if any).
 //
 // Auth: must be a logged-in driver. We look up the Driver by userId
 // (the session id is the User id, not the Driver id).
@@ -68,13 +68,15 @@ export async function POST(req: NextRequest) {
       select: { id: true, currentLat: true, currentLng: true, lastSeenAt: true },
     });
 
-    // Make sure the socket.io server is up before we try to broadcast.
-    // In dev/prod it's normally already attached to the Next.js process.
+    // Ensure the realtime layer is warm. Under socket.io this booted an
+    // in-process server; with Pusher (hosted websockets) there is nothing to
+    // boot, so the call is a harmless no-op kept for symmetry with /api/auth/me.
     ensureRealtime();
 
-    // Broadcast the position update to every connected client subscribed
-    // to this order. Falls through silently if realtime isn't booted yet
-    // (the DB write is the source of truth; the next tick will recover).
+    // Broadcast the position update to every client subscribed to this order
+    // over Pusher. The push is best-effort: the Driver-row write above is the
+    // source of truth, so a dropped trigger means the customer's marker is one
+    // poll stale, never wrong.
     if (orderId) {
       try {
         broadcastDriverLocation(orderId, lat, lng, driver.id);
