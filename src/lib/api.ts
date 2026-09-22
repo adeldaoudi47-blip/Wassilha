@@ -34,26 +34,51 @@ async function req<T>(
   // multipart/form-data with its own boundary, or the API's formData()
   // parse fails with "Content-Type was not one of multipart/form-data".
   const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      ...(!isFormData && { 'Content-Type': 'application/json' }),
-      ...(opts.headers || {}),
-    },
-    credentials: 'include',
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...opts,
+      headers: {
+        ...(!isFormData && { 'Content-Type': 'application/json' }),
+        ...(opts.headers || {}),
+      },
+      credentials: 'include',
+    });
+  } catch (e) {
+    // Raw transport failure: device is offline, DNS failed, connection was
+    // dropped, or a captive portal intercepted the request. Browsers throw
+    // a `TypeError: Failed to fetch` (Chrome/WebView) or "NetworkError when
+    // attempting to fetch resource" (Firefox) — both are instanceof
+    // TypeError. We normalise every flavour to a single stable sentinel so
+    // call sites can show a precise offline message instead of "فشل".
+    if (e instanceof TypeError) {
+      throw new Error('networkError');
+    }
+    // AbortError (request cancelled) or any other non-network throw:
+    // propagate the original so no information is lost.
+    throw e;
+  }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
       const body = await res.json();
       msg = body.error || body.message || msg;
     } catch {
-      /* ignore */
+      // The error body is not JSON — e.g. Vercel returned its HTML error
+      // page (500/runtime crash) or a gateway sent an empty body. The
+      // generic `Request failed (5xx)` string is meaningless to a driver,
+      // so surface a stable sentinel the UI can localise.
+      throw new Error('serverError');
     }
     throw new Error(msg);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    // 2xx with a non-JSON body (rare: a stray proxy/CDN interception).
+    throw new Error('serverError');
+  }
 }
 
 export const api = {

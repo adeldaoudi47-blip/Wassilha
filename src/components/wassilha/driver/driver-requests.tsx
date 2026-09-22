@@ -77,8 +77,24 @@ export function DriverRequests() {
       const p = await api.driverStatus(online);
       setProfile(p);
       toast.success(online ? (isAr ? 'أنت الآن متصل' : 'En ligne') : (isAr ? 'أنت غير متصل' : 'Hors ligne'));
-    } catch {
-      toast.error(isAr ? 'فشل' : 'Échec');
+    } catch (err) {
+      // `req()` normalises failures into stable sentinels:
+      //   'networkError' — raw transport failure (device offline / DNS /
+      //                    dropped connection). This is the case where the
+      //                    driver genuinely has no data, and previously the
+      //                    app would just say "فشل".
+      //   'serverError'  — the API returned a non-JSON body (Vercel HTML
+      //                    error page on a 500, empty gateway body...).
+      // Anything else is a structured API error ('unauthorized',
+      // 'forbidden', 'tooManyRequests'...) we can show as-is.
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'networkError') {
+        toast.error(t.networkError);
+      } else if (msg === 'serverError') {
+        toast.error(t.serverError);
+      } else {
+        toast.error(msg || (isAr ? 'فشل' : 'Échec'));
+      }
     }
   };
 

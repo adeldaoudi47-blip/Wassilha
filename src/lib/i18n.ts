@@ -478,6 +478,13 @@ export const translations = {
     storeApprovedBody: 'يمكنك الآن إضافة منتجاتك',
     newCraftOrder: 'لديك طلب جديد',
     newCraftOrderBody: 'تحقق من متجرك',
+    // === Network / API error sentinels ===============================
+    // `req()` in src/lib/api.ts normalises transport failures and non-JSON
+    // error bodies to the `networkError` / `serverError` sentinels. These
+    // keys are the human-readable message for each, shown by the driver
+    // toggle (and any other call site) instead of the old generic "فشل".
+    networkError: 'لا يوجد اتصال بالإنترنت. يرجى التحقق من شبكتك.',
+    serverError: 'حدث خطأ في الخادم. حاول لاحقاً.',
   },
   fr: {
     // === HIRFA artisan dashboard (P5) - French mirrors ============
@@ -936,6 +943,12 @@ export const translations = {
     storeApprovedBody: 'Vous pouvez maintenant ajouter vos produits',
     newCraftOrder: 'Nouvelle commande',
     newCraftOrderBody: 'Consultez votre boutique',
+    // === Network / API error sentinels (FR) ==========================
+    // French mirrors of the Arabic keys above. `req()` throws the stable
+    // `networkError` / `serverError` sentinels; these are the localised
+    // messages the UI displays.
+    networkError: 'Pas de connexion Internet. Vérifiez votre réseau.',
+    serverError: 'Erreur du serveur. Réessayez plus tard.',
   },
 };
 
