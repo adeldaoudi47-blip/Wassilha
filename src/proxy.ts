@@ -39,7 +39,12 @@ const EXEMPT_PREFIXES = [
   // IPs with no session cookie; they must never be edge-rate-limited or
   // updates get dropped. The route enforces its own security instead
   // (optional X-Telegram-Bot-Api-Secret-Token check).
-  '/api/telegram/webhook',
+  // C3 scheduled-order dispatcher. Vercel Cron calls it from the platform's
+  // own infra with a `CRON_SECRET` bearer token — no end user is behind it,
+  // and its IP is not stable, so the per-IP bucket would only serve to
+  // randomly drop the once-per-minute dispatch tick. The route authenticates
+  // itself with the shared secret instead.
+  '/api/cron/dispatch-scheduled',
 ];
 
 interface Bucket {

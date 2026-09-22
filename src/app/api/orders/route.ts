@@ -4,8 +4,8 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { generateOrderCode, GUERRARA_CENTER } from '@/lib/wassilha-data';
 import { computeOrderPrice } from '@/lib/pricing';
-import { sendPushNotification, sendPushNotificationBatch } from '@/lib/firebase-admin';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
+import { fanOutNewOrder } from '@/lib/dispatch';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 
 /**
@@ -288,64 +288,24 @@ export async function POST(req: NextRequest) {
       },
     );
 
-    // Fire-and-forget: notify every online, verified, active driver that
-    // a new order is looking for a triporteur. The push helper itself
-    // never throws, but we still wrap the fan-out in try/catch so a FCM
+    // C3 — driver fan-out for a live order now lives in `dispatch.ts` so the
+    // scheduled-order dispatcher (/api/cron/dispatch-scheduled) reuses the
+    // exact same push + in-app notification path. Fire-and-forget: a FCM
     // outage cannot leak an unhandled rejection from this handler.
-    //
-    // Service-type filter (V2): drivers opt into the kinds of orders
-    // they want to receive by setting `Driver.serviceType` to one of
-    // "CARGO" / "TAXI" / "BOTH" at registration time. The fan-out
-    // below translates the order's cargoType into the requested
-    // service category ("taxi" -> "TAXI", everything else -> "CARGO")
-    // and then matches on `serviceType IN { "BOTH", requested }`.
-    // A cargo-only driver therefore never receives a taxi ping, and
-    // a taxi-only driver never receives a cargo ping. The compound
-    // index @@index([isOnline, isVerified, serviceType]) keeps the
-    // query cheap as the fleet grows.
     void (async () => {
       // SCHEDULED BOOKINGS: skip the driver fan-out for future-dated
-      // orders. The order is stored in `status='scheduled'` and
-      // waits in the "incoming scheduled" tab on the driver side.
-      // When the dispatcher flips it to `searching`, the normal
-      // fan-out (this whole block) runs from that path instead.
+      // orders. The order is stored in `status='scheduled'` and waits in
+      // the "incoming scheduled" tab on the driver side. When the dispatcher
+      // flips it to `searching` at the booked time, it runs the same
+      // fanOutNewOrder() from its own route instead.
       if (data.scheduledAt) return;
       try {
-        // Map Order.cargoType to the Driver.serviceType category the
-        // order is requesting. The Order column is a free String so
-        // an unknown cargo value (e.g. a future "HEAVY") still falls
-        // through to the cargo fan-out rather than blowing up here.
-        const requestedService: 'CARGO' | 'TAXI' =
-          cargoType === 'taxi' ? 'TAXI' : 'CARGO';
-        const availableDrivers = await db.driver.findMany({
-          where: {
-            isOnline: true,
-            isVerified: true,
-            user: { accountStatus: 'active' },
-            // The `OR` shape lets a single Prisma query hit both the
-            // specialists (serviceType = requestedService) and the
-            // generalists (serviceType = "BOTH"). A driver whose
-            // serviceType is the *opposite* of the requested one is
-            // excluded automatically.
-            OR: [
-              { serviceType: 'BOTH' },
-              { serviceType: requestedService },
-            ],
-          },
-          select: { userId: true },
-        });
-        if (availableDrivers.length === 0) return;
-        // One Prisma call + one FCM call regardless of fleet size.
-        // The batch helper also handles the 5s timeout and dead-token
-        // pruning internally.
-        void sendPushNotificationBatch(
-          availableDrivers.map((d) => d.userId),
-          'طلب جديد',
-          'لديك طلب توصيل جديد، تحقق من التطبيق.',
-          { type: 'new_order', orderId: order.id, orderCode: order.code }
-        ).catch((e) => {
-          // eslint-disable-next-line no-console
-          console.warn('[orders] driver push batch failed:', e);
+        await fanOutNewOrder({
+          id: order.id,
+          code: order.code,
+          cargoType: order.cargoType,
+          pickup: order.pickup,
+          dropoff: order.dropoff,
         });
       } catch (e) {
         // eslint-disable-next-line no-console
