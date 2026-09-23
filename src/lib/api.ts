@@ -12,15 +12,21 @@ import type {
   CraftCategoryPublic,
   CraftProductListResponse,
   CraftProductPublic,
+  ProductVariantPublic,
+  ProductTierPublic,
   CraftArtisanApplication,
   CraftOrderPublic,
+  CraftOrderCreateResponse,
+  CraftOrderStatus,
+  CraftOrderListResponse,
+  ProductQAPublic,
+  CouponPublic,
+  CouponPreview,
+  CouponType,
   PublicStoreFront,
   PublicProduct,
   PublicProductListResponse,
   PublicStoreTile,
-  CraftOrderListResponse,
-  CraftOrderCreateResponse,
-  CraftOrderStatus,
   CraftStoreStats,
   CraftAreaPublic,
   NotificationListResponse,
@@ -490,6 +496,16 @@ export const api = {
     stock?: number;
     isFeatured?: boolean;
     isMadeToOrder?: boolean;
+    // HIRFA Phase 3: Alibaba-style variants, graduated price tiers and an
+    // optional product video. All optional so an existing caller keeps working.
+    videoUrl?: string | null;
+    variants?: Array<{
+      nameAr: string;
+      nameFr?: string | null;
+      priceAdjustment?: number;
+      stock?: number;
+    }>;
+    tiers?: Array<{ minQuantity: number; unitPrice: number }>;
   }) => req<CraftProductPublic>("/api/craft/products", { method: "POST", body: JSON.stringify(data) }),
   getMyCraftProducts: () => req<CraftProductPublic[]>("/api/craft/products/mine"),
   updateCraftProduct: (id: string, data: Partial<{
@@ -503,6 +519,17 @@ export const api = {
     stock: number;
     isFeatured: boolean;
     isMadeToOrder?: boolean;
+    videoUrl?: string | null;
+    // HIRFA Phase 3: variants/tiers are sent as a FULL replacement list — the
+    // form owns the array, so an omitted entry is deleted server-side.
+    variants?: Array<{
+      id?: string;
+      nameAr: string;
+      nameFr?: string | null;
+      priceAdjustment?: number;
+      stock?: number;
+    }>;
+    tiers?: Array<{ id?: string; minQuantity: number; unitPrice: number }>;
   }>) => req<CraftProductPublic>(`/api/craft/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteCraftProduct: (id: string) => req<{ ok: boolean; id: string }>(`/api/craft/products/${id}`, { method: "DELETE" }),
   uploadCraftImage: (file: File) => {
@@ -513,12 +540,16 @@ export const api = {
 
   // HIRFA (P6): order lifecycle — create, list, status transitions
   createCraftOrder: (data: {
-    items: { productId: string; quantity: number }[];
+    // HIRFA Phase 3: each line now carries an optional variantId, and the
+    // whole cart may carry one coupon CODE per store. Prices are NEVER sent —
+    // the server recomputes them from the DB.
+    items: { productId: string; quantity: number; variantId?: string | null }[];
     deliveryOption?: 'pickup' | 'wassilha_delivery';
     dropoffAddress?: string;
     dropoffLat?: number;
     dropoffLng?: number;
     notes?: string;
+    couponCode?: string | null;
   }) => req<CraftOrderCreateResponse>("/api/craft/orders", { method: "POST", body: JSON.stringify(data) }),
   getCraftOrders: () =>
     req<CraftOrderListResponse>("/api/craft/orders"),
@@ -528,11 +559,61 @@ export const api = {
       body: JSON.stringify({ status, dropoffAddress, dropoffLat, dropoffLng }),
     }),
 
-  // HIRFA (P7): rate a delivered craft order
-  rateCraftOrder: (id: string, score: number, comment?: string) =>
+  // HIRFA (P7): rate a delivered craft order. `images` are photo URLs already
+  // uploaded via uploadCraftImage (the API only accepts URLs, never files).
+  rateCraftOrder: (id: string, score: number, comment?: string, images?: string[]) =>
     req<{ ok: boolean; message: string }>(`/api/craft/orders/${id}/rate`, {
       method: "POST",
-      body: JSON.stringify({ score, comment }),
+      body: JSON.stringify({ score, comment, images }),
+    }),
+
+  // HIRFA Phase 3: Q&A — a buyer asks about a product, the artisan answers.
+  askCraftProductQuestion: (productId: string, question: string) =>
+    req<ProductQAPublic>(`/api/craft/products/${productId}/qa`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+  listCraftProductQuestions: (productId: string) =>
+    // The API wraps the list in { qa: [...] }, so unwrap it here to keep the
+    // call sites dealing in a plain array.
+    req<{ qa: ProductQAPublic[] }>(`/api/craft/products/${productId}/qa`).then((r) => r.qa ?? []),
+  answerCraftQuestion: (qaId: string, answer: string) =>
+    req<ProductQAPublic>(`/api/craft/qa/${qaId}/reply`, {
+      method: "PATCH",
+      body: JSON.stringify({ answer }),
+    }),
+
+  // HIRFA Phase 3: review "helpful" vote (idempotent toggle) + the artisan's
+  // public reply to a review.
+  likeCraftReview: (reviewId: string) =>
+    req<{ ok: boolean; liked: boolean }>(`/api/craft/reviews/${reviewId}/like`, {
+      method: "POST",
+    }),
+  replyCraftReview: (reviewId: string, reply: string) =>
+    req<{ ok: boolean; sellerReply: string }>(`/api/craft/reviews/${reviewId}/reply`, {
+      method: "PATCH",
+      body: JSON.stringify({ reply }),
+    }),
+
+  // HIRFA Phase 3: artisan-owned discount codes. Codes are normalised to
+  // UPPERCASE server-side, so "welcome10" and "WELCOME10" are the same code.
+  listMyCoupons: () => req<CouponPublic[]>("/api/craft/coupons"),
+  createCoupon: (data: {
+    code: string;
+    type: CouponType;
+    value: number;
+    minOrderAmount?: number;
+    usageLimit?: number | null;
+    expiresAt?: string | null;
+    isActive?: boolean;
+  }) => req<CouponPublic>("/api/craft/coupons", { method: "POST", body: JSON.stringify(data) }),
+  deleteCoupon: (id: string) =>
+    req<{ ok: boolean; id: string }>(`/api/craft/coupons/${id}`, { method: "DELETE" }),
+  // Preview a coupon's discount WITHOUT redeeming it (cart totals call this).
+  validateCoupon: (code: string, amount: number) =>
+    req<CouponPreview>("/api/craft/coupons/validate", {
+      method: "POST",
+      body: JSON.stringify({ code, amount }),
     }),
 
   // HIRFAA Phase 1 (Marketplace): PUBLIC store-front queries.

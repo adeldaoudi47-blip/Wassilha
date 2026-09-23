@@ -178,6 +178,9 @@ export const publicCraftOrderItemSelect = {
   productId: true,
   quantity: true,
   unitPrice: true,
+  // HIRFA Phase 3: the variant the customer bought, when the product has any.
+  variantId: true,
+  variant: { select: { id: true, nameAr: true, nameFr: true, priceAdjustment: true } },
   product: {
     select: {
       id: true,
@@ -208,7 +211,15 @@ export const publicCraftOrderSelect = {
       id: true,
       score: true,
       comment: true,
+      // HIRFA Phase 3: photo reviews + the artisan's public reply + helpful votes.
+      images: true,
+      sellerReply: true,
+      likeCount: true,
       createdAt: true,
+      // The reviewer's public identity. Deliberately NARROWER than
+      // publicUserSelect: a review is public, so a reader must never see the
+      // reviewer's phone number or account role — only name + avatar.
+      from: { select: { id: true, name: true, avatar: true } },
     },
   },
 } as const;
@@ -224,6 +235,10 @@ export const publicCraftProductSelect = {
   descriptionAr: true,
   descriptionFr: true,
   price: true,
+  // HIRFA Phase 3: the "from" price (0 = no graduated pricing, UI shows `price`).
+  basePrice: true,
+  // HIRFA Phase 3: optional product video shown on the detail page.
+  videoUrl: true,
   images: true,
   stock: true,
   isFeatured: true,
@@ -231,6 +246,17 @@ export const publicCraftProductSelect = {
   createdAt: true,
     category: { select: { id: true, nameAr: true, nameFr: true, slug: true } },
   artisan: { select: publicArtisanSelect },
+  // HIRFA Phase 3: the purchasable SKUs and the wholesale price ladder. Both
+  // are public (a buyer needs them to choose + to see the price), and neither
+  // leaks anything about the artisan's account.
+  variants: {
+    select: { id: true, nameAr: true, nameFr: true, priceAdjustment: true, stock: true },
+    orderBy: { createdAt: 'asc' },
+  },
+  tiers: {
+    select: { id: true, minQuantity: true, unitPrice: true },
+    orderBy: { minQuantity: 'asc' },
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -260,6 +286,9 @@ export const marketplaceProductSelect = {
   nameAr: true,
   nameFr: true,
   price: true,
+  // HIRFA Phase 3: graduated pricing for the public store-front product page.
+  basePrice: true,
+  videoUrl: true,
   images: true,
   stock: true,
   isFeatured: true,
@@ -276,6 +305,16 @@ export const marketplaceProductSelect = {
       totalSales: true,
       area: { select: { nameAr: true, nameFr: true } },
     },
+  },
+  // HIRFA Phase 3: the same public variant/tier data the in-app detail page
+  // gets, so the SSR store page can render choices + the price ladder too.
+  variants: {
+    select: { id: true, nameAr: true, nameFr: true, priceAdjustment: true, stock: true },
+    orderBy: { createdAt: 'asc' },
+  },
+  tiers: {
+    select: { id: true, minQuantity: true, unitPrice: true },
+    orderBy: { minQuantity: 'asc' },
   },
 } as const;
 // ---------------------------------------------------------------------------

@@ -11,7 +11,12 @@ type Ctx = { params: Promise<{ id: string }> };
 //   - The order must be in 'delivered' status
 //   - The order must not have been rated yet (one rating per order)
 //
-// Body: { score: 1-5, comment?: string }
+// Body: { score: 1-5, comment?: string, images?: string[] }
+//
+// HIRFA Phase 3: `images` are photo URLs (uploaded beforehand via
+// /api/craft/upload, the same path product images use). The endpoint only
+// accepts URLs — never a file — and caps the count, so a review cannot be
+// turned into an album or a storage-abuse vector.
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const session = await getSession();
@@ -26,12 +31,20 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: 'invalidInput' }, { status: 400 });
     }
 
-    const { score, comment } = body;
+    const { score, comment, images } = body;
 
     // Validate score: must be integer 1-5
     if (typeof score !== 'number' || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json({ error: 'invalidScore' }, { status: 400 });
     }
+
+    // HIRFA Phase 3: review photos. Accept only an array of http(s) URLs,
+    // max 6, and drop anything else. A non-array / malformed value is ignored
+    // rather than rejecting the whole review (a rating is more valuable than
+    // its photos).
+    const reviewImages = Array.isArray(images)
+      ? images.filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u)).slice(0, 6)
+      : [];
 
     // Fetch the craft order
     const craftOrder = await db.craftOrder.findUnique({
@@ -82,6 +95,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         toId: craftOrder.artisanId,
         score,
         comment: typeof comment === 'string' && comment.trim() ? comment.trim() : null,
+        images: reviewImages,
       },
     });
 

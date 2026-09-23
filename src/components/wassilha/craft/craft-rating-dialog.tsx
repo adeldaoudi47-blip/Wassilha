@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Star, Send } from 'lucide-react';
+import { Star, Send, ImagePlus, X, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -9,6 +9,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+
+// HIRFA Phase 3: max review photos (mirrors the server-side cap in
+// /api/craft/orders/[id]/rate, which slices to 6 regardless of what is sent).
+const MAX_REVIEW_IMAGES = 6;
 
 type CraftRatingDialogProps = {
   open: boolean;
@@ -46,6 +50,11 @@ export function CraftRatingDialog({
   const [hover, setHover] = useState(0);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // HIRFA Phase 3: photo review. URLs only — the files are uploaded through
+  // the same /api/craft/upload endpoint product images use, so this dialog
+  // never accepts a raw file toward the rating API.
+  const [images, setImages] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Reset every time the dialog opens
   useEffect(() => {
@@ -54,10 +63,27 @@ export function CraftRatingDialog({
       setHover(0);
       setComment('');
       setSubmitting(false);
+      setImages([]);
     }
   }, [open]);
 
   const display = hover || score;
+
+  const pickImages = (files: FileList | null) => {
+    if (!files) return;
+    setUploading(true);
+    const arr = Array.from(files).slice(0, MAX_REVIEW_IMAGES - images.length);
+    Promise.all(
+      arr.map(async (file) => {
+        try {
+          const { url } = await api.uploadCraftImage(file);
+          setImages((prev) => [...prev, url]);
+        } catch {
+          toast.error(t.uploadFailed);
+        }
+      }),
+    ).finally(() => setUploading(false));
+  };
 
   const handleSubmit = async () => {
     const parsed = ratingSchema.safeParse({ score, comment });
@@ -68,7 +94,7 @@ export function CraftRatingDialog({
 
     setSubmitting(true);
     try {
-      await api.rateCraftOrder(orderId, parsed.data.score, parsed.data.comment);
+      await api.rateCraftOrder(orderId, parsed.data.score, parsed.data.comment, images);
       toast.success(t.ratingSubmitted);
       onOpenChange(false);
       onSubmitted?.();
@@ -164,6 +190,54 @@ export function CraftRatingDialog({
         <p className="mt-1 text-end text-[10px] text-muted-foreground">
           {comment.length}/200
         </p>
+
+        {/* HIRFA Phase 3: photo review (Alibaba-style). Files are uploaded to
+            /api/craft/upload first; only URLs are sent to the rating API,
+            which re-validates http(s) and re-caps the count server-side. */}
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {images.map((url) => (
+              <div key={url} className="relative h-16 w-16 overflow-hidden rounded-xl border border-border">
+                <img src={url} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setImages((prev) => prev.filter((u) => u !== url))}
+                  disabled={submitting}
+                  className="absolute end-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+                  aria-label="×"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            {images.length < MAX_REVIEW_IMAGES && (
+              <label
+                className={cn(
+                  'flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-dashed border-border bg-muted/30 text-muted-foreground',
+                  uploading && 'opacity-50',
+                  submitting && 'pointer-events-none opacity-50',
+                )}
+              >
+                {uploading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <ImagePlus size={16} />
+                )}
+                <span className="text-[9px] font-bold">{t.attachReviewPhotos}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => pickImages(e.target.files)}
+                />
+              </label>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            {images.length}/{MAX_REVIEW_IMAGES}
+          </p>
+        </div>
 
         <div className="mt-3 flex gap-2">
           <Button

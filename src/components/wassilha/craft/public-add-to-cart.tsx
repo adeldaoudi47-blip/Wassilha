@@ -43,7 +43,16 @@ export function PublicAddToCart({
   const handleAdd = () => {
     if (outOfStock) return;
     addItem(
-      { productId: product.productId, nameAr: product.nameAr, price: product.price, image: product.image ?? null },
+      {
+        productId: product.productId,
+        // HIRFA Phase 3: the public SEO page has no variant picker, so a
+        // variant-less line is added (variantId === null). The checkout API
+        // accepts null and prices it off the plain product price.
+        variantId: null,
+        nameAr: product.nameAr,
+        price: product.price,
+        image: product.image ?? null,
+      },
       qty
     );
     setAdded(true);

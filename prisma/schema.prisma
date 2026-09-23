@@ -45,10 +45,105 @@ model User {
   artisan          ArtisanProfile?
   craftOrders      CraftOrder[]    @relation("CraftCustomerOrders")
   craftReviewsGiven CraftReview[] @relation("CraftReviewer")
+  // HIRFA Phase 3: questions this user asked on craft products (public Q&A).
+  craftQuestions   ProductQA[]
+  // HIRFA Phase 3: "helpful" votes this user cast on craft reviews.
+  craftReviewLikes ReviewLike[] @relation("CraftReviewLikers")
   // In-app notification center: every notification targets exactly one user
   // (customer, driver, artisan or admin). Cascade-deleted with its owner so a
   // closed account leaves no orphan rows. See the Notification model below.
   notifications     Notification[]
+}
+
+/// HIRFA Phase 3 — ProductVariant: a purchasable SKU of a CraftProduct
+/// (size, colour, material...). The customer picks exactly one when the
+/// product has variants; the variant's `priceAdjustment` (may be negative
+/// for a cheaper option) is ADDED to CraftProduct.price server-side at
+/// checkout. `stock` is independent per variant; a variant at 0 stock is
+/// unpurchasable even if the product-level stock is > 0.
+model ProductVariant {
+  id             String       @id @default(cuid())
+  productId      String
+  product        CraftProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  nameAr         String
+  nameFr         String?
+  // Signed integer DZD added to the product price (e.g. -50 = cheaper, 100 = dearer).
+  priceAdjustment Int         @default(0)
+  stock          Int          @default(0)
+  createdAt      DateTime     @default(now())
+  // HIRFA Phase 3: the order lines that bought this exact variant.
+  orderItems     CraftOrderItem[]
+
+  @@index([productId])
+}
+
+/// HIRFA Phase 3 — ProductTier: graduated (wholesale) unit pricing.
+/// The more units the customer orders, the lower the unit price. The
+/// pricing engine picks the tier with the HIGHEST minQuantity that the
+/// ordered quantity still satisfies; if none matches, the product price
+/// (or product price + variant adjustment) is used.
+model ProductTier {
+  id          String       @id @default(cuid())
+  productId   String
+  product     CraftProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  minQuantity Int
+  unitPrice   Int
+  createdAt   DateTime     @default(now())
+
+  @@index([productId])
+  // A product cannot have two tiers starting at the same quantity.
+  @@unique([productId, minQuantity])
+}
+
+/// HIRFA Phase 3 — ProductQA: public questions & answers on a product.
+/// Any logged-in customer can ask; only the owning artisan can answer.
+/// Unanswered questions (answer = null) are rendered as "pending answer".
+model ProductQA {
+  id        String       @id @default(cuid())
+  productId String
+  product   CraftProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String       @db.Text
+  answer    String?      @db.Text
+  createdAt DateTime     @default(now())
+  answeredAt DateTime?
+
+  @@index([productId])
+  @@index([userId])
+}
+
+/// HIRFA Phase 3 — Coupon: a discount code.
+///
+/// `type` is a free String (mirrors the status-column convention used all
+/// over this schema); today the API only writes two values:
+///   "percent" — value is a percentage 1..100 of the order subtotal
+///   "fixed"   — value is a flat integer DZD amount off the order subtotal
+///
+/// `artisanId` scopes the coupon to ONE shop when set (the only mode the
+/// artisan dashboard creates). A null artisanId would be a platform-wide
+/// coupon — no UI creates those today, but the column is nullable so the
+/// shape stays open. `code` is unique across the whole table and is stored
+/// UPPERCASE by the API so "WELCOME10" == "welcome10".
+///
+/// Limits: `usageLimit` is the optional total-redemption cap; `usedCount`
+/// is the live counter incremented inside the checkout transaction so two
+/// customers racing for the last slot can never both win. `expiresAt`
+/// optionally ends the coupon's validity.
+model Coupon {
+  id          String         @id @default(cuid())
+  artisanId   String?
+  artisan     ArtisanProfile? @relation(fields: [artisanId], references: [id], onDelete: Cascade)
+  code        String         @unique
+  type        String         // "percent" | "fixed"
+  value       Int
+  expiresAt   DateTime?
+  usageLimit  Int?
+  usedCount   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([artisanId])
 }
 
 /// Server-side session store. Only the SHA-256 hash of the session token is
@@ -531,6 +626,9 @@ model ArtisanProfile {
   // store (store views, shares, link copies). artisanId is nullable on the
   // event side so a product/store row deletion never orphans an event row.
   analyticsEvents CraftAnalyticsEvent[]
+  // HIRFA Phase 3: discount codes this artisan created (optional scope —
+  // a null artisanId would be a platform-wide coupon, none exist today).
+  coupons     Coupon[]
 
   @@index([status])
 }
@@ -550,6 +648,13 @@ model CraftProduct {
   descriptionAr String?        @db.Text
   descriptionFr String?        @db.Text
   price         Int
+  // HIRFA Phase 3 (Alibaba-style e-commerce): the "from" price shown when
+  // the product has Variants/Tiers. Defaults to 0 which the UI treats as
+  // "use `price` instead" — so existing rows keep rendering unchanged.
+  basePrice     Int            @default(0)
+  // Optional product video (YouTube/Vimeo/Blob URL) rendered on the detail
+  // page. Null for legacy products — the UI simply hides the player.
+  videoUrl      String?
   images        String[]
   // Handmade stock is often a single piece; the API layer enforces
   // stock >= 0 and decrements it on order confirmation.
@@ -571,6 +676,17 @@ model CraftProduct {
   items         CraftOrderItem[]
   // HIRFA Phase 2A: anonymous product-view / share events for this product.
   analyticsEvents CraftAnalyticsEvent[]
+  // HIRFA Phase 3: Alibaba-style e-commerce features.
+  // Variants = SKU-level choices (size / colour / material). When the product
+  // has variants, the customer MUST pick exactly one at checkout and its
+  // `priceAdjustment` is added to CraftProduct.price.
+  variants      ProductVariant[]
+  // Tiers = graduated wholesale pricing (the more you buy, the cheaper the
+  // unit). The order API picks the tier with the highest minQuantity that the
+  // ordered quantity still satisfies.
+  tiers         ProductTier[]
+  // Q&A = public questions other shoppers can read, answered by the artisan.
+  qa            ProductQA[]
 
     @@index([artisanId])
   @@index([artisanId, slug])
@@ -652,6 +768,10 @@ model CraftOrderItem {
   quantity     Int          @default(1)
   unitPrice    Int
   note         String?
+  // HIRFA Phase 3: the exact variant (size/colour) the customer bought, when
+  // the product has variants. Null for variant-less products or legacy rows.
+  variantId    String?
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
   @@index([craftOrderId])
   @@index([productId])
@@ -660,6 +780,10 @@ model CraftOrderItem {
 /// P7: Review for a CraftOrder. One review per craft order (enforced by
 /// unique craftOrderId). The artisan's average rating is recomputed
 /// via SQL aggregate whenever a new review is created.
+///
+/// HIRFA Phase 3: `images` lets a reviewer attach photos of the received
+/// item (Alibaba-style image reviews), and `sellerReply` is the artisan's
+/// public response to that review.
 model CraftReview {
   id           String     @id @default(cuid())
   craftOrderId String     @unique
@@ -670,11 +794,45 @@ model CraftReview {
   to           ArtisanProfile @relation(fields: [toId], references: [id], onDelete: Cascade)
   score        Int        // 1..5
   comment      String?
+  // HIRFA Phase 3: photo(s) the buyer attaches to the review (Blob URLs).
+  images       String[]   @default([])
+  // HIRFA Phase 3: the artisan's public reply to this review (optional).
+  // Null means "not replied yet"; an empty string is never stored (the API
+  // trims and stores null for whitespace-only input).
+  sellerReply  String?    @db.Text
+  // HIRFA Phase 3: cached "helpful" vote count (denormalised from ReviewLike
+  // for cheap sorting; updated atomically by the like/unlike endpoint).
+  likeCount    Int        @default(0)
   createdAt    DateTime   @default(now())
+
+  // HIRFA Phase 3: the likes (helpful votes) cast on this review.
+  likes        ReviewLike[] @relation("CraftReviewLikes")
 
   @@index([toId])
   @@index([fromId])
   @@index([craftOrderId])
+}
+
+/// HIRFA Phase 3 — ReviewLike: a "helpful" vote on a CraftReview.
+/// One vote per user per review (unique reviewId+userId). The counter lives on
+/// the review row itself (`likeCount`) and is updated by the API through an
+/// atomic increment, so concurrent votes never lose counts.
+model ReviewLike {
+  id        String     @id @default(cuid())
+  reviewId  String
+  // Named relation: "CraftReviewLikes" is shared with CraftReview.likes so the
+  // three-way link (User ↔ ReviewLike ↔ CraftReview) resolves unambiguously.
+  review    CraftReview @relation("CraftReviewLikes", fields: [reviewId], references: [id], onDelete: Cascade)
+  userId    String
+  // NOTE: this relation name ("CraftReviewLikers") differs from the review-side
+  // one ("CraftReviewLikes") on purpose — Prisma requires a unique relation
+  // name per model pair, so User↔ReviewLike and CraftReview↔ReviewLike cannot
+  // share the same string.
+  user      User       @relation("CraftReviewLikers", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
 }
 
 /// In-app notification center entry. One row per notification per user.

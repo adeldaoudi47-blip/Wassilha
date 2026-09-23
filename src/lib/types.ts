@@ -234,6 +234,24 @@ export interface ArtisanPublic {
   area: { nameAr: string; nameFr: string | null } | null;
 }
 
+// HIRFA Phase 3: a purchasable SKU of a product (size / colour / material).
+// `priceAdjustment` is ADDED to the product price, and may be negative.
+export interface ProductVariantPublic {
+  id: string;
+  nameAr: string;
+  nameFr: string | null;
+  priceAdjustment: number;
+  stock: number;
+}
+
+// HIRFA Phase 3: a rung of the graduated (wholesale) price ladder. Buying at
+// least `minQuantity` units unlocks `unitPrice` for the whole line.
+export interface ProductTierPublic {
+  id: string;
+  minQuantity: number;
+  unitPrice: number;
+}
+
 export interface CraftProductPublic {
   id: string;
   nameAr: string;
@@ -241,6 +259,10 @@ export interface CraftProductPublic {
   descriptionAr: string | null;
   descriptionFr: string | null;
   price: number;
+  // HIRFA Phase 3: "ابتداءً من / à partir de" — the lowest reachable unit price
+  // across variants & tiers. 0 means "no graduated pricing; just show `price`".
+  basePrice: number;
+  videoUrl: string | null;
   images: string[];
   stock: number;
   isFeatured: boolean;
@@ -248,6 +270,8 @@ export interface CraftProductPublic {
   createdAt: string;
   category: { id: string; nameAr: string; nameFr: string | null; slug: string };
   artisan: ArtisanPublic;
+  variants: ProductVariantPublic[];
+  tiers: ProductTierPublic[];
 }
 
 export interface CraftProductListResponse {
@@ -281,6 +305,15 @@ export interface CraftOrderItemPublic {
   productId: string;
   quantity: number;
   unitPrice: number;
+  // HIRFA Phase 3: the chosen SKU (null = no variants on the product, or the
+  // variant was deleted after the order was delivered — onDelete: SetNull).
+  variantId: string | null;
+  variant: {
+    id: string;
+    nameAr: string;
+    nameFr: string | null;
+    priceAdjustment: number;
+  } | null;
   product: {
     id: string;
     nameAr: string;
@@ -308,7 +341,13 @@ export interface CraftOrderPublic {
     id: string;
     score: number;
     comment: string | null;
+    // HIRFA Phase 3: photo reviews, the artisan's public reply, and the
+    // "helpful" vote count. `from` is the reviewer's public identity.
+    images: string[];
+    sellerReply: string | null;
+    likeCount: number;
     createdAt: string;
+    from?: { id: string; name: string | null; avatar: string | null } | null;
   } | null;
 }
 
@@ -374,6 +413,8 @@ export interface PublicProduct {
   nameAr: string;
   nameFr: string | null;
   price: number;
+  basePrice: number;
+  videoUrl: string | null;
   images: string[];
   stock: number;
   isFeatured: boolean;
@@ -381,6 +422,49 @@ export interface PublicProduct {
   createdAt: string;
   category: { id: string; nameAr: string; nameFr: string | null; slug: string | null } | null;
   artisan: PublicArtisanTile;
+  variants: ProductVariantPublic[];
+  tiers: ProductTierPublic[];
+}
+
+// HIRFA Phase 3: one buyer question on a product + the artisan's answer.
+// `answer`/`answeredAt` are null until the artisan replies.
+export interface ProductQAPublic {
+  id: string;
+  question: string;
+  answer: string | null;
+  createdAt: string;
+  answeredAt: string | null;
+  // The asker's public identity (name/avatar only — never phone or email).
+  user: { id: string; name: string | null; avatar: string | null };
+}
+
+// HIRFA Phase 3: a discount code scoped to ONE artisan. `type` is a free
+// string in the DB; only 'percent' | 'fixed' are created today.
+export type CouponType = 'percent' | 'fixed';
+
+export interface CouponPublic {
+  id: string;
+  code: string;
+  type: CouponType;
+  value: number;
+  minOrderAmount: number;
+  usageLimit: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+// HIRFA Phase 3: what /api/craft/coupons/validate previews — the discount the
+// buyer WOULD get, without redeeming the coupon.
+export interface CouponPreview {
+  valid: boolean;
+  error?: 'couponNotFound' | 'couponExpired' | 'couponExhausted' | 'couponInvalid' | 'couponInactive';
+  code: string;
+  type: CouponType | null;
+  value: number | null;
+  discount: number;
+  minOrderAmount: number | null;
 }
 
 export interface PublicProductListResponse {

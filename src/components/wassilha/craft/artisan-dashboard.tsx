@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Package, Loader2, Clock, ShoppingBag, Megaphone, Eye, Link2, Share2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, Loader2, Clock, ShoppingBag, Megaphone, Eye, Link2, Share2, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useT } from '../use-t';
@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ListSkeleton } from '../skeleton';
 import { ArtisanProductForm } from './artisan-product-form';
 import { ArtisanOrders } from './artisan-orders';
+import { ArtisanCoupons } from './artisan-coupons';
 import { ArtisanProfileCard } from './artisan-profile-card';
 import { ShareButton } from './share-button';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
@@ -33,8 +34,8 @@ export function ArtisanDashboard() {
   const [adding, setAdding] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<CraftProductPublic | null>(null);
 
-  // Artisan sub-tabs: products | orders
-  const [subTab, setSubTab] = useState<'products' | 'orders'>('products');
+  // Artisan sub-tabs: products | orders | coupons
+  const [subTab, setSubTab] = useState<'products' | 'orders' | 'coupons'>('products');
   // HIRFAA Phase 1: this artisan's public store (for the "متجري" share card).
   const [myStore, setMyStore] = useState<MyStoreInfo | null>(null);
   // HIRFA Phase 2A: REAL store analytics (zeros until the first real visit).
@@ -143,6 +144,18 @@ export function ArtisanDashboard() {
           <Clock size={14} />
           {t.newOrder}
         </button>
+        {/* HIRFA Phase 3: discount-code management (create / list / delete). */}
+        <button
+          onClick={() => setSubTab('coupons')}
+          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-colors ${
+            subTab === 'coupons'
+              ? 'bg-primary text-primary-foreground shadow'
+              : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Ticket size={14} />
+          {t.manageCoupons}
+        </button>
       </div>
 
       {/* HIRFA Phase 2A — "روّج لمتجرك": the artisan's stable public store link
@@ -164,6 +177,10 @@ export function ArtisanDashboard() {
 
       {subTab === 'orders' ? (
         <ArtisanOrders />
+      ) : subTab === 'coupons' ? (
+        // HIRFA Phase 3: discount codes. Kept on its own tab — the codes are
+        // store-level assets, distinct from products and orders.
+        <ArtisanCoupons />
       ) : (
         <ProductsView
           products={products}

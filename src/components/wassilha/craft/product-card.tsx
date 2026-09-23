@@ -94,7 +94,19 @@ export function ProductCard({
           </Link>
         </p>
         <p className="text-sm font-extrabold text-primary">
-          {product.price} {t.currencyDzd}
+          {/* HIRFA Phase 3: with variants or graduated tiers, show the lowest
+              reachable unit price ("ابتداءً من") instead of a flat price. */}
+          {product.basePrice ? (
+            <>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                {t.startingFrom}{' '}
+              </span>
+              {product.basePrice}
+            </>
+          ) : (
+            product.price
+          )}{' '}
+          {t.currencyDzd}
         </p>
       </div>
     </button>
