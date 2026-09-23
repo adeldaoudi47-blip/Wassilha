@@ -9,6 +9,30 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!--
+          Default notification presentation, applied by the OS itself when an
+          FCM message with a `notification` block arrives while the app is
+          KILLED or backgrounded. Without these the system falls back to a
+          white square icon and may show a default-channel notification.
+
+          * default_notification_icon / default_notification_color replace
+            the placeholder icon with our launcher icon + brand teal.
+          * default_notification_channel_id is the channel Android uses when
+            the FCM payload does not name one. It MUST match the channel the
+            client creates at runtime (src/lib/push-notifications.ts ->
+            ORDERS_CHANNEL_ID), otherwise pre-8 devices and background
+            deliveries land in a channel that doesn't exist and are dropped.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/brand" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="@string/default_notification_channel_id" />
+
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"

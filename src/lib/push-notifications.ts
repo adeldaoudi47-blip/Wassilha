@@ -16,6 +16,23 @@ import { useAppStore, useNavStore } from '@/lib/store';
 // mind in the system settings, and we'd rather not nag them on next launch.
 let initialized = false;
 let permissionRequested = false;
+let channelCreated = false;
+
+// *** MUST stay in sync with the server payload ***
+// src/lib/firebase-admin.ts -> ANDROID_CHANNEL_ID. If these disagree, the
+// FCM message names a channel Android cannot find and the notification is
+// silently *dropped from the system tray* (it still reaches the JS layer,
+// which is exactly the "shows in the notification center but not the top
+// bar" symptom).
+export const ORDERS_CHANNEL_ID = 'wassilha_orders';
+export const ORDERS_CHANNEL_NAME = 'طلبات وصّلها';
+export const ORDERS_CHANNEL_DESC = 'إشعارات الطلبات والعروض الجديدة';
+// Brand teal, identical to --primary / --brand in globals.css.
+export const NOTIFICATION_COLOR = '#0E6B5E';
+// Resource name in android/app/src/main/res (without the extension / density
+// suffix). `ic_launcher` exists as a real PNG in every mipmap bucket plus an
+// adaptive XML in mipmap-anydpi-v26, so it resolves on every API level.
+export const NOTIFICATION_ICON = 'ic_launcher';
 
 type RegisterResponse = {
   ok: boolean;
@@ -48,6 +65,60 @@ async function postTokenToServer(token: string, platform: string): Promise<void>
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn('[push-notifications] register request failed:', e);
+  }
+}
+
+/**
+ * Android 8+ (API 26+) will NOT display a notification that targets a channel
+ * id which does not exist — the whole tray notification is dropped, even
+ * though the push is delivered to the JS layer. Our backend always targets
+ * `ORDERS_CHANNEL_ID`, so this must run before the first push can arrive.
+ *
+ * Creating a channel that already exists is a documented no-op that keeps
+ * the user's custom settings (importance / sound / vibration), so it is safe
+ * to call on every cold start. On iOS / web `createChannel` is a no-op stub,
+ * and on pre-26 Android channels are simply ignored by the OS.
+ */
+async function ensureNotificationChannel(): Promise<void> {
+  if (channelCreated) return;
+  channelCreated = true; // set first so we never retry on a failing call
+  try {
+    await PushNotifications.createChannel({
+      id: ORDERS_CHANNEL_ID,
+      name: ORDERS_CHANNEL_NAME,
+      description: ORDERS_CHANNEL_DESC,
+      // 5 == IMPORTANCE_MAX (heads-up banner + sound + vibration), which is
+      // the right level for "you have a new order / your offer was accepted".
+      importance: 5,
+      // 1 == VISIBILITY_PRIVATE (redact on lockscreen, show on normal use).
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+      lights: true,
+      lightColor: NOTIFICATION_COLOR,
+    });
+
+    // The foreground re-post below goes through the Local Notifications
+    // plugin, which has its own channel table — create the same id there so
+    // the banner behaviour matches the FCM background path. (smallIcon /
+    // iconColor are set globally via the LocalNotifications plugin config in
+    // capacitor.config.ts, not per-channel.)
+    await LocalNotifications.createChannel({
+      id: ORDERS_CHANNEL_ID,
+      name: ORDERS_CHANNEL_NAME,
+      description: ORDERS_CHANNEL_DESC,
+      importance: 5,
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+      lights: true,
+      lightColor: NOTIFICATION_COLOR,
+    });
+  } catch (e) {
+    // Not fatal: on iOS/web these calls resolve as no-ops and on old Android
+    // they are ignored. A failure here must not block registration.
+    // eslint-disable-next-line no-console
+    console.warn('[push-notifications] failed to create channel:', e);
   }
 }
 
@@ -85,6 +156,11 @@ export async function requestPushPermissionAndRegister(): Promise<boolean> {
       return false;
     }
 
+    // Channel must exist *before* the first FCM message can land, otherwise
+    // the OS drops the tray notification. Run it right after permission is
+    // granted and before the token registration handshake.
+    await ensureNotificationChannel();
+
     await PushNotifications.register();
     return true;
   } catch (e) {
@@ -105,6 +181,11 @@ export function initPushNotificationListeners(): void {
   if (!Capacitor.isNativePlatform()) return;
   if (initialized) return;
   initialized = true;
+
+  // Fire and forget: creates the Android channel up-front so a push that
+  // arrives before the user has signed in (or while /api/auth/me is still in
+  // flight) can still be shown in the system tray.
+  void ensureNotificationChannel();
 
   PushNotifications.addListener('registration', (token) => {
     void postTokenToServer(token.value, Capacitor.getPlatform());
@@ -135,7 +216,11 @@ export function initPushNotificationListeners(): void {
               id: Date.now(),
               title: notification.title || 'وصّلها',
               body: notification.body || '',
-              smallIcon: 'ic_launcher',
+              smallIcon: NOTIFICATION_ICON,
+              // Same channel as the background FCM path: identical banner /
+              // sound / vibration rules, and the channel's importance decides
+              // whether it shows as a heads-up in the top bar.
+              channelId: ORDERS_CHANNEL_ID,
               // Capacitor's `extra` survives to the tap action on both
               // platforms; the FCM data block is copied verbatim.
               extra: notification.data ?? {},

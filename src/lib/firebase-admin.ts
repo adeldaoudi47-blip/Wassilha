@@ -93,6 +93,16 @@ const FCM_TIMEOUT_MS = 5000;
 // it a tap just opens the app to the default tab.
 const CLICK_ACTION = 'OPEN_ORDER';
 
+// Android notification channel the app creates on first launch (see
+// src/lib/push-notifications.ts). Must match EXACTLY — if the channel id
+// in the FCM payload does not resolve to an existing channel, Android 8+
+// silently drops the notification from the system tray (it is still delivered
+// to the JS layer, which is exactly the "center but no top bar" bug).
+const ANDROID_CHANNEL_ID = 'wassilha_orders';
+// Brand teal, identical to --primary / --brand in globals.css so the small
+// status-bar icon and the notification accent match the rest of the app.
+const BRAND_COLOR = '#0E6B5E';
+
 /**
  * Normalise the caller-supplied data map into the shape FCM requires
  * (string values) and stamp the deep-link intent. Every push goes through
@@ -103,6 +113,36 @@ function buildFcmData(
 ): Record<string, string> | undefined {
   const entries = Object.entries(data ?? {}).map(([k, v]) => [k, String(v)]);
   return { ...Object.fromEntries(entries), click_action: CLICK_ACTION };
+}
+
+/**
+ * Android display config shared by the single + multicast paths so a tray
+ * notification looks and behaves the same everywhere.
+ *
+ *  - `priority: 'high'` -> the message is delivered promptly even under
+ *    Doze, and it is what makes the notification pop as a heads-up banner.
+ *  - `channelId` -> must match the channel the client creates on launch.
+ *  - `sound/icon/color` -> explicit, otherwise the device may fall back to
+ *    a silent, iconless notification on some OEM skins.
+ */
+function buildAndroidConfig() {
+  return {
+    priority: 'high' as const,
+    notification: {
+      channelId: ANDROID_CHANNEL_ID,
+      sound: 'default',
+      icon: 'ic_launcher',
+      color: BRAND_COLOR,
+      defaultSound: true,
+      defaultVibrateTimings: true,
+      // Ongoing rides/orders are time-critical: keep them private on the
+      // lockscreen (other riders shouldn't read the code) but visible.
+      visibility: 'private' as const,
+      // Group into one collapsible stack so a chatty day does not bury the
+      // user; the latest notification wins the summary line.
+      tag: 'wassilha',
+    },
+  };
 }
 
 /**
@@ -149,12 +189,7 @@ export async function sendPushNotification(
       // data values must be strings per FCM contract; buildFcmData also
       // stamps the deep-link intent the client reads on tap.
       data: buildFcmData(data),
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'wassilha_default',
-        },
-      },
+      android: buildAndroidConfig(),
       // iOS payload: sound + badge so the system shows the notification
       // with audio + bumps the app icon counter. Without this block FCM
       // still delivers, but the notification is silent and the badge
@@ -166,6 +201,23 @@ export async function sendPushNotification(
             sound: 'default',
             badge: 1,
           },
+        },
+      },
+      webpush: {
+        // Web fallback (installed PWA / browser notifications): the admin
+        // SDK ignores the link without it, and a bare data-less message
+        // shows a generic title. `logo.png` is the only raster asset we
+        // ship in /public, so reuse it for both icon and badge.
+        notification: {
+          title,
+          body,
+          icon: '/logo.png',
+          badge: '/logo.png',
+          tag: 'wassilha',
+          requireInteraction: false,
+        },
+        fcmOptions: {
+          link: '/orders',
         },
       },
     });
@@ -299,12 +351,19 @@ export async function sendPushNotificationBatch(
         tokens: chunk,
         notification: { title, body },
         data: buildFcmData(data),
-        android: {
-          priority: 'high',
-          notification: { channelId: 'wassilha_default' },
-        },
+        android: buildAndroidConfig(),
         apns: {
           payload: { aps: { sound: 'default', badge: 1 } },
+        },
+        webpush: {
+          notification: {
+            title,
+            body,
+            icon: '/logo.png',
+            badge: '/logo.png',
+            tag: 'wassilha',
+          },
+          fcmOptions: { link: '/orders' },
         },
       });
       let timer: ReturnType<typeof setTimeout> | null = null;

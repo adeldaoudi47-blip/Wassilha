@@ -4,4 +4,10 @@
     <string name="title_activity_main">Wassilha</string>
     <string name="package_name">dz.wassilha.app</string>
     <string name="custom_url_scheme">dz.wassilha.app</string>
+    <!--
+      MUST stay in sync with src/lib/push-notifications.ts ->
+      ORDERS_CHANNEL_ID. Used by the FCM default-channel meta-data in
+      AndroidManifest.xml so background deliveries land in our channel.
+    -->
+    <string name="default_notification_channel_id">wassilha_orders</string>
 </resources>
