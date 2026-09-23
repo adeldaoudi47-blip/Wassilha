@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import type { DriverProfile } from '@/lib/types';
+import type { DriverProfile, VehicleCategory } from '@/lib/types';
 
 // GET /api/driver/profile
 export async function GET() {
@@ -48,6 +48,13 @@ export async function GET() {
             type: driver.vehicleRegistration.type,
             anneePremiereMiseCirculation:
               driver.vehicleRegistration.anneePremiereMiseCirculation,
+            // VEHICLE CLASSIFICATION (Phase 1): surfaced so the driver's
+            // edit dialog can pre-select the right dropdown value. The DB
+            // column is a free String, so we narrow it to the shared union
+            // here; values outside the vocabulary are presented as-is and
+            // the UI falls back to the "unset" label.
+            vehicleCategory: driver.vehicleRegistration
+              .vehicleCategory as VehicleCategory | null,
           }
         : null,
       user: {

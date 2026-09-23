@@ -95,6 +95,41 @@ export const publicOrderSelect = {
   // for immediate orders. The frontend (customer track + driver
   // requests) reads this to render the booking time.
   scheduledAt: true,
+  // VEHICLE-TYPE MATCHING (Phase 2): the category the customer required
+  // (or null). Returned to drivers so they can tell whether their
+  // vehicle fits before accepting, and to the customer in track view.
+  requiredVehicleType: true,
+  // PRICE NEGOTIATION (Phase 3): the negotiability flag drives the
+  // "make an offer" affordance on the driver side and the "offers
+  // received" badge on the customer side. Defaulted by the DB so old
+  // rows still serialise as false.
+  isNegotiable: true,
+  // PRICE NEGOTIATION (Phase 3): the agreed price, null while the order
+  // is still open or was never negotiable. UI reads this in preference
+  // to `price` when it is set.
+  finalPrice: true,
+} as const;
+
+/**
+ * PRICE NEGOTIATION (Phase 3) — the columns of an `OrderOffer` row that
+ * are safe to return to any authenticated party.
+ *
+ * `driverId` is exposed on purpose (same posture as `publicOrderSelect`:
+ * ids are not secret, the relations are what carry the sensitive columns).
+ * The driver's *identity* is joined through `publicUserSelect` so the
+ * customer's offer list can show a name + avatar without a second call.
+ */
+export const orderOfferSelect = {
+  id: true,
+  orderId: true,
+  driverId: true,
+  price: true,
+  status: true,
+  // PRICE NEGOTIATION (Phase 3): the customer's counter-price, present only
+  // while status = "countered". Nullable, so every older row / state still
+  // deserialises as null.
+  counterPrice: true,
+  createdAt: true,
 } as const;
 
 /**

@@ -11,9 +11,17 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDzd } from '@/lib/wassilha-data';
-import type { DriverProfile } from '@/lib/types';
+import type { DriverProfile, VehicleCategory } from '@/lib/types';
+import { VEHICLE_CATEGORIES, VEHICLE_CATEGORY_LABELS } from '@/lib/types';
 import Link from 'next/link';
 
 export function DriverProfile() {
@@ -241,6 +249,11 @@ function VehicleEditDialog({
   // driver row's `serviceType` is loaded with the profile; we read it
   // below to decide which fields to validate on save.
   const [seats, setSeats] = useState('');
+  // VEHICLE CLASSIFICATION (Phase 1): the driver's chosen category. Held as
+  // a string ('' = none chosen) because the <Select> component's values are
+  // strings; it is only persisted when non-empty or when the driver
+  // explicitly clears it via the "none" option.
+  const [vehicleCategory, setVehicleCategory] = useState<string>('');
   const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
   const [saving, setSaving] = useState(false);
 
@@ -271,6 +284,14 @@ function VehicleEditDialog({
         ? (v.serviceType as 'TAXI' | 'BOTH')
         : 'CARGO'
     );
+    // VEHICLE CLASSIFICATION (Phase 1): seed the dropdown from the stored
+    // category. Unknown values are coerced to '' (none) so the dropdown
+    // never shows a stale placeholder after the vocabulary grows.
+    setVehicleCategory(
+      typeof v.vehicleCategory === 'string' && v.vehicleCategory
+        ? v.vehicleCategory
+        : ''
+    );
   }, [open, vehicle]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -299,6 +320,12 @@ function VehicleEditDialog({
                 const n = parseInt(seats, 10);
                 return Number.isFinite(n) ? n : null;
               })(),
+        // VEHICLE CLASSIFICATION (Phase 1): '' is sent as null (explicit
+        // "no category"); a real value is validated server-side against
+        // VEHICLE_CATEGORIES. We always send the key so the saved state
+        // always matches what the driver sees in the dropdown. The cast is
+        // safe because the dropdown only ever yields real categories.
+        vehicleCategory: (vehicleCategory || null) as VehicleCategory | null,
       });
       onSaved(updated);
       toast.success(t.vehicleUpdated);
@@ -411,6 +438,38 @@ function VehicleEditDialog({
               />
             </div>
           ) : null}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehicle-category">{t.vehicleCategory}</Label>
+            <Select value={vehicleCategory} onValueChange={setVehicleCategory}>
+              <SelectTrigger
+                id="vehicle-category"
+                className="w-full"
+                // Keep the trigger LTR so the category names render in a
+                // stable direction regardless of the app language.
+                dir="ltr"
+              >
+                <SelectValue placeholder={t.vehicleCategoryPlaceholder} />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Explicit "no category" option so a driver who picked one
+                    by mistake can clear it again. */}
+                <SelectItem value="">{t.noVehicleCategory}</SelectItem>
+                {VEHICLE_CATEGORIES.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {t[VEHICLE_CATEGORY_LABELS[cat]] ?? cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Hint: the category is what Phase 2 matches on, so a driver
+                who sets it receives the orders that fit their vehicle. */}
+            <p className="text-[10px] text-muted-foreground">
+              {isAr
+                ? 'نستخدم هذه الفئة لإرسال لك فقط الطلبات التي تناسب مركبتك'
+                : 'Utilisé pour ne vous envoyer que les commandes compatibles'}
+            </p>
+          </div>
 
           <DialogFooter className="gap-2 pt-2">
             <Button

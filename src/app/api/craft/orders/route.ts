@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
     const artisanUserId = new Map(artisans.map((a) => [a.id, a.userId]));
     for (const o of created) {
       const artisanOwner = artisanUserId.get(o.artisan.id);
-      if (artisanOwner) void notifyArtisanNewOrder(artisanOwner, o.id, o.code);
+      if (artisanOwner) void notifyArtisanNewOrder(artisanOwner, o);
     }
     return NextResponse.json({ orders: created }, { status: 201 });
   } catch (e: unknown) {
@@ -314,17 +314,40 @@ function generateOrderCode(): string {
 // Fire-and-forget in-app notification for the artisan: it must never block
 // the customer's checkout response. Push (FCM) is still a future addition;
 // the notification-center row is the durable, always-delivered path.
-async function notifyArtisanNewOrder(userId: string, orderId: string, orderCode: string) {
+//
+// CUSTOM MESSAGE (Phase 4): the body names the first product and the buyer,
+// so the artisan can triage the order without opening the store view. When
+// neither is resolvable the message degrades to the original generic text.
+async function notifyArtisanNewOrder(
+  userId: string,
+  order: Prisma.CraftOrderGetPayload<{ select: typeof publicCraftOrderSelect }>
+) {
   try {
+    const first = order.items?.[0];
+    const productName = first?.product?.nameAr ?? '';
+    const customerName = order.customer?.name ?? '';
+    const named = productName && customerName;
+
+    const title = 'لديك طلب جديد';
+    const body = named
+      ? `لديك طلب جديد على "${productName}" من ${customerName}.`
+      : 'تحقق من متجرك';
+
     await createNotification({
       userId,
       type: 'craft_order',
-      title: 'لديك طلب جديد',
-      body: 'تحقق من متجرك',
+      title,
+      body,
       data: {
-        orderId,
-        code: orderCode,
-        i18n: { titleKey: 'newCraftOrder', bodyKey: 'newCraftOrderBody' },
+        orderId: order.id,
+        code: order.code,
+        i18n: {
+          titleKey: 'newCraftOrder',
+          bodyKey: named ? 'newCraftOrderProductBody' : 'newCraftOrderBody',
+          ...(named
+            ? { params: { product: productName, customer: customerName, code: order.code } }
+            : {}),
+        },
       },
     });
   } catch (e) {

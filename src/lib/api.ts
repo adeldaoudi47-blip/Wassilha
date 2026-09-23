@@ -30,6 +30,8 @@ import type {
   CraftStoreStats,
   CraftAreaPublic,
   NotificationListResponse,
+  OrderOffer,
+  VehicleCategory,
 } from './types';
 
 async function req<T>(
@@ -194,6 +196,16 @@ export const api = {
     // and the order waits for the dispatcher to flip it to
     // 'searching' at the appointed time.
     scheduledAt?: string | null;
+    // VEHICLE-TYPE MATCHING (Phase 2): the category the customer
+    // requires (e.g. "refrigerated"). Null / omitted = no preference,
+    // the order goes to every eligible driver. The server validates
+    // the value against VEHICLE_CATEGORIES before storing it.
+    requiredVehicleType?: VehicleCategory | null;
+    // PRICE NEGOTIATION (Phase 3): when true the customer is open to
+    // drivers sending counter-offers (`OrderOffer`). The server
+    // defaults it to false when omitted so legacy callers keep the
+    // fixed-price behaviour.
+    isNegotiable?: boolean;
   }) =>
     req<Order>('/api/orders', {
       method: 'POST',
@@ -208,6 +220,43 @@ export const api = {
   getOrder: (id: string) => req<Order>(`/api/orders/${id}`),
   acceptOrder: (id: string) =>
     req<Order>(`/api/orders/${id}/accept`, { method: 'POST' }),
+
+  // PRICE NEGOTIATION (Phase 3) — driver sends (or refreshes) their counter-
+  // price on a negotiable order; the server upserts so the customer always
+  // sees the driver's latest price. Returns the offer with the driver's
+  // public identity joined.
+  createOrderOffer: (orderId: string, price: number) =>
+    req<OrderOffer>(`/api/orders/${orderId}/offers`, {
+      method: 'POST',
+      body: JSON.stringify({ price }),
+    }),
+  // Customer: the full list of drivers' offers on their order, newest first.
+  // Drivers: only their own offers (server-enforced), so this same method
+  // backs both screens.
+  listOrderOffers: (orderId: string) =>
+    req<OrderOffer[]>(`/api/orders/${orderId}/offers`),
+  // Customer: accept a driver's price — the order is claimed by that driver
+  // and `finalPrice` is stamped from the offer.
+  acceptOrderOffer: (orderId: string, offerId: string) =>
+    req<{ order: Order; offer: OrderOffer }>(
+      `/api/orders/${orderId}/offers/${offerId}/accept`,
+      { method: 'POST' }
+    ),
+  // Customer: decline a driver's price. The order stays `searching` so the
+  // other offers remain comparable.
+  rejectOrderOffer: (orderId: string, offerId: string) =>
+    req<OrderOffer>(
+      `/api/orders/${orderId}/offers/${offerId}/reject`,
+      { method: 'POST' }
+    ),
+  // Customer: reply with a different price instead of accept/reject. The
+  // offer flips to `countered` with `counterPrice` set, and the driver sees
+  // the customer's amount on their request card.
+  counterOrderOffer: (orderId: string, offerId: string, price: number) =>
+    req<OrderOffer>(
+      `/api/orders/${orderId}/offers/${offerId}/counter`,
+      { method: 'POST', body: JSON.stringify({ price }) }
+    ),
 
   // TRIP OFFERS
   // Customer-facing browse: returns up to 50 available future
@@ -304,6 +353,11 @@ export const api = {
     // Number of passenger seats — required for TAXI / BOTH service type,
     // null for CARGO. Forwarded to the server unchanged.
     seats?: number | null;
+    // VEHICLE CLASSIFICATION (Phase 1): the category the driver picked for
+    // this vehicle. `null` clears it (back to "no category"); `undefined`
+    // leaves the stored value untouched. The server validates the value
+    // against VEHICLE_CATEGORIES and rejects unknowns with a 400.
+    vehicleCategory?: VehicleCategory | null;
   }) =>
     req<{
       id: string;
@@ -317,6 +371,9 @@ export const api = {
       anneePremiereMiseCirculation: number;
       // Returned so the driver profile UI can re-render after a save.
       seats: number | null;
+      // VEHICLE CLASSIFICATION (Phase 1): echoed back so the profile
+      // dialog keeps showing the saved category without a refetch.
+      vehicleCategory: VehicleCategory | null;
     }>('/api/driver/vehicle', {
       method: 'PATCH',
       body: JSON.stringify(data),

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import type { DriverProfile } from '@/lib/types';
+import type { DriverProfile, VehicleCategory } from '@/lib/types';
 
 // PATCH /api/driver/status  { isOnline: boolean }
 export async function PATCH(req: NextRequest) {
@@ -54,6 +54,12 @@ export async function PATCH(req: NextRequest) {
             type: driver.vehicleRegistration.type,
             anneePremiereMiseCirculation:
               driver.vehicleRegistration.anneePremiereMiseCirculation,
+            // VEHICLE CLASSIFICATION (Phase 1): kept in sync with the
+            // profile route so the online/offline toggle does not drop the
+            // driver's chosen category from the client-side profile. The DB
+            // column is a free String, narrowed to the shared union here.
+            vehicleCategory: driver.vehicleRegistration
+              .vehicleCategory as VehicleCategory | null,
           }
         : null,
       user: {

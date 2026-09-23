@@ -67,10 +67,17 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: 'notFound' }, { status: 404 });
     }
     // Fire-and-forget: tell the customer their order was accepted.
+    // CUSTOM MESSAGE (Phase 4): the body names the driver, so the customer
+    // knows who is coming before they even open the app.
+    const driverName = updated.driver?.name ?? '';
+    const title = 'تم قبول طلبك';
+    const bodyText = driverName
+      ? `السائق ${driverName} في طريقه إليك الآن.`
+      : 'السائق في طريقه إليك الآن.';
     void sendPushNotification(
       updated.customerId,
-      'تم قبول طلبك',
-      'السائق في طريقه إليك الآن.',
+      title,
+      bodyText,
       { type: 'order_accepted', orderId: updated.id, orderCode: updated.code }
     ).catch((e) => {
       // eslint-disable-next-line no-console
@@ -83,12 +90,18 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     void createNotification({
       userId: updated.customerId,
       type: 'order',
-      title: 'تم قبول طلبك',
-      body: 'السائق في طريقه إليك الآن.',
+      title,
+      body: bodyText,
       data: {
         orderId: updated.id,
         code: updated.code,
-        i18n: { titleKey: 'orderAccepted', bodyKey: 'driverOnTheWay' },
+        // The named body is used when the driver's name is known; the center
+        // falls back to `driverOnTheWay` when `params.driver` is absent.
+        i18n: {
+          titleKey: 'orderAccepted',
+          bodyKey: driverName ? 'driverOnTheWayNamed' : 'driverOnTheWay',
+          ...(driverName ? { params: { driver: driverName } } : {}),
+        },
       },
     }).catch((e) => {
       // eslint-disable-next-line no-console

@@ -379,6 +379,10 @@ export const translations = {
     noRatingYet: 'لا يوجد تقييم بعد',
     newOrder: 'طلب جديد',
     newOrderSub: 'لديك طلب نقل جديد في القرارة',
+    // NOTIFICATION CENTER (Phase 4 fix): body emitted by the driver fan-out
+    // (src/lib/dispatch.ts). Kept next to `newOrder` and uses {{param}}
+    // placeholders resolved by the notification center's resolveText().
+    newOrderBody: 'لديك طلب توصيل جديد من {{pickup}} إلى {{dropoff}} ({{code}})، تحقق من التطبيق.',
     payout: 'الدفع عند التسليم',
     cargoInsurance: 'تأمين الحمولة',
     estTime: 'الوقت المتوقع',
@@ -506,6 +510,30 @@ export const translations = {
     scheduled: 'مجدول',
     selectDateTime: 'اختر التاريخ والوقت',
     scheduledAt: 'وقت الحجز',
+    // === Vehicle classification + negotiation (Phases 1–3) ==============
+    // `vehicleCategory` is the label on the driver's profile edit dialog
+    // (the commercial class of their vehicle) and on the customer order
+    // form ("which vehicle do you need?"). The per-category labels below
+    // are shared by both sides so the vocabulary matches one-to-one.
+    vehicleCategory: 'فئة المركبة',
+    vehicleCategoryPlaceholder: 'اختر فئة المركبة (اختياري)',
+    noVehicleCategory: 'غير محدد',
+    vehicleCategoryMoto: 'دراجة نارية',
+    vehicleCategoryTricycle: 'تراي سيكل (Triporteur)',
+    vehicleCategoryPickup: 'بيك أب',
+    vehicleCategoryVan: 'فان / شاحنة صغيرة',
+    vehicleCategoryRefrigerated: 'ناقل مبرّد',
+    vehicleCategoryTruck: 'شاحنة',
+    vehicleCategoryTaxiCar: 'سيارة تكسي',
+    // The customer order-form counterpart of the driver's category list.
+    requiredVehicleType: 'نوع المركبة المطلوبة',
+    requiredVehicleTypePlaceholder: 'أي نوع تفضّل؟ (اختياري)',
+    requiredVehicleTypeAny: 'أي نوع متاح',
+    // PRICE NEGOTIATION (Phase 3): the switch on the customer order form.
+    // `negotiableHint` is the one-line explanation under it.
+    isNegotiable: 'قابل للتفاوض',
+    negotiableHint: 'يقبل السائقون إرسال عروض أسعار بديلة',
+    requiredVehicleTypeHelp: 'نفلتر طلبك ليصل فقط للسائقين المناسبين',
     // === Trip offers (driver-published pre-planned trips) ===============
     // The driver publishes a future trip (TAXI ride or CARGO run);
     // the customer browses them on the "عروض السائقين" tab and
@@ -539,6 +567,9 @@ export const translations = {
     noNotifications: 'لا توجد إشعارات',
     orderAccepted: 'تم قبول طلبك',
     driverOnTheWay: 'السائق في طريقه إليك الآن',
+    // CUSTOM MESSAGE (Phase 4): accept body now names the driver, which is the
+    // one piece of info that makes the push actionable before opening the app.
+    driverOnTheWayNamed: 'السائق {{driver}} في طريقه إليك الآن.',
     driverArrived: 'وصل السائق',
     driverArrivedBody: 'لقد وصل السائق إلى نقطة الاستلام، يرجى التوجه إليه',
     orderDelivered: 'تم تسليم الطلب',
@@ -549,6 +580,48 @@ export const translations = {
     storeApprovedBody: 'يمكنك الآن إضافة منتجاتك',
     newCraftOrder: 'لديك طلب جديد',
     newCraftOrderBody: 'تحقق من متجرك',
+    // CUSTOM MESSAGES (Phase 4): richer bodies carrying the names the recipient
+    // actually cares about — driver / customer / product / proposed price.
+    // Kept as flat keys with {{params}} so notification-center's resolveText
+    // can re-render them in French from `data.i18n.params`.
+    newCraftOrderProductBody: 'لديك طلب جديد على "{{product}}" من {{customer}}.',
+    // === Price negotiation notifications (Phase 3) =====================
+    // Stored Arabic title/body for offer events; the French render
+    // re-resolves them from the fr block below via `data.i18n`.
+    newOffer: 'عرض سعر جديد',
+    newOfferBody: 'السائق يقترح {{price}} د.ج لطلبك {{code}}',
+    offerAccepted: 'تم قبول سعرك',
+    offerAcceptedBody: 'قبل الزبون عرضك {{price}} د.ج للطلب {{code}}',
+    offerRejected: 'تم رفض عرضك',
+    offerRejectedBody: 'لم يقبل الزبون عرضك للطلب {{code}}',
+    // The customer's counter-price: the driver sees their own original price
+    // alongside the proposed one.
+    offerCountered: 'عرض سعر مضاد',
+    offerCounteredBody: 'الزبون يقترح {{price}} د.ج بدل عرضك {{originalPrice}} د.ج للطلب {{code}}',
+    // === Offer UI (Phase 3) ============================================
+    // Customer-facing offer card + the driver's "make an offer" sheet.
+    offersTitle: 'عروض الأسعار',
+    offersEmpty: 'لا توجد عروض بعد',
+    offerFrom: 'عرض من',
+    acceptOffer: 'قبول السعر',
+    rejectOffer: 'رفض',
+    makeAnOffer: 'إرسال عرض سعر',
+    yourOffer: 'سعرك المقترح',
+    yourOfferHint: 'أدخل المبلغ بالدينار الجزائري',
+    offerSent: 'تم إرسال عرضك',
+    offerAcceptedToast: 'تمت الموافقة على العرض وجارٍ تعيين السائق',
+    offerRejectedToast: 'تم رفض العرض',
+    myOffer: 'عرضي',
+    negotiatePrice: 'التفاوض على السعر',
+    // === Counter-offer UI (Phase 3) ===================================
+    // Customer counter input + the driver's "the customer countered" banner.
+    counterOffer: 'عرض مضاد',
+    counterOfferHint: 'أدخل سعرك المقترح بالدينار الجزائري',
+    counterSent: 'تم إرسال عرضك المضاد',
+    awaitingDriverReply: 'بانتظار رد السائق على عرضك المضاد',
+    customerCountered: 'الزبون قدم عرضاً مضاداً',
+    acceptCounter: 'قبول {{price}} د.ج',
+    declineCounter: 'رفض العرض المضاد',
     // === Network / API error sentinels ===============================
     // `req()` in src/lib/api.ts normalises transport failures and non-JSON
     // error bodies to the `networkError` / `serverError` sentinels. These
@@ -915,6 +988,10 @@ export const translations = {
     noRatingYet: "Pas encore d'évaluation",
     newOrder: 'Nouvelle commande',
     newOrderSub: 'Vous avez une nouvelle demande à El Guerrara',
+    // NOTIFICATION CENTER (Phase 4 fix): corps émis par la diffusion aux
+    // chauffeurs (src/lib/dispatch.ts). Placeholders {{param}} résolus par
+    // resolveText() du centre de notifications.
+    newOrderBody: 'Nouvelle livraison de {{pickup}} vers {{dropoff}} ({{code}}) — ouvrez l\'application.',
     priceConfig: 'Configuration des prix',
     cargoLabel: 'Cargaison',
     payout: 'Paiement à la livraison',
@@ -1035,6 +1112,30 @@ export const translations = {
     scheduled: 'Programmé',
     selectDateTime: 'Sélectionner la date et l\'heure',
     scheduledAt: 'Heure de la réservation',
+    // === Vehicle classification + negotiation (Phases 1–3) ==============
+    // `vehicleCategory` est l'étiquette de la boîte de dialogue du profil
+    // chauffeur (catégorie commerciale de son véhicule) et du formulaire
+    // de commande client. Les libellés ci-dessous sont partagés par les
+    // deux côtés afin de garder un vocabulaire identique.
+    vehicleCategory: 'Catégorie du véhicule',
+    vehicleCategoryPlaceholder: 'Choisir une catégorie (facultatif)',
+    noVehicleCategory: 'Non définie',
+    vehicleCategoryMoto: 'Moto',
+    vehicleCategoryTricycle: 'Tricycle (Triporteur)',
+    vehicleCategoryPickup: 'Pick-up',
+    vehicleCategoryVan: 'Fourgonnette',
+    vehicleCategoryRefrigerated: 'Camion frigorifique',
+    vehicleCategoryTruck: 'Camion',
+    vehicleCategoryTaxiCar: 'Voiture taxi',
+    // La contrepartie, côté formulaire client, de la liste du chauffeur.
+    requiredVehicleType: 'Type de véhicule requis',
+    requiredVehicleTypePlaceholder: 'Quel type préférez-vous ? (facultatif)',
+    requiredVehicleTypeAny: 'Tous types disponibles',
+    // PRICE NEGOTIATION (Phase 3) : l'interrupteur sur le formulaire client.
+    // `negotiableHint` est l'explication d'une ligne sous l'interrupteur.
+    isNegotiable: 'Négociable',
+    negotiableHint: 'Les chauffeurs peuvent proposer un autre prix',
+    requiredVehicleTypeHelp: 'Filtre votre requête vers les bons chauffeurs',
     // === Trip offers (driver-published pre-planned trips) ===============
     // Mirrors the Arabic keys above. A driver can publish a trip
     // (TAXI ride or CARGO run) ahead of time; the customer browses
@@ -1075,6 +1176,7 @@ export const translations = {
     noNotifications: 'Aucune notification',
     orderAccepted: 'Commande acceptée',
     driverOnTheWay: 'Le chauffeur est en route',
+    driverOnTheWayNamed: 'Le chauffeur {{driver}} est en route vers vous.',
     driverArrived: 'Le chauffeur est arrivé',
     driverArrivedBody: 'Le chauffeur est arrivé au point de prise en charge',
     orderDelivered: 'Commande livrée',
@@ -1085,6 +1187,39 @@ export const translations = {
     storeApprovedBody: 'Vous pouvez maintenant ajouter vos produits',
     newCraftOrder: 'Nouvelle commande',
     newCraftOrderBody: 'Consultez votre boutique',
+    newCraftOrderProductBody: 'Vous avez une nouvelle commande pour « {{product}} » de la part de {{customer}}.',
+    // === Price negotiation notifications (Phase 3) =====================
+    // French miroirs : le centre de notifications re-résout ces clés depuis
+    // `data.i18n` sans aucun changement de schéma.
+    newOffer: 'Nouvelle offre de prix',
+    newOfferBody: 'Le chauffeur propose {{price}} DZD pour votre commande {{code}}',
+    offerAccepted: 'Votre prix est accepté',
+    offerAcceptedBody: 'Le client a accepté votre offre de {{price}} DZD pour la commande {{code}}',
+    offerRejected: 'Offre refusée',
+    offerRejectedBody: 'Le client n\'a pas accepté votre offre pour la commande {{code}}',
+    offerCountered: 'Contre-offre',
+    offerCounteredBody: 'Le client propose {{price}} DZD au lieu de votre offre de {{originalPrice}} DZD pour la commande {{code}}',
+    // === Offer UI (Phase 3) - French mirrors ============================
+    offersTitle: 'Offres de prix',
+    offersEmpty: 'Aucune offre pour l\'instant',
+    offerFrom: 'Offre de',
+    acceptOffer: 'Accepter le prix',
+    rejectOffer: 'Refuser',
+    makeAnOffer: 'Envoyer une offre',
+    yourOffer: 'Votre prix proposé',
+    yourOfferHint: 'Saisissez le montant en dinars algériens',
+    offerSent: 'Votre offre a été envoyée',
+    offerAcceptedToast: 'Offre acceptée, chauffeur en cours d\'affectation',
+    offerRejectedToast: 'Offre refusée',
+    myOffer: 'Mon offre',
+    negotiatePrice: 'Négocier le prix',
+    counterOffer: 'Contre-offre',
+    counterOfferHint: 'Saisissez votre prix en dinars algériens',
+    counterSent: 'Votre contre-offre a été envoyée',
+    awaitingDriverReply: 'En attente de la réponse du chauffeur',
+    customerCountered: 'Le client a fait une contre-offre',
+    acceptCounter: 'Accepter {{price}} DZD',
+    declineCounter: 'Refuser la contre-offre',
     // === Network / API error sentinels (FR) ==========================
     // French mirrors of the Arabic keys above. `req()` throws the stable
     // `networkError` / `serverError` sentinels; these are the localised

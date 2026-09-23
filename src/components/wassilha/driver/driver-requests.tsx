@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Bike, Wifi, WifiOff, Package, MapPin, Flag, Scale, Navigation,
   Check, X, Bell, BellOff, Zap, CalendarClock, Clock, ShoppingBag,
+  Loader2,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
@@ -14,9 +15,20 @@ import { CargoIcon } from '../cargo-icon';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { formatDzd } from '@/lib/wassilha-data';
-import type { DriverProfile, Order } from '@/lib/types';
+import type { DriverProfile, Order, OrderOffer } from '@/lib/types';
+import { ORDER_OFFER_STATUS_LABELS } from '@/lib/types';
 import { ListSkeleton, Skeleton } from '../skeleton';
 
 export function DriverRequests() {
@@ -28,6 +40,13 @@ export function DriverRequests() {
   const [incoming, setIncoming] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  // PRICE NEGOTIATION (Phase 3): the order the driver is currently
+  // composing a price offer for (dialog open), plus this driver's own
+  // offers keyed by orderId so the card can show "you offered X" instead
+  // of a bare offer button.
+  const [offerOrder, setOfferOrder] = useState<Order | null>(null);
+  const [offerPrice, setOfferPrice] = useState<string>('');
+  const [myOffers, setMyOffers] = useState<Record<string, OrderOffer>>({});
 
   const loadAll = useCallback(async () => {
     try {
@@ -126,6 +145,64 @@ export function DriverRequests() {
       setActing(null);
     }
   };
+
+  // PRICE NEGOTIATION (Phase 3) — open the offer sheet. Seeded with the
+  // order's listed price by default; when the customer already sent a counter
+  // the sheet opens on THEIR amount instead, so accepting it is a one-tap
+  // edit (and the driver can still adjust it before sending).
+  const openOffer = (order: Order, seed?: number | null) => {
+    setOfferOrder(order);
+    setOfferPrice(String(seed ?? order.price));
+  };
+
+  // PRICE NEGOTIATION (Phase 3) — send (or refresh) the driver's price.
+  // The server upserts on (orderId, driverId), so re-sending simply
+  // updates the existing offer; we mirror that locally by overwriting the
+  // cached entry for this order.
+  const handleSendOffer = async () => {
+    if (!offerOrder) return;
+    const price = parseInt(offerPrice, 10);
+    if (!Number.isFinite(price) || price <= 0) {
+      toast.error(isAr ? 'أدخل سعراً صحيحاً' : 'Prix invalide');
+      return;
+    }
+    setActing(offerOrder.id);
+    try {
+      const offer = await api.createOrderOffer(offerOrder.id, price);
+      setMyOffers((prev) => ({ ...prev, [offerOrder.id]: offer }));
+      toast.success(t.offerSent);
+      setOfferOrder(null);
+    } catch (err) {
+      // The API's error codes (orderNotNegotiable / orderNotSearchable /
+      // invalidPrice) are stable strings the UI can match directly.
+      const msg = err instanceof Error ? err.message : '';
+      toast.error(msg || t.updateFailed);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  // Load this driver's existing offers once per mount so a card can render
+  // "you offered X · pending" when the driver already named a price. The
+  // GET route returns only the caller's own offers, so this is safe.
+  useEffect(() => {
+    (async () => {
+      try {
+        const offers = await Promise.all(
+          incoming.map((o) => api.listOrderOffers(o.id).catch(() => [])),
+        );
+        const byOrder: Record<string, OrderOffer> = {};
+        incoming.forEach((o, i) => {
+          const mine = (offers[i] as OrderOffer[]).find((f) => f.orderId === o.id);
+          if (mine) byOrder[o.id] = mine;
+        });
+        setMyOffers(byOrder);
+      } catch { /* ignore */ }
+    })();
+    // We only need the initial snapshot per incoming list; the offer send
+    // above keeps `myOffers` fresh afterwards.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming.length]);
 
   if (loading) {
     return (
@@ -309,6 +386,17 @@ export function DriverRequests() {
                     <span className="text-xs font-semibold text-muted-foreground">{t.estimate}</span>
                     <span className="text-lg font-black text-primary">{formatDzd(o.price)} {t.dzd}</span>
                   </div>
+                  {/* PRICE NEGOTIATION (Phase 3): a small pill so the driver
+                      sees the customer is open to a different price before
+                      deciding to accept flat or to negotiate. */}
+                  {o.isNegotiable && (
+                    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-100/50 px-3 py-1.5 dark:bg-amber-950/30">
+                      <Scale size={11} className="text-amber-700 dark:text-amber-300" />
+                      <span className="text-[11px] font-bold text-amber-800 dark:text-amber-200">
+                        {t.isNegotiable}
+                      </span>
+                    </div>
+                  )}
                   {/* SCHEDULED BOOKINGS: when the order has a future
                       `scheduledAt`, render a dedicated row right
                       above the action buttons so the driver sees the
@@ -348,12 +436,146 @@ export function DriverRequests() {
                       <X size={16} className="me-1.5" /> {t.reject}
                     </Button>
                   </div>
+                  {/* PRICE NEGOTIATION (Phase 3): when the customer opted
+                      into negotiation, the flat Accept stays (the driver
+                      may still take the listed price) but we also offer a
+                      "send your price" path. If the driver already sent an
+                      offer we show its state + the amount instead of a
+                      bare button, so the driver never forgets what they
+                      asked for. */}
+                  {o.isNegotiable && (
+                    <div className="mt-2 space-y-2">
+                      {myOffers[o.id] ? (
+                        <div className="space-y-1.5 rounded-lg bg-amber-100/60 px-3 py-2 dark:bg-amber-950/40">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                              {t.myOffer}: {formatDzd(myOffers[o.id].price)} {t.dzd}
+                            </span>
+                            <span className="rounded-full bg-amber-200/70 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+                              {(ORDER_OFFER_STATUS_LABELS[myOffers[o.id].status] ?? {
+                                ar: myOffers[o.id].status,
+                                fr: myOffers[o.id].status,
+                              })[isAr ? 'ar' : 'fr']}
+                            </span>
+                          </div>
+                          {/* COUNTER (Phase 3): the customer replied with a
+                              different price. Show it prominently — it is
+                              the one thing the driver must act on — and open
+                              the offer sheet pre-filled with that amount so
+                              accepting the counter is a one-tap edit. */}
+                          {myOffers[o.id].status === 'countered' &&
+                            myOffers[o.id].counterPrice != null && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openOffer(o, myOffers[o.id].counterPrice ?? undefined)
+                                }
+                                disabled={acting === o.id}
+                                className="flex w-full items-center justify-between rounded-md bg-amber-50 px-2 py-1.5 text-start transition hover:bg-amber-100 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
+                              >
+                                <span className="text-[11px] font-medium text-amber-900 dark:text-amber-100">
+                                  {t.customerCountered}
+                                </span>
+                                <span
+                                  className="text-sm font-black text-amber-700 dark:text-amber-300"
+                                  dir="ltr"
+                                >
+                                  {formatDzd(myOffers[o.id].counterPrice ?? 0)} {t.dzd}
+                                </span>
+                              </button>
+                            )}
+                        </div>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full border-amber-500 text-amber-700 hover:bg-amber-50 dark:text-amber-300"
+                        onClick={() => openOffer(o)}
+                        disabled={acting === o.id}
+                      >
+                        {t.negotiatePrice}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      {/* PRICE NEGOTIATION (Phase 3): the driver's offer sheet. Seeded with
+          the order's listed price as a sane default; submitting calls
+          createOrderOffer which upserts, so this same dialog doubles as
+          the "change my offer" editor when the driver already sent one. */}
+      <Dialog open={!!offerOrder} onOpenChange={(v) => !v && setOfferOrder(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.makeAnOffer}</DialogTitle>
+            <DialogDescription>
+              {offerOrder
+                ? `${offerOrder.pickup} → ${offerOrder.dropoff} · ${formatDzd(offerOrder.price)} ${t.dzd}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="offer-price">{t.yourOffer}</Label>
+              <Input
+                id="offer-price"
+                type="number"
+                inputMode="numeric"
+                min={50}
+                max={100000}
+                value={offerPrice}
+                onChange={(e) => setOfferPrice(e.target.value)}
+                // Prices are numeric; keep the field LTR so the digits and
+                // the currency grouping never flip in an RTL layout.
+                dir="ltr"
+                placeholder={t.yourOfferHint}
+                autoFocus
+              />
+              <p className="text-[10px] text-muted-foreground">{t.yourOfferHint}</p>
+            </div>
+            {/* Live preview of what the customer will see, so the driver
+                can sanity-check the amount before sending. */}
+            <div className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t.offerFrom} {user?.name}
+              </span>
+              <span className="text-lg font-black text-primary">
+                {offerPrice && Number.isFinite(parseInt(offerPrice, 10))
+                  ? `${formatDzd(parseInt(offerPrice, 10))} ${t.dzd}`
+                  : '—'}
+              </span>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOfferOrder(null)}
+              disabled={acting === offerOrder?.id}
+            >
+              {t.cancel}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSendOffer}
+              disabled={
+                acting === offerOrder?.id ||
+                !offerPrice ||
+                !Number.isFinite(parseInt(offerPrice, 10))
+              }
+            >
+              {acting === offerOrder?.id && (
+                <Loader2 size={14} className="me-2 animate-spin" />
+              )}
+              {t.makeAnOffer}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

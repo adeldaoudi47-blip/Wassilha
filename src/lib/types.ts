@@ -2,6 +2,72 @@
 
 export type Role = 'customer' | 'driver' | 'admin' | 'artisan';
 export type Lang = 'ar' | 'fr';
+
+// ---------------------------------------------------------------------------
+// VEHICLE CLASSIFICATION (Phase 1)
+//
+// The commercial category of a driver's vehicle. Used both on the driver
+// profile / application form (`VehicleRegistration.vehicleCategory`) and on
+// the customer order form (`Order.requiredVehicleType`) so the two sides
+// share one vocabulary and the Phase 2 dispatch filter can join them.
+//
+// Kept as a plain string list (NOT a Prisma enum) so a new category can be
+// added here + in the i18n table without a DB migration — the same pattern
+// the codebase already uses for `Order.status` / `Driver.serviceType`.
+//
+// `null` / an empty string means "no category chosen" (legacy drivers and
+// orders); the dispatch fan-out then treats it as "no preference".
+// ---------------------------------------------------------------------------
+export const VEHICLE_CATEGORIES = [
+  'moto',
+  'tricycle',
+  'pickup',
+  'van',
+  'refrigerated',
+  'truck',
+  'taxi_car',
+] as const;
+
+export type VehicleCategory = (typeof VEHICLE_CATEGORIES)[number];
+
+// Type guard used by the API layer to validate a client-supplied category
+// before persisting it. Unknown values are rejected with a 400 rather than
+// silently stored, so the vocabulary stays honest in the DB.
+export function isVehicleCategory(v: unknown): v is VehicleCategory {
+  return typeof v === 'string' && (VEHICLE_CATEGORIES as readonly string[]).includes(v);
+}
+
+// Maps a category to its i18n key (defined for both `ar` and `fr` in
+// src/lib/i18n.ts). Centralised here so the driver profile, the application
+// form and the customer order form all render the same label for a given
+// category — a category is only ever displayed through this table.
+export const VEHICLE_CATEGORY_LABELS: Record<VehicleCategory, string> = {
+  moto: 'vehicleCategoryMoto',
+  tricycle: 'vehicleCategoryTricycle',
+  pickup: 'vehicleCategoryPickup',
+  van: 'vehicleCategoryVan',
+  refrigerated: 'vehicleCategoryRefrigerated',
+  truck: 'vehicleCategoryTruck',
+  taxi_car: 'vehicleCategoryTaxiCar',
+};
+
+// Returns the localised label for a category, or the "unset" fallback when
+// the driver has not chosen one yet. Exposed as a single helper so callers
+// never have to repeat the `?? noVehicleCategory` dance.
+export function vehicleCategoryLabel(
+  t: Record<string, string>,
+  category: VehicleCategory | null | undefined,
+): string {
+  if (!category) return t.noVehicleCategory ?? '—';
+  return t[VEHICLE_CATEGORY_LABELS[category]] ?? category;
+}
+
+// The list the customer order form renders, in the order the UI shows it.
+// Same vocabulary as the driver side; the empty-string value is the explicit
+// "no preference" option.
+export const VEHICLE_CATEGORY_OPTIONS: { value: VehicleCategory; labelKey: string }[] =
+  VEHICLE_CATEGORIES.map((c) => ({ value: c, labelKey: VEHICLE_CATEGORY_LABELS[c] }));
+
 export type CargoKey =
   | 'parcel'
   | 'goods'
@@ -52,6 +118,11 @@ export interface VehicleRegistrationInfo {
   marque: string;
   type: string | null;
   anneePremiereMiseCirculation: number;
+  // VEHICLE CLASSIFICATION (Phase 1): the category the driver picked for
+  // this vehicle (moto / pickup / refrigerated / …). Null for legacy rows
+  // that never had one. Served to the driver on their profile so the
+  // edit dialog can pre-select the right dropdown value.
+  vehicleCategory?: VehicleCategory | null;
 }
 
 export interface DriverProfile {
@@ -177,9 +248,69 @@ export interface Order {
   // for that moment; the server stores status='scheduled' until the
   // dispatcher flips it to 'searching'.
   scheduledAt?: string | null;
+  // VEHICLE-TYPE MATCHING (Phase 2): the category the customer required,
+  // mirrored from `Order.requiredVehicleType`. Null = no preference.
+  // Surfaced in the order card so drivers can see at a glance whether
+  // their vehicle matches before accepting.
+  requiredVehicleType?: VehicleCategory | null;
+  // PRICE NEGOTIATION (Phase 3): the customer is open to drivers
+  // proposing a different price (`OrderOffer` rows). False by default,
+  // which is what every pre-negotiation order has.
+  isNegotiable?: boolean;
+  // PRICE NEGOTIATION (Phase 3): the price the customer and the driver
+  // actually agreed on. Preferred over `price` for display / earnings
+  // once an offer has been accepted; null while still searching or when
+  // the order was never negotiable.
+  finalPrice?: number | null;
   customer?: AuthUser;
   driver?: AuthUser | null;
 }
+
+// ---------------------------------------------------------------------------
+// PRICE NEGOTIATION (Phase 3)
+//
+// A driver's counter-offer on a negotiable order. Mirrors the `OrderOffer`
+// Prisma model one-to-one. The `status` field is a free string (not a
+// union-typed enum) on the wire because the DB column is a free String —
+// mirroring how `Order.status` is modelled — but the known states are
+// documented on `OrderOfferStatus` below for the API + UI to share.
+// ---------------------------------------------------------------------------
+export type OrderOfferStatus = 'pending' | 'accepted' | 'rejected' | 'countered';
+
+export interface OrderOffer {
+  id: string;
+  orderId: string;
+  driverId: string;
+  price: number;
+  status: string;
+  // PRICE NEGOTIATION (Phase 3): the price the customer replied with while
+  // this offer is "countered". Null for pending/accepted/rejected offers and
+  // for rows written before the column existed.
+  counterPrice?: number | null;
+  createdAt: string;
+  // Optional inline joins the API may include so the UI can render an
+  // offer card without a second roundtrip: the driver's public identity
+  // for the customer-facing list, and the parent order's key fields for
+  // the driver-facing list.
+  driver?: AuthUser;
+  order?: Pick<
+    Order,
+    'id' | 'code' | 'pickup' | 'dropoff' | 'price' | 'cargoType' | 'scheduledAt'
+  > | null;
+}
+
+// Human-readable Arabic / French label for each offer state, used by the
+// offer cards. Unknown / future states fall back to the raw value so a
+// new status never renders an empty pill in the UI.
+export const ORDER_OFFER_STATUS_LABELS: Record<
+  string,
+  { ar: string; fr: string }
+> = {
+  pending: { ar: 'قيد الانتظار', fr: 'En attente' },
+  accepted: { ar: 'تم القبول', fr: 'Acceptée' },
+  rejected: { ar: 'مرفوضة', fr: 'Refusée' },
+  countered: { ar: 'عرض مضاد', fr: 'Contre-offre' },
+};
 
 export interface PricingConfig {
   id: string;

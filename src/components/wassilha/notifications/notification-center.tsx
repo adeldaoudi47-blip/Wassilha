@@ -107,6 +107,13 @@ function formatRelative(dateStr: string, isAr: boolean): string {
 
 // Falls back to the stored Arabic text whenever a key is missing or the
 // emitter left no i18n ref at all — the center NEVER renders a blank card.
+//
+// PLACEHOLDER SYNTAX (Phase 4 fix): the translation bodies use the
+// double-brace `{{key}}` convention (e.g. newOrderBody above). The previous
+// implementation only replaced the single-brace `{key}` form, so every
+// parameter silently survived in the rendered text — French drivers read
+// "de {{pickup}} vers {{dropoff}}" verbatim. Both forms are accepted now so
+// existing rows and any older single-brace body keep working.
 function resolveText(
   n: AppNotification,
   t: Translation,
@@ -114,17 +121,29 @@ function resolveText(
   const ref = n.data?.i18n;
   if (!ref) return { title: n.title, body: n.body };
   const dict = t as unknown as Record<string, string>;
+  const interpolate = (
+    template: string,
+    params?: Record<string, string | number>,
+  ): string => {
+    if (!params) return template;
+    return Object.entries(params).reduce((out, [k, v]) => {
+      const value = String(v);
+      // Replace the double-brace form first (the documented convention),
+      // then the legacy single-brace form, so a body never leaks either.
+      return out
+        .split(`{{${k}}}`)
+        .join(value)
+        .split(`{${k}}`)
+        .join(value);
+    }, template);
+  };
   const apply = (
     raw: string,
     key: string | undefined,
     params?: Record<string, string | number>,
   ): string => {
     if (!key || !dict[key]) return raw;
-    if (!params) return dict[key];
-    return Object.entries(params).reduce(
-      (out, [k, v]) => out.split(`{${k}}`).join(String(v)),
-      dict[key],
-    );
+    return interpolate(dict[key], params);
   };
   return {
     title: apply(n.title, ref.titleKey, ref.params),
@@ -173,6 +192,7 @@ export function NotificationCenter({ onUnreadChange }: NotificationCenterProps) 
     if (!row || row.isRead || actingId === id) return;
     // Optimistic: flip the row + badge now, revert on failure.
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, isRead: true } : i)));
+    report(items.filter((i) => i.id !== id && !i.isRead).length);
     setActingId(id);
     try {
       await api.markNotificationRead(id);
@@ -182,7 +202,11 @@ export function NotificationCenter({ onUnreadChange }: NotificationCenterProps) 
         return next;
       });
     } catch {
+      // Revert the row AND the badge: the optimistic decrement above would
+      // otherwise leave the bell permanently short by one after a failure,
+      // because nothing recomputes the count until the next poll.
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, isRead: false } : i)));
+      report(items.filter((i) => !i.isRead).length);
       toast.error(t.fetchError);
     } finally {
       setActingId(null);

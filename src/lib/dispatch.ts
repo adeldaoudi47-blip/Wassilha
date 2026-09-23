@@ -26,6 +26,10 @@ export interface DispatchableOrder {
   cargoType: string;
   pickup: string;
   dropoff: string;
+  // VEHICLE-TYPE MATCHING (Phase 2): when set, only drivers whose vehicle
+  // matches this category are notified. `null` / undefined = no preference,
+  // which reproduces the pre-Phase-2 behaviour for every existing caller.
+  requiredVehicleType?: string | null;
 }
 
 // Order.cargoType is a free String; translate it into the Driver.serviceType
@@ -38,8 +42,18 @@ export function serviceCategoryFor(cargoType: string): 'CARGO' | 'TAXI' {
 // Drivers eligible to receive a given order: online, verified, active
 // account, and opted into the requested service category (`serviceType` is
 // "BOTH" or the exact category). Backed by @@index([isOnline, isVerified, serviceType]).
+//
+// VEHICLE-TYPE MATCHING (Phase 2): when `requiredVehicleType` is set, the
+// driver's vehicle must be in that category. This is expressed through the
+// 1:1 Driver↔VehicleRegistration link (backed by
+// @@index([vehicleCategory])) so a driver who never picked a category
+// (legacy `vehicleCategory = null`) is excluded from a *categorical*
+// request — they opted into no category, so they cannot claim to match one.
+// Passing `null` / undefined skips the filter entirely and fans the order
+// out to the whole eligible pool, exactly as the flow worked before Phase 2.
 export async function findAvailableDrivers(
   cargoType: string,
+  requiredVehicleType?: string | null,
 ): Promise<string[]> {
   const requestedService = serviceCategoryFor(cargoType);
   const drivers = await db.driver.findMany({
@@ -52,6 +66,13 @@ export async function findAvailableDrivers(
       // driver whose serviceType is the *opposite* of the request is
       // excluded automatically.
       OR: [{ serviceType: 'BOTH' }, { serviceType: requestedService }],
+      // VEHICLE-TYPE MATCHING (Phase 2): a categorical request narrows the
+      // pool to drivers whose registered vehicle is in that category.
+      // Vehicles with no category on file never satisfy a categorical
+      // request; orders with no preference skip this clause.
+      ...(requiredVehicleType
+        ? { vehicleRegistration: { vehicleCategory: requiredVehicleType } }
+        : {}),
     },
     select: { userId: true },
   });
@@ -63,11 +84,19 @@ export async function findAvailableDrivers(
 export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
   notified: number;
 }> {
-  const driverUserIds = await findAvailableDrivers(order.cargoType);
+  const driverUserIds = await findAvailableDrivers(
+    order.cargoType,
+    order.requiredVehicleType ?? null,
+  );
   if (driverUserIds.length === 0) return { notified: 0 };
 
   const title = 'طلب جديد';
-  const body = 'لديك طلب توصيل جديد، تحقق من التطبيق.';
+  // CUSTOM MESSAGE (Phase 4): the body carries the route + code, so the
+  // driver can decide whether the trip is worth taking before opening the
+  // app. This duplicates `newOrderBody` in the i18n table verbatim — the
+  // stored Arabic text is the source of truth for push, and the i18n key is
+  // only used by the notification center's French re-render.
+  const body = `لديك طلب توصيل جديد من ${order.pickup} إلى ${order.dropoff} (${order.code})، تحقق من التطبيق.`;
 
   // One FCM call regardless of fleet size — the batch helper handles the 5s
   // timeout and dead-token pruning internally.
@@ -94,10 +123,14 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
         data: {
           orderId: order.id,
           code: order.code,
-          // Keys for a future French re-render client-side.
+          // Keys for a future French re-render client-side. These are the
+          // FLAT keys from the translation table (the center looks them up
+          // directly, not through a dotted path), and both the key and the
+          // body must exist in src/lib/i18n.ts or the French render silently
+          // falls back to the stored Arabic text.
           i18n: {
-            titleKey: 'notifications.newOrder.title',
-            bodyKey: 'notifications.newOrder.body',
+            titleKey: 'newOrder',
+            bodyKey: 'newOrderBody',
             params: { code: order.code, pickup: order.pickup, dropoff: order.dropoff },
           },
         },

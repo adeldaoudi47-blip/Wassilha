@@ -25,6 +25,11 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import {
+  VEHICLE_CATEGORIES,
+  isVehicleCategory,
+} from '@/lib/types';
+import type { VehicleCategory } from '@/lib/types';
 
 const OPTIONAL_STR_MAX = 128;
 
@@ -87,6 +92,12 @@ const vehicleUpdateSchema = z.object({
     .max(30, 'invalidSeats')
     .optional()
     .nullable(),
+  // VEHICLE CLASSIFICATION (Phase 1): the commercial category of the
+  // vehicle (moto / pickup / refrigerated / …). Free String on the column
+  // so this endpoint can accept any value, but unknown keys are rejected
+  // in code below against VEHICLE_CATEGORIES so the DB vocabulary stays
+  // honest. `null` clears the category; `undefined` leaves it untouched.
+  vehicleCategory: z.string().trim().max(32).optional().nullable(),
 });
 
 function badRequest(error: string, issues?: unknown) {
@@ -136,6 +147,21 @@ export async function PATCH(req: NextRequest) {
       return badRequest(first, parsed.error.issues);
     }
     const v = parsed.data;
+
+    // VEHICLE CLASSIFICATION (Phase 1): reject any value the shared
+    // vocabulary does not know, so a misbehaving client can never store a
+    // bogus category that would then never match a customer's requirement.
+    // `null` (clear the category) and `undefined` (don't touch it) are both
+    // fine here.
+    if (
+      v.vehicleCategory !== undefined &&
+      v.vehicleCategory !== null &&
+      !isVehicleCategory(v.vehicleCategory)
+    ) {
+      return badRequest('invalidVehicleCategory', {
+        allowed: VEHICLE_CATEGORIES,
+      });
+    }
 
     // Year range check (kept identical to apply-driver).
     const year = v.anneePremiereMiseCirculation;
@@ -201,6 +227,13 @@ export async function PATCH(req: NextRequest) {
         // Forward seats directly (already a number|undefined|null after
         // Zod validation). For CARGO drivers the column stays null.
         seats: v.seats ?? null,
+        // VEHICLE CLASSIFICATION (Phase 1): only persisted when the client
+        // explicitly sent the key (undefined => keep the previous value so
+        // older clients don't wipe a driver's category on their next save).
+        // A non-null value is checked against VEHICLE_CATEGORIES above.
+        ...(v.vehicleCategory === undefined
+          ? {}
+          : { vehicleCategory: v.vehicleCategory ?? null }),
       },
     });
 
@@ -214,6 +247,11 @@ export async function PATCH(req: NextRequest) {
       marque: updated.marque,
       type: updated.type,
       anneePremiereMiseCirculation: updated.anneePremiereMiseCirculation,
+      // VEHICLE CLASSIFICATION (Phase 1): echoed back so the driver
+      // profile UI can show the saved category without a refetch. The DB
+      // column is a free String; the value has already been validated
+      // against VEHICLE_CATEGORIES above so the cast to the union is safe.
+      vehicleCategory: updated.vehicleCategory as VehicleCategory | null,
     });
   } catch (e) {
     // Prisma unique-constraint race: if a concurrent request just took

@@ -100,6 +100,10 @@ export async function GET(req: NextRequest) {
           cargoType: order.cargoType,
           pickup: order.pickup,
           dropoff: order.dropoff,
+          // VEHICLE-TYPE MATCHING (Phase 2): the scheduled booking keeps
+          // its required category through the scheduled → searching flip
+          // so the same matching rule applies as for an immediate order.
+          requiredVehicleType: order.requiredVehicleType ?? null,
         });
         notified += res.notified;
       } catch (e) {

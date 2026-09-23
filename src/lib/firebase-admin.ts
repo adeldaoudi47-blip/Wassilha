@@ -87,6 +87,24 @@ type SendResult = {
 // and still fits inside the order-creation critical path.
 const FCM_TIMEOUT_MS = 5000;
 
+// Deep-link intent every push carries. The client's tap handler reads this to
+// route the user straight to the relevant screen (see
+// pushNotificationActionPerformed in src/lib/push-notifications.ts); without
+// it a tap just opens the app to the default tab.
+const CLICK_ACTION = 'OPEN_ORDER';
+
+/**
+ * Normalise the caller-supplied data map into the shape FCM requires
+ * (string values) and stamp the deep-link intent. Every push goes through
+ * here so the tap behaviour is consistent across all notification types.
+ */
+function buildFcmData(
+  data?: Record<string, string>
+): Record<string, string> | undefined {
+  const entries = Object.entries(data ?? {}).map(([k, v]) => [k, String(v)]);
+  return { ...Object.fromEntries(entries), click_action: CLICK_ACTION };
+}
+
 /**
  * Send a single FCM notification to every registered device of the given
  * user. Best-effort: never throws, never blocks the caller on network
@@ -128,12 +146,9 @@ export async function sendPushNotification(
     const sendPromise = admin.messaging.sendEachForMulticast({
       tokens: fcmTokens,
       notification: { title, body },
-      // data values must be strings per FCM contract.
-      data: data
-        ? Object.fromEntries(
-            Object.entries(data).map(([k, v]) => [k, String(v)])
-          )
-        : undefined,
+      // data values must be strings per FCM contract; buildFcmData also
+      // stamps the deep-link intent the client reads on tap.
+      data: buildFcmData(data),
       android: {
         priority: 'high',
         notification: {
@@ -283,11 +298,7 @@ export async function sendPushNotificationBatch(
       const sendPromise = admin.messaging.sendEachForMulticast({
         tokens: chunk,
         notification: { title, body },
-        data: data
-          ? Object.fromEntries(
-              Object.entries(data).map(([k, v]) => [k, String(v)])
-            )
-          : undefined,
+        data: buildFcmData(data),
         android: {
           priority: 'high',
           notification: { channelId: 'wassilha_default' },

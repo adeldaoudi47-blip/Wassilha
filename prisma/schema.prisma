@@ -30,6 +30,9 @@ model User {
 
   orders       Order[]     @relation("CustomerOrders")
   drivenOrders Order[]     @relation("DriverOrders")
+  // PRICE NEGOTIATION (Phase 3): the price offers this driver has sent.
+  // Back-relation of OrderOffer.driver; cascade-deleted with the driver.
+  priceOffers  OrderOffer[] @relation("DriverOffers")
   ratingsGiven Rating[]    @relation("Rater")
   ratingsRecv  Rating[]    @relation("Ratee")
   // TRIP OFFERS: a customer can book one or more trip offers
@@ -275,6 +278,15 @@ model VehicleRegistration {
   // carte-grise S.1 / G field) so it can be queried/filtered without
   // string parsing on the order fan-out path.
   seats                         Int?
+  // VEHICLE CLASSIFICATION (Phase 1): the commercial category of the
+  // vehicle, as chosen by the driver on their profile / application
+  // form. Free String (no Prisma enum) so the vocabulary can grow
+  // without a migration — see VEHICLE_CATEGORIES in src/lib/types.ts
+  // for the client-side allow-list. Null = the driver never picked a
+  // category (legacy rows), which the dispatch fan-out treats as
+  // "unspecified" (the order is still offered to them unless the
+  // customer explicitly required a category).
+  vehicleCategory               String?
   // Chassis / serial number fields are intentionally NOT exposed in the
   // driver-facing form (privacy + verification happens off-platform). They
   // are kept in the schema for future use.
@@ -285,6 +297,11 @@ model VehicleRegistration {
   driver Driver?
 
   @@index([numeroImmatriculation])
+  // VEHICLE-TYPE MATCHING (Phase 2): the order fan-out filters drivers by
+  // this column (joined through the 1:1 Driver↔VehicleRegistration link)
+  // when a customer requires a specific vehicle category, so the lookup
+  // stays an index scan instead of a full table scan as the fleet grows.
+  @@index([vehicleCategory])
 }
 
 model Vehicle {
@@ -330,6 +347,26 @@ model Order {
   // 'searching' when the time approaches.
   scheduledAt  DateTime?
 
+  // VEHICLE-TYPE MATCHING (Phase 2): the customer can require a specific
+  // vehicle category for this order (e.g. "/refrigerated" for food, or
+  // "moto" for small parcels). Free String matching the vocabulary of
+  // `VehicleRegistration.vehicleCategory`. Null = no preference, the
+  // order is offered to every eligible driver regardless of category
+  // (the legacy behaviour, and what every pre-existing row has).
+  requiredVehicleType String?
+
+  // PRICE NEGOTIATION (Phase 3): when true the customer accepts counter-
+  // offers from drivers (`OrderOffer` rows) instead of a flat take-it-or-
+  // leave-it price. Defaults to false so existing rows / API callers keep
+  // the original non-negotiable behaviour with zero code change.
+  isNegotiable  Boolean @default(false)
+  // PRICE NEGOTIATION (Phase 3): the price actually agreed on once a
+  // driver's offer is accepted by the customer. Null while the order is
+  // still searching or when the order was never negotiable (in which
+  // case `price` is the amount paid). Reporting / earnings read this
+  // first when it is set.
+  finalPrice    Int?
+
   ratings Rating[]
 
   // TRIP OFFERS: when an order is created from a booked TripOffer
@@ -342,6 +379,12 @@ model Order {
   // (deliveryOption = "wassilha_delivery") its delivery leg is a
   // normal Order, linked back here.
   craftDelivery CraftOrder?
+
+  // PRICE NEGOTIATION (Phase 3): the counter-offers drivers have sent on
+  // this order. Back-relation of OrderOffer.order; read-only here (rows
+  // are created/transitioned by the offer API). Cascade-deleted with the
+  // order so an expired / cancelled order does not leave orphan offers.
+  offers OrderOffer[]
 
   // SECURITY (V14): indexes for hot queries. customerId/driverId are
   // used by /api/orders GET to scope the listing. status and the
@@ -357,6 +400,52 @@ model Order {
   // the driver's "incoming scheduled" tab both filter by
   // (scheduledAt ASC) when status='scheduled'.
   @@index([scheduledAt])
+  // VEHICLE-TYPE MATCHING (Phase 2): the fan-out uses these two columns to
+  // build the "drivers who can serve this request" set; indexing them
+  // keeps the eligible-driver query cheap on a large orders table.
+  @@index([requiredVehicleType])
+  // PRICE NEGOTIATION (Phase 3): the customer's offer list and the driver's
+  // "awaiting reply" list both filter by negotiability + live status.
+  @@index([isNegotiable, status])
+}
+
+/// PRICE NEGOTIATION (Phase 3) — a driver's counter-offer on a negotiable
+/// order. One row per driver per order; the lifecycle is driven by
+/// `status`:
+///   "pending"   → sent, awaiting the customer's decision
+///   "accepted"  → the customer took this price (the order's `finalPrice`
+///                 is set from this row and the driver is assigned)
+///   "rejected"  → the customer declined the price
+///   "countered" → the customer replied with yet another price, which the
+///                 driver can accept or decline
+/// Kept as a free String (no Prisma enum) so a new state can be added
+/// without a migration, mirroring how `Order.status` / `Driver.serviceType`
+/// are modelled elsewhere in this schema.
+model OrderOffer {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // The driver making the offer. Points at the User row (matching how
+  // `Order.driverId` is modelled) so the customer-facing list can join the
+  // driver's public identity in one query.
+  driverId  String
+  driver    User     @relation("DriverOffers", fields: [driverId], references: [id], onDelete: Cascade)
+  price     Int
+  status    String   @default("pending") // pending, accepted, rejected, countered
+  createdAt DateTime @default(now())
+
+  // PRICE NEGOTIATION (Phase 3) — the customer's counter-price, set only
+  // while status = "countered". Null for every other state (and for rows
+  // created before this column existed), so reads stay backward compatible:
+  // a driver's UI shows `price` unless `counterPrice` is set.
+  counterPrice Int?
+
+  // One live offer per driver per order: this unique pair is what the
+  // upsert in the offer API keys on, so a driver re-sending a price
+  // refreshes their existing row instead of creating duplicates.
+  @@unique([orderId, driverId])
+  @@index([orderId])
+  @@index([driverId])
 }
 
 /// A pre-published trip a driver advertises so that customers can

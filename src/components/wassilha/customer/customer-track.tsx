@@ -31,6 +31,9 @@ import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RatingDialog } from './rating-dialog';
+// PRICE NEGOTIATION (Phase 3): the list of drivers' counter-offers, shown
+// while the order is `searching` and the customer opted into negotiation.
+import { CustomerNegotiation } from './customer-negotiation';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -329,6 +332,20 @@ export function CustomerTrack() {
           );
         })() : null}
       </Card>
+
+      {/* PRICE NEGOTIATION (Phase 3): while drivers are still bidding, show
+          their counter-offers right under the status card so the customer
+          can compare prices side by side. The component itself renders
+          nothing when the order was not marked negotiable, so the tracking
+          screen is byte-for-byte identical for the fixed-price flow.
+          `onAccepted` refreshes our local order so the "driver found" card
+          and the timeline flip to accepted in the same tick. */}
+      {order.status === 'searching' || order.isNegotiable ? (
+        <CustomerNegotiation
+          order={order}
+          onAccepted={(updated) => setOrder(updated)}
+        />
+      ) : null}
 
       {/* Timeline */}
       <Card className="p-4">

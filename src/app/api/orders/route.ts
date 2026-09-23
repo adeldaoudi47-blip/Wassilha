@@ -8,6 +8,7 @@ import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
 import { emitOrderNewRequest } from '@/lib/pusher-server';
 import type { CargoKey, OrderStatus } from '@/lib/types';
+import { VEHICLE_CATEGORIES, isVehicleCategory } from '@/lib/types';
 
 /**
  * C7 — retry a Prisma write that can fail with `P2002` (unique-constraint
@@ -118,6 +119,21 @@ const createOrderSchema = z.object({
       if (d.getTime() <= Date.now()) return null;
       return d;
     }),
+  // VEHICLE-TYPE MATCHING (Phase 2): the customer may require a specific
+  // vehicle category. We validate the string shape here (so an over-long
+  // or non-string value 400s cleanly) and the *vocabulary* against
+  // VEHICLE_CATEGORIES below, mirroring how the vehicle endpoint does it.
+  requiredVehicleType: z
+    .string()
+    .trim()
+    .max(32)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : null)),
+  // PRICE NEGOTIATION (Phase 3): the customer opts into driver
+  // counter-offers. Anything but an explicit boolean true is coerced to
+  // false so a legacy / malicious payload can't smuggle a truthy value.
+  isNegotiable: z.boolean().optional(),
 });
 
 // GET /api/orders?role=&status=
@@ -216,6 +232,23 @@ export async function POST(req: NextRequest) {
     const pickup = data.pickup.trim();
     const dropoff = data.dropoff.trim();
 
+    // VEHICLE-TYPE MATCHING (Phase 2): reject an unknown category with a
+    // structured 400 (the allow-list is echoed so a client can self-heal)
+    // instead of storing a value that could never match any driver.
+    if (
+      data.requiredVehicleType !== null &&
+      data.requiredVehicleType !== undefined &&
+      !isVehicleCategory(data.requiredVehicleType)
+    ) {
+      return NextResponse.json(
+        {
+          error: 'invalidRequiredVehicleType',
+          issues: { allowed: VEHICLE_CATEGORIES },
+        },
+        { status: 400 }
+      );
+    }
+
     // SECURITY (V7): the fare is ALWAYS recomputed server-side. We do
     // not read or store any client-supplied price; even if a client
     // sends one, the actual price is derived from the active Pricing
@@ -273,6 +306,15 @@ export async function POST(req: NextRequest) {
             // immediate flow with `status='searching'`.
             status: data.scheduledAt ? 'scheduled' : 'searching',
             scheduledAt: data.scheduledAt ?? null,
+            // VEHICLE-TYPE MATCHING (Phase 2): persisted verbatim (already
+            // validated against VEHICLE_CATEGORIES above) so the fan-out
+            // and the driver request cards can filter on it. Null = the
+            // customer did not require a specific vehicle.
+            requiredVehicleType: data.requiredVehicleType ?? null,
+            // PRICE NEGOTIATION (Phase 3): the customer explicitly opted
+            // into negotiation. Defaults to false so legacy clients and
+            // the scheduled-booking flow keep the fixed-price behaviour.
+            isNegotiable: data.isNegotiable === true,
             notes:
               typeof data.notes === 'string' && data.notes.trim()
                 ? data.notes.trim()
@@ -307,6 +349,10 @@ export async function POST(req: NextRequest) {
           cargoType: order.cargoType,
           pickup: order.pickup,
           dropoff: order.dropoff,
+          // VEHICLE-TYPE MATCHING (Phase 2): forward the required category
+          // so the fan-out only pings drivers whose vehicle matches. Null
+          // (no preference) reproduces the original whole-pool behaviour.
+          requiredVehicleType: order.requiredVehicleType ?? null,
         });
         // C4 — realtime new-order event. customer-home used to emit
         // `order:created` from the client; with Pusher the client cannot
@@ -315,7 +361,10 @@ export async function POST(req: NextRequest) {
         // instantly without waiting for their 5s poll fallback.
         emitOrderNewRequest(
           order,
-          await findAvailableDrivers(order.cargoType),
+          await findAvailableDrivers(
+            order.cargoType,
+            order.requiredVehicleType ?? null,
+          ),
         );
       } catch (e) {
         // eslint-disable-next-line no-console

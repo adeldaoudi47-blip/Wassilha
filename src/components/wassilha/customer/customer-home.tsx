@@ -36,8 +36,21 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { CargoKey, PricingConfig } from '@/lib/types';
+import type {
+  CargoKey,
+  PricingConfig,
+  VehicleCategory,
+} from '@/lib/types';
+import { VEHICLE_CATEGORY_OPTIONS } from '@/lib/types';
 import { DeliveryPointPicker } from '../delivery-point-picker';
 import { deliveryAreas, deliveryPoints } from '@/lib/delivery-data';
 // C1: verified OSM coordinates. Both maps ship EMPTY until
@@ -102,6 +115,14 @@ export function CustomerHome() {
   // service tab does not silently drop a scheduled booking.
   const [bookingMode, setBookingMode] = useState<'now' | 'scheduled'>('now');
   const [scheduledAt, setScheduledAt] = useState<string>('');
+  // VEHICLE-TYPE MATCHING (Phase 2): the category the customer requires,
+  // '' = "any available vehicle". Held as a string because the Select
+  // component speaks strings; it is only sent to the API when non-empty.
+  const [requiredVehicleType, setRequiredVehicleType] = useState<string>('');
+  // PRICE NEGOTIATION (Phase 3): the customer opts into driver
+  // counter-offers. Default false keeps the original fixed-price flow for
+  // everyone who never touches the switch.
+  const [isNegotiable, setIsNegotiable] = useState(false);
   // "Use my location" state — when non-null, the InteractiveMap renders
   // a pickup marker at these coordinates. The `locating` flag drives the
   // spinner on the GPS button.
@@ -213,6 +234,15 @@ export function CustomerHome() {
         // future-proofing in the schema that distinguishes
         // "explicitly not scheduled" from "not set" keeps working.
         scheduledAt: scheduledIso,
+        // VEHICLE-TYPE MATCHING (Phase 2): only forward a non-empty value —
+        // the API validates the vocabulary and stores null otherwise, which
+        // reproduces the pre-Phase-2 "any vehicle" behaviour.
+        requiredVehicleType: requiredVehicleType
+          ? (requiredVehicleType as VehicleCategory)
+          : null,
+        // PRICE NEGOTIATION (Phase 3): the switch's state is the source of
+        // truth; the server re-coerces anything but explicit true to false.
+        isNegotiable,
       });
       emitOrderCreated(order);
       setActiveOrderId(order.id);
@@ -641,6 +671,54 @@ export function CustomerHome() {
           />
         </div>
       )}
+
+      {/* VEHICLE-TYPE MATCHING (Phase 2): an optional "which vehicle do you
+          need?" picker. Empty = any available vehicle (the legacy
+          behaviour). We deliberately show it for BOTH cargo and taxi modes:
+          a customer asking for a taxi still benefits from e.g. filtering to
+          "taxi car" vs "moto". */}
+      <div className="space-y-1.5">
+        <label className="block text-[11px] font-semibold text-muted-foreground">
+          {t.requiredVehicleType}
+        </label>
+        <Select
+          value={requiredVehicleType}
+          onValueChange={setRequiredVehicleType}
+        >
+          <SelectTrigger className="h-10 w-full" dir={isRtl ? 'rtl' : 'ltr'}>
+            <SelectValue placeholder={t.requiredVehicleTypePlaceholder} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">{t.requiredVehicleTypeAny}</SelectItem>
+            {VEHICLE_CATEGORY_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {t[opt.labelKey] ?? opt.value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground">
+          {t.requiredVehicleTypeHelp}
+        </p>
+      </div>
+
+      {/* PRICE NEGOTIATION (Phase 3): a switch that lets the customer
+          invite drivers to propose a different price. Off by default; when
+          on, drivers see a "make an offer" affordance instead of a flat
+          accept. The hint below explains the trade-off in one line. */}
+      <Card className="flex items-center justify-between gap-3 p-3.5">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-foreground">{t.isNegotiable}</p>
+          <p className="text-[10px] text-muted-foreground">
+            {t.negotiableHint}
+          </p>
+        </div>
+        <Switch
+          checked={isNegotiable}
+          onCheckedChange={setIsNegotiable}
+          aria-label={t.isNegotiable}
+        />
+      </Card>
 
       {/* Estimate + actions */}
       <Card className="flex items-center justify-between bg-muted/50 p-3.5">

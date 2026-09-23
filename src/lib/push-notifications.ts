@@ -8,6 +8,7 @@ import {
   type RegistrationError,
 } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { useAppStore, useNavStore } from '@/lib/store';
 
 // One-time flag (per page load) so we don't re-prompt on every navigation
 // in the same session. Persisting the "asked" state to localStorage is
@@ -118,8 +119,10 @@ export function initPushNotificationListeners(): void {
   // the FCM service does NOT raise a system notification while the app is in
   // the foreground, so we re-post it as a local notification to guarantee it
   // still lands in the top notification bar — same UX as when the app is
-  // closed. Wrapped in try/catch: a display failure must never break the
-  // token registration or the OTP flows.
+  // closed. The FCM `data` block (type/orderId/...) is forwarded via `extra`
+  // so a tap on this re-posted notification deep-links exactly like a
+  // background one. Wrapped in try/catch: a display failure must never break
+  // the token registration or the OTP flows.
   PushNotifications.addListener(
     'pushNotificationReceived',
     async (notification: PushNotificationSchema) => {
@@ -133,6 +136,9 @@ export function initPushNotificationListeners(): void {
               title: notification.title || 'وصّلها',
               body: notification.body || '',
               smallIcon: 'ic_launcher',
+              // Capacitor's `extra` survives to the tap action on both
+              // platforms; the FCM data block is copied verbatim.
+              extra: notification.data ?? {},
             },
           ],
         });
@@ -143,14 +149,53 @@ export function initPushNotificationListeners(): void {
     }
   );
 
-  // User tapped a notification (background or foreground): navigate / refresh
-  // data accordingly. For now we only log — the order details screen is the
-  // canonical entry point and is already reachable via the orders list.
+  // User tapped a notification (background or foreground). The FCM data
+  // block carries the deep-link target, so we switch the active tab and pin
+  // the orderId in the nav store. Both customer-track and driver-requests
+  // read `activeOrderId`, so the relevant screen opens directly on the
+  // order instead of dropping the user on the default tab.
   PushNotifications.addListener(
     'pushNotificationActionPerformed',
     (action: ActionPerformed) => {
       // eslint-disable-next-line no-console
       console.log('[push-notifications] action performed:', action);
+      try {
+        // Background taps deliver `data` on `notification`; the foreground
+        // re-post above mirrors it into `extra` (not part of the schema's
+        // type, but Capacitor passes it through to the action payload).
+        const data = (action.notification.data ??
+          (action.notification as ActionPerformed['notification'] & {
+            extra?: Record<string, unknown>;
+          }).extra ??
+          {}) as Record<string, unknown>;
+        const orderId =
+          typeof data.orderId === 'string' ? data.orderId : null;
+        const type = typeof data.type === 'string' ? data.type : null;
+
+        const role = useAppStore.getState().user?.role;
+
+        if (orderId) {
+          useNavStore.getState().setActiveOrderId(orderId);
+        }
+
+        // Route by audience. Driver-targeted events (new request, offer
+        // outcome, customer counter) land on the requests list; everything
+        // else is customer-facing and lands on tracking.
+        const driverTypes = new Set([
+          'order_new_request',
+          'offer_accepted',
+          'offer_rejected',
+          'offer_countered',
+        ]);
+        if (role === 'driver' || (type && driverTypes.has(type))) {
+          useNavStore.getState().setDriverTab('requests');
+        } else {
+          useNavStore.getState().setCustomerTab('track');
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[push-notifications] failed to route from tap:', e);
+      }
     }
   );
 }
