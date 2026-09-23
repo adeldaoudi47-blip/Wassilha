@@ -1,7 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <!-- Brand teal, identical to --primary / --brand in src/app/globals.css
-         and to BRAND_COLOR in src/lib/firebase-admin.ts. Referenced by the
-         `default_notification_color` meta-data in AndroidManifest.xml. -->
+    <!-- Brand teal, identical to the "primary" / "brand" CSS custom properties
+         in src/app/globals.css and to BRAND_COLOR in src/lib/firebase-admin.ts.
+         Referenced by the `default_notification_color` meta-data in
+         AndroidManifest.xml. -->
     <color name="brand">#0E6B5E</color>
 </resources>
