@@ -66,6 +66,10 @@ export function ForceUpdateGate() {
     const GET_INFO_TIMEOUT_MS = 3000;
 
     const run = async () => {
+      // DIAGNOSTIC: confirms the effect actually ran and that we are on a
+      // native platform (the web bails out before this point).
+      console.info('[ForceUpdate] initializing gate');
+
       // Assume the oldest build by default. On a v1.0 shell this is the truth
       // (there is no plugin to ask), and it is also the safe direction: a
       // device we cannot identify gets gated rather than waved through.
@@ -117,9 +121,28 @@ export function ForceUpdateGate() {
 
       // Reached on the happy path and on every failure mode. The only thing
       // that can resolve to "no gate" from here is the version endpoint
-      // answering forceUpdate: false (or being unreachable, which fails open).
+      // answering minVersion >= installedVersion (or being unreachable, which
+      // fails open).
       const result = await shouldForceUpdate(installedVersion);
-      if (cancelled || !result.forceUpdate) return;
+      if (cancelled) return;
+
+      // Diagnostic: trace the actual decision point. If the modal ever fails to
+      // appear on an outdated device, this line distinguishes "the client
+      // decided false" (fix the comparison/version plumbing) from "the client
+      // decided true and React still did not open the dialog" (fix the view).
+      console.info('[ForceUpdate] check complete', {
+        installedVersion,
+        forceUpdate: result.forceUpdate,
+        latestVersion: result.latestVersion,
+        apkUrl: result.apkUrl,
+      });
+
+      if (!result.forceUpdate) return;
+
+      // DIAGNOSTIC: last possible failure point. If this prints and the modal
+      // still does not appear, the defect is in the Dialog render, not the
+      // check.
+      console.info('[ForceUpdate] showing dialog');
 
       setState({
         open: true,

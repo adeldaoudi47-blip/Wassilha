@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 
-// GET /api/version?current=1.0.0
+// GET /api/version
 // ---------------------------------------------------------------------------
 // In-app force update. The native app calls this on every cold start, *before*
 // the user is signed in, so this route is intentionally public (no session).
@@ -13,108 +11,46 @@ import { join } from 'path';
 // while the installed shell is still old — so the only reliable way to block
 // an outdated native client is a server-driven version check.
 //
-// Configuration (all optional; env overrides fall back to the shipped
-// package.json version so the endpoint is correct out of the box):
-//   LATEST_APP_VERSION       newest downloadable version (default: this build)
-//   APK_URL                  where the update APK lives (default: /wassilha.apk)
-//   FORCE_UPDATE_MIN_VERSION anything strictly older than this is force-blocked
-//                            (default: LATEST_APP_VERSION — i.e. every release
-//                            is mandatory until proven otherwise)
+// This route is DELIBERATELY static and hardcoded. It used to derive its
+// answer from package.json (read at request time) plus env overrides, but every
+// one of those inputs is a runtime failure mode on a route whose entire job is
+// to always answer: a failed read, a missing env var, or a standalone-bundling
+// quirk could each turn this into a 500 — and the client fails open on a 500,
+// which is exactly how the force-update gate silently never fired. The body
+// below is composed entirely of build-time constants, so it cannot fail.
+//
+// TRADING AWAY THE EMERGENCY ROLLBACK: the previous version read
+// FORCE_UPDATE_MIN_VERSION, so a broken release could be let back in without a
+// redeploy. Hardcoding removes that lever — changing MIN_VERSION now needs a
+// code change plus a full redeploy. That is the accepted cost of "this endpoint
+// can never 500".
+//
+// The CLIENT decides. This response carries only facts (what is newest, the
+// minimum allowed, where the APK lives); it never says whether a given caller
+// is gated. `shouldForceUpdate()` in src/lib/version.ts compares the caller's
+// own installed version against minVersion and computes that locally. Sending
+// a pre-computed boolean would be a footgun: it would have to be correct for
+// every possible `current`, and any client that ever trusted it over its own
+// comparison would gate the wrong users.
 
-const DEFAULT_APK_URL = 'https://wassilha.vercel.app/wassilha.apk';
+export const dynamic = 'force-static';
 
-/**
- * The version this deployment was built with, read straight from package.json
- * at request time. We resolve relative to THIS file (not process.cwd()) for the
- * same reason next.config.ts does: the standalone server runs from a nested
- * `.next/standalone/<project>/` directory where a cwd-relative read fails.
- *
- * Falls back to the "unknown" sentinel, never to a low version: a low default
- * would make the server tell a healthy client it is too old and force-update
- * everyone. An unknown version fails open (no gate).
- */
-function readBuiltVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(join(__dirname, '../../../../package.json'), 'utf8'));
-    const v = typeof pkg.version === 'string' ? pkg.version.trim() : '';
-    if (/^\d+(\.\d+){0,2}/.test(v)) return v;
-  } catch {
-    // fall through to the sentinel
-  }
-  return '999.999.999';
-}
+const LATEST_VERSION = '1.1.0';
+const MIN_VERSION = '1.1.0';
+const APK_URL = 'https://wassilha.vercel.app/wassilha.apk';
 
-const BUILT_VERSION = readBuiltVersion();
 
-/**
- * Compare two dotted numeric versions, with an optional leading "v".
- * Returns a negative number if `a` is older than `b`, 0 if equal, positive
- * if newer. Non-numeric suffixes (e.g. `-rc.1`, `+build.5`) are ignored:
- * this app ships plain `x.y.z` releases and comparing the numeric core keeps
- * the check robust if a suffix ever appears.
- */
-function compareVersions(a: string, b: string): number {
-  const norm = (v: string) =>
-    v
-      .trim()
-      .toLowerCase()
-      .replace(/^v/, '')
-      .split(/[-+]/)[0]
-      .split('.')
-      .map((part) => Number.parseInt(part, 10) || 0);
-
-  const pa = norm(a);
-  const pb = norm(b);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const da = pa[i] ?? 0;
-    const db = pb[i] ?? 0;
-    if (da !== db) return da - db;
-  }
-  return 0;
-}
-
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const current = (url.searchParams.get('current') ?? '').trim();
-
-  // The version this exact deployment was built with. Falls back to the
-  // "unknown" sentinel when the injected env var is missing — never to a low
-  // version, which would make the server tell a healthy client it is too old
-  // and force-update everyone.
-  const thisBuild = process.env.NEXT_PUBLIC_APP_VERSION || BUILT_VERSION;
-
-  const latestVersion = (process.env.LATEST_APP_VERSION ?? thisBuild).trim();
-  const apkUrl = (process.env.APK_URL ?? DEFAULT_APK_URL).trim();
-  const minVersion = (process.env.FORCE_UPDATE_MIN_VERSION ?? latestVersion).trim();
-
-  // A client that reports no version cannot be compared; never block it
-  // (better to show the app than to brick a device we can't reason about).
-  const isUpdateAvailable = current
-    ? compareVersions(current, latestVersion) < 0
-    : false;
-
-  const isForceUpdate = current
-    ? compareVersions(current, minVersion) < 0
-    : false;
-
-  // Cache-Control is deliberately absent: the newest version must be served
-  // immediately. A stale CDN-cached "no update needed" response would keep an
-  // outdated (possibly broken) client live for hours after a fix ships.
+export async function GET() {
+  // `force-static` prerenders this body AND its headers at build time, so there
+  // is no request to read and no runtime input that can fail. `no-store` stays
+  // on purpose: a browser or intermediate cache holding an old copy could keep
+  // an outdated answer alive after a redeploy, and the newest version must
+  // always be served fresh.
   return NextResponse.json(
     {
-      latestVersion,
-      minVersion,
-      apkUrl,
-      // True when the store has something newer than what the caller runs.
-      // A soft update prompt can key off this (we only implement the hard
-      // gate for now; `forceUpdate` is the field the client blocks on).
-      updateAvailable: isUpdateAvailable,
-      // True only when the caller is *older than the minimum* — strictly
-      // below minVersion. A user on the exact minVersion is allowed in,
-      // which is what makes an emergency rollback possible (ship 1.1.1 with
-      // minVersion=1.0.0 to let 1.0.x users in while 1.1.x is broken).
-      forceUpdate: isForceUpdate,
+      latestVersion: LATEST_VERSION,
+      minVersion: MIN_VERSION,
+      apkUrl: APK_URL,
     },
     { headers: { 'cache-control': 'no-store' } }
   );

@@ -13,13 +13,20 @@
  * old shell is hard-blocked by the server, not by the bundle.
  */
 
-/** Shape of the GET /api/version response. */
+/**
+ * Shape of the GET /api/version response.
+ *
+ * Deliberately fact-only: `latestVersion` / `minVersion` / `apkUrl`. There is
+ * NO `forceUpdate` boolean here — the route ships facts, not a verdict, and the
+ * caller decides by comparing its own installed version against `minVersion`
+ * (see shouldForceUpdate below). A server-computed gate flag would have to be
+ * right for every possible client version and would drift out of sync with
+ * this local comparison, so it was removed.
+ */
 export type VersionCheckResponse = {
   latestVersion: string;
   minVersion: string;
   apkUrl: string;
-  updateAvailable: boolean;
-  forceUpdate: boolean;
 };
 
 /**
@@ -102,19 +109,38 @@ export async function shouldForceUpdate(installedVersion?: string): Promise<{
     // reason the gate works against pre-plugin APKs.
     const current = (installedVersion ?? '').trim() || '0.0.0';
 
+    // DIAGNOSTIC: logs the version the native shell actually reported (or the
+    // '0.0.0' fallback when the plugin is absent/hung). A native version that
+    // silently resolves to '0.0.0' here is the #1 known reason the gate never
+    // appears on an outdated install.
+    console.info('[ForceUpdate] shouldForceUpdate enter', { installedVersion, current });
+
     // A present-but-unparseable version means we cannot reason about this
     // client. Fail open rather than blocking a device we don't understand.
-    if (!/^\d+(\.\d+){0,2}/.test(current)) return { forceUpdate: false };
+    if (!/^\d+(\.\d+){0,2}/.test(current)) {
+      console.info('[ForceUpdate] version unparseable → fail open', { current });
+      return { forceUpdate: false };
+    }
 
     // `cache: 'no-store'` on top of the server's own no-store header: a
     // service worker (or the browser cache) returning a stale copy is the one
     // thing that could defeat a rollout.
+    console.info('[ForceUpdate] fetching /api/version', { current });
     const res = await fetch(
       `/api/version?current=${encodeURIComponent(current)}`,
       { cache: 'no-store' }
     );
-    if (!res.ok) return { forceUpdate: false };
+    if (!res.ok) {
+      // The endpoint is fully static now, so a non-ok here means a network or
+      // edge failure, not a server-side bug.
+      console.info('[ForceUpdate] /api/version not ok → fail open', { status: res.status });
+      return { forceUpdate: false };
+    }
     const data = (await res.json()) as Partial<VersionCheckResponse>;
+
+    // DIAGNOSTIC: the raw body as received. If this ever prints `{}` or a body
+    // missing minVersion, the build output — not the client — is the defect.
+    console.info('[ForceUpdate] /api/version response', { data });
 
     // Guard the exact fields the gate keys off, so a partial/typed-wrong body
     // still degrades to "let the user in".
@@ -124,13 +150,30 @@ export async function shouldForceUpdate(installedVersion?: string): Promise<{
       typeof data.minVersion === 'string' ? data.minVersion.trim() : '';
     const apkUrl = typeof data.apkUrl === 'string' ? data.apkUrl.trim() : '';
 
-    if (!latestVersion || !minVersion) return { forceUpdate: false };
+    if (!latestVersion || !minVersion) {
+      console.info('[ForceUpdate] empty server fields → fail open', { latestVersion, minVersion });
+      return { forceUpdate: false };
+    }
 
     const forceUpdate = compareVersions(current, minVersion) < 0;
+
+    // DIAGNOSTIC: the decision itself. This is the single most useful line —
+    // it separates "the client computed false" (bad version plumbing) from
+    // "the client computed true and the view still did not open" (React bug).
+    console.info('[ForceUpdate] decision', {
+      current,
+      minVersion,
+      latestVersion,
+      forceUpdate,
+    });
+
     return { forceUpdate, latestVersion, apkUrl: apkUrl || undefined };
-  } catch {
+  } catch (error) {
     // Network down, DNS, app in airplane mode, or a JSON parse blow-up —
     // none of these should brick the device.
+    // DIAGNOSTIC: an offline device is a realistic cause of "no gate", so the
+    // error is logged rather than swallowed.
+    console.error('[ForceUpdate] check threw → fail open', error);
     return { forceUpdate: false };
   }
 }
