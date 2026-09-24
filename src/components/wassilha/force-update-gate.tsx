@@ -34,10 +34,13 @@ import { Button } from '@/components/ui/button';
  * always running the bundle the server just shipped, so there is no APK for
  * them to fetch and a "download the app" lock screen would be meaningless.
  *
- * Every failure mode (network down, version API 500, malformed body,
- * App.getInfo rejection on an odd device) resolves to `forceUpdate: false`
- * inside shouldForceUpdate(), so this gate can never take the app offline by
- * accident.
+ * If `App.getInfo()` rejects — the tell-tale sign of a v1.0 shell that predates
+ * the `@capacitor/app` plugin — the gate does NOT give up. It re-runs the check
+ * assuming the oldest possible version, so those installs get gated too
+ * instead of silently passing as "current" (the web bundle would always say
+ * that). Only a failure of the *version endpoint itself* (network down, API
+ * 500, malformed body) resolves to no gate, so this can never take the app
+ * offline by accident.
  */
 export function ForceUpdateGate() {
   const [state, setState] = useState<{
@@ -71,8 +74,23 @@ export function ForceUpdateGate() {
           apkUrl: result.apkUrl,
         });
       } catch {
-        // App.getInfo() failed — cannot determine the installed version, so
-        // we cannot safely decide the device is outdated. Fail open.
+        // App.getInfo() rejected: this shell predates @capacitor/app (the v1.0
+        // APK has no such plugin, so the bridge reports it as unimplemented),
+        // or it hit an OEM WebView quirk. We deliberately do NOT bail out here.
+        // Falling back to the web bundle's version would be wrong — the WebView
+        // loads the live site, so the bundle always reports the newest build and
+        // the gate would never fire for the exact outdated installs we need to
+        // block. Assume the oldest possible version and let the server decide.
+        // If the server is then unreachable, shouldForceUpdate() still fails
+        // open, so a broken API can never brick the app.
+        const fallback = await shouldForceUpdate('0.0.0');
+        if (cancelled || !fallback.forceUpdate) return;
+
+        setState({
+          open: true,
+          latestVersion: fallback.latestVersion,
+          apkUrl: fallback.apkUrl,
+        });
       }
     };
 

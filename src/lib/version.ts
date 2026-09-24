@@ -73,17 +73,23 @@ export function compareVersions(a: string, b: string): number {
  * True when the running app is older than the server's minimum.
  *
  * `installedVersion` is the version reported by the *native shell* (Capacitor
- * `App.getInfo().version`, i.e. the APK's versionName). It takes priority over
- * APP_VERSION because this app loads the remote production URL in its WebView:
- * the web bundle is therefore always the newest, so the bundle version can
- * never identify an outdated installation. Only the installed native version
- * can. APP_VERSION is kept as a last-resort fallback for the (currently
- * unused) bundled-webDir configuration and for web-only test harnesses.
+ * `App.getInfo().version`, i.e. the APK's versionName).
  *
- * Defensive by design: every failure path (fetch error, non-ok, malformed
- * JSON, empty fields, unparseable version) resolves to `false`, so a broken
- * or unreachable version endpoint can never lock every user out of the app.
- * The worst case of a failed check is "no update gate", never "unusable app".
+ * When that value is missing we are in the one case that matters most: the
+ * shell predates `@capacitor/app` entirely (the v1.0 APK ships without the
+ * plugin, so `App.getInfo()` rejects outright) or the bridge hit an OEM quirk.
+ * We deliberately do NOT fall back to APP_VERSION here — this app loads the
+ * remote production URL in its WebView, so the web bundle is always the newest
+ * build and APP_VERSION would read as current even on a months-old APK. Using
+ * it would make the gate silently never fire for the exact outdated installs
+ * it exists to block. Instead an unreadable native version is treated as the
+ * oldest possible build ('0.0.0') so the server gets the chance to gate it.
+ *
+ * Defensive about the *server*, not about the version: a fetch error, non-ok
+ * status, malformed JSON, or empty response fields still resolves to `false`,
+ * so a broken or unreachable version endpoint can never lock every user out of
+ * the app. The worst case of a failed check is "no update gate", never
+ * "unusable app".
  */
 export async function shouldForceUpdate(installedVersion?: string): Promise<{
   forceUpdate: boolean;
@@ -91,14 +97,13 @@ export async function shouldForceUpdate(installedVersion?: string): Promise<{
   apkUrl?: string;
 }> {
   try {
-    // Prefer the native shell's version; fall back to the baked-in bundle
-    // version when the caller is a plain browser/test harness.
-    const current = installedVersion && installedVersion.trim()
-      ? installedVersion.trim()
-      : APP_VERSION;
+    // No readable native version => assume the oldest build, NOT the (always
+    // current) web bundle. See the docblock above: this ordering is the whole
+    // reason the gate works against pre-plugin APKs.
+    const current = (installedVersion ?? '').trim() || '0.0.0';
 
-    // An unparseable current version means we cannot reason about this client.
-    // Fail open rather than blocking a device we don't understand.
+    // A present-but-unparseable version means we cannot reason about this
+    // client. Fail open rather than blocking a device we don't understand.
     if (!/^\d+(\.\d+){0,2}/.test(current)) return { forceUpdate: false };
 
     // `cache: 'no-store'` on top of the server's own no-store header: a

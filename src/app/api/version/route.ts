@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // GET /api/version?current=1.0.0
 // ---------------------------------------------------------------------------
@@ -20,6 +22,29 @@ import { NextResponse } from 'next/server';
 //                            is mandatory until proven otherwise)
 
 const DEFAULT_APK_URL = 'https://wassilha.vercel.app/wassilha.apk';
+
+/**
+ * The version this deployment was built with, read straight from package.json
+ * at request time. We resolve relative to THIS file (not process.cwd()) for the
+ * same reason next.config.ts does: the standalone server runs from a nested
+ * `.next/standalone/<project>/` directory where a cwd-relative read fails.
+ *
+ * Falls back to the "unknown" sentinel, never to a low version: a low default
+ * would make the server tell a healthy client it is too old and force-update
+ * everyone. An unknown version fails open (no gate).
+ */
+function readBuiltVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../../../package.json'), 'utf8'));
+    const v = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+    if (/^\d+(\.\d+){0,2}/.test(v)) return v;
+  } catch {
+    // fall through to the sentinel
+  }
+  return '999.999.999';
+}
+
+const BUILT_VERSION = readBuiltVersion();
 
 /**
  * Compare two dotted numeric versions, with an optional leading "v".
@@ -57,7 +82,7 @@ export async function GET(req: Request) {
   // "unknown" sentinel when the injected env var is missing — never to a low
   // version, which would make the server tell a healthy client it is too old
   // and force-update everyone.
-  const thisBuild = process.env.NEXT_PUBLIC_APP_VERSION || '999.999.999';
+  const thisBuild = process.env.NEXT_PUBLIC_APP_VERSION || BUILT_VERSION;
 
   const latestVersion = (process.env.LATEST_APP_VERSION ?? thisBuild).trim();
   const apkUrl = (process.env.APK_URL ?? DEFAULT_APK_URL).trim();
