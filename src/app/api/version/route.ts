@@ -16,8 +16,14 @@ import { NextResponse } from 'next/server';
 // one of those inputs is a runtime failure mode on a route whose entire job is
 // to always answer: a failed read, a missing env var, or a standalone-bundling
 // quirk could each turn this into a 500 — and the client fails open on a 500,
-// which is exactly how the force-update gate silently never fired. The body
-// below is composed entirely of build-time constants, so it cannot fail.
+// which is exactly how the force-update gate silently never fired. With the
+// values inlined below there is no runtime input that can fail.
+//
+// NOT `export const dynamic = 'force-static'`: that makes Next emit the route
+// as a prerendered static asset, which Vercel does NOT serve at /api/version
+// (it 404s), while a normal dynamic route handler — like every other route in
+// this app — is deployed as a Lambda and always answers. The body is still
+// effectively immutable because it is composed entirely of literals.
 //
 // TRADING AWAY THE EMERGENCY ROLLBACK: the previous version read
 // FORCE_UPDATE_MIN_VERSION, so a broken release could be let back in without a
@@ -33,25 +39,17 @@ import { NextResponse } from 'next/server';
 // every possible `current`, and any client that ever trusted it over its own
 // comparison would gate the wrong users.
 
-export const dynamic = 'force-static';
-
-const LATEST_VERSION = '1.1.0';
-const MIN_VERSION = '1.1.0';
-const APK_URL = 'https://wassilha.vercel.app/wassilha.apk';
-
-
 export async function GET() {
-  // `force-static` prerenders this body AND its headers at build time, so there
-  // is no request to read and no runtime input that can fail. `no-store` stays
-  // on purpose: a browser or intermediate cache holding an old copy could keep
-  // an outdated answer alive after a redeploy, and the newest version must
-  // always be served fresh.
+  // `no-store` is mandatory: a browser, service worker, or CDN edge holding an
+  // old copy could keep an outdated answer alive after a redeploy, and the
+  // newest version must always be served fresh. `max-age=0` is belt-and-braces
+  // for caches that ignore `no-store`.
   return NextResponse.json(
     {
-      latestVersion: LATEST_VERSION,
-      minVersion: MIN_VERSION,
-      apkUrl: APK_URL,
+      latestVersion: '1.1.0',
+      minVersion: '1.1.0',
+      apkUrl: 'https://wassilha.vercel.app/wassilha.apk',
     },
-    { headers: { 'cache-control': 'no-store' } }
+    { headers: { 'cache-control': 'no-store, max-age=0' } }
   );
 }
