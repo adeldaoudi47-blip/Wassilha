@@ -1,4 +1,6 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 /**
  * Security headers applied to every response.
@@ -7,6 +9,37 @@ import type { NextConfig } from "next";
  * HSTS would break the loop. The other four apply in all environments.
  */
 const isProd = process.env.NODE_ENV === 'production';
+
+// In-app force update: the version this client was built with.
+//
+// We read package.json ourselves rather than using the npm-injected
+// `npm_package_version`, because that var is only present when the build runs
+// through an npm script. Running `next build` directly (locally, or from a
+// CI image that uses the standalone output) leaves it undefined — and an
+// undefined NEXT_PUBLIC_APP_VERSION is the *worst possible* failure: the
+// client falls back to '0.0.0' in every shipped copy while the server reports
+// 1.1.0, so /api/version would force-update 100% of users.
+//
+// We resolve the path relative to THIS file instead of process.cwd(): Next
+// evaluates the config before the build's working directory is guaranteed to
+// be the project root (Vercel invokes `next build` from the project dir, but
+// local/CI runs can differ), and cwd-relative reads silently fail there.
+function readAppVersion(): string {
+  try {
+    const pkgPath = join(__dirname, 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    const v = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+    if (/^\d+(\.\d+){0,2}/.test(v)) return v;
+  } catch {
+    // fall through to the hard floor
+  }
+  // Unreachable in practice (package.json always has a valid version). If it
+  // ever isn't, '0.0.0' would push everyone into the force-update path, so
+  // instead treat a broken read as "newest" (no gate) — the opposite failure.
+  return '999.999.999';
+}
+
+const appVersion = readAppVersion();
 
 // C7: Content-Security-Policy. Every directive below was derived from the
 // hosts this app actually talks to (grep for https:// in src/):
@@ -49,6 +82,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // In-app force-update: the client compares this build's version against
+  // /api/version on cold start and hard-blocks the app when it is too old.
+  // `appVersion` comes from package.json at build time, so bumping the
+  // version there is the single source of truth for both client and server.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   /* config options here */
   typescript: {
     // C7: build-time type-checking re-enabled. It was disabled while the

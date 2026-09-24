@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { PushPermissionBootstrap } from "@/components/wassilha/push-permission-bootstrap";
+import { ForceUpdateGate } from "@/components/wassilha/force-update-gate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -97,6 +98,11 @@ export default function RootLayout({
             signed in, requests notification permission + registers the
             device token with our backend. No-op on the web. */}
         <PushPermissionBootstrap />
+        {/* Force update: on a native shell this asks /api/version on every
+            cold start and hard-blocks an outdated build behind a modal that
+            can only be dismissed by downloading the new APK. Skipped on the
+            web, where the served bundle is always the newest. */}
+        <ForceUpdateGate />
       </body>
     </html>
   );
