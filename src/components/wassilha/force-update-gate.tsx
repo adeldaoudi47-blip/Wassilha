@@ -34,8 +34,10 @@ import { Button } from '@/components/ui/button';
  * always running the bundle the server just shipped, so there is no APK for
  * them to fetch and a "download the app" lock screen would be meaningless.
  *
- * If `App.getInfo()` rejects — the tell-tale sign of a v1.0 shell that predates
- * the `@capacitor/app` plugin — the gate does NOT give up. It re-runs the check
+ * If `App.getInfo()` rejects *or hangs* — both are tell-tale signs of a v1.0
+ * shell that predates the `@capacitor/app` plugin — the gate does NOT give up.
+ * A missing plugin can leave the bridge pending forever, so the call is raced
+ * against a short timeout; whichever way it fails, the check then proceeds
  * assuming the oldest possible version, so those installs get gated too
  * instead of silently passing as "current" (the web bundle would always say
  * that). Only a failure of the *version endpoint itself* (network down, API
@@ -56,42 +58,74 @@ export function ForceUpdateGate() {
     if (!Capacitor.isNativePlatform()) return;
 
     let cancelled = false;
+
+    // A bridge that never resolves AND never rejects is the worst case: an
+    // outdated shell with no @capacitor/app plugin can leave the call pending
+    // forever, which would freeze the whole check and neither success nor catch
+    // would ever run. Cap the wait so we still get an answer either way.
+    const GET_INFO_TIMEOUT_MS = 3000;
+
     const run = async () => {
+      // Assume the oldest build by default. On a v1.0 shell this is the truth
+      // (there is no plugin to ask), and it is also the safe direction: a
+      // device we cannot identify gets gated rather than waved through.
+      let installedVersion = '0.0.0';
+
       try {
-        // Read the installed APK's versionName. This is the authoritative
-        // "how old is this installation" signal. Any rejection here (older
-        // plugin, OEM WebView quirk) aborts the check with no gate.
-        const info = await App.getInfo();
+        // Race the native call against a timeout. A missing @capacitor/app
+        // plugin can leave the bridge pending forever — neither resolving nor
+        // rejecting — which would freeze this await and the gate along with
+        // it. The executor wires `rejectOnTimeout` synchronously, so the timer
+        // can fire the rejection; `finally` clears it so a fast native call
+        // leaves no dangling 3s timer behind.
+        let rejectOnTimeout!: (reason: unknown) => void;
+        const timer = setTimeout(
+          () => rejectOnTimeout(new Error('App.getInfo() timed out')),
+          GET_INFO_TIMEOUT_MS
+        );
+        try {
+          const info = await Promise.race([
+            App.getInfo(),
+            new Promise<never>((_, reject) => {
+              rejectOnTimeout = reject;
+            }),
+          ]);
+          // A resolved-but-empty version is treated exactly like no answer:
+          // better to assume old than to trust a field we cannot read.
+          if (typeof info?.version === 'string' && info.version.trim()) {
+            installedVersion = info.version;
+          }
+        } finally {
+          clearTimeout(timer);
+        }
         if (cancelled) return;
-
-        const result = await shouldForceUpdate(info.version);
-        if (cancelled) return;
-        if (!result.forceUpdate) return;
-
-        setState({
-          open: true,
-          latestVersion: result.latestVersion,
-          apkUrl: result.apkUrl,
-        });
       } catch {
-        // App.getInfo() rejected: this shell predates @capacitor/app (the v1.0
-        // APK has no such plugin, so the bridge reports it as unimplemented),
-        // or it hit an OEM WebView quirk. We deliberately do NOT bail out here.
-        // Falling back to the web bundle's version would be wrong — the WebView
-        // loads the live site, so the bundle always reports the newest build and
-        // the gate would never fire for the exact outdated installs we need to
-        // block. Assume the oldest possible version and let the server decide.
-        // If the server is then unreachable, shouldForceUpdate() still fails
-        // open, so a broken API can never brick the app.
-        const fallback = await shouldForceUpdate('0.0.0');
-        if (cancelled || !fallback.forceUpdate) return;
-
-        setState({
-          open: true,
-          latestVersion: fallback.latestVersion,
-          apkUrl: fallback.apkUrl,
-        });
+        // App.getInfo() rejected or timed out: this shell predates
+        // @capacitor/app (the v1.0 APK has no such plugin, so the bridge
+        // reports it as unimplemented) or hit an OEM WebView quirk. We
+        // deliberately do NOT bail out here. Falling back to the web bundle's
+        // version would be wrong — the WebView loads the live site, so the
+        // bundle always reports the newest build and the gate would never fire
+        // for the exact outdated installs we need to block. We keep the
+        // '0.0.0' default and let the server decide. If the server is then
+        // unreachable, shouldForceUpdate() still fails open, so a broken API
+        // can never brick the app.
+        console.warn(
+          'ForceUpdate: App.getInfo failed or timed out, assuming old version.'
+        );
       }
+
+      // Reached on the happy path and on every failure mode. The only thing
+      // that can resolve to "no gate" from here is the version endpoint
+      // answering forceUpdate: false (or being unreachable, which fails open).
+      const result = await shouldForceUpdate(installedVersion);
+      if (cancelled || !result.forceUpdate) return;
+
+      setState({
+        open: true,
+        latestVersion: result.latestVersion,
+        apkUrl: result.apkUrl,
+      });
     };
 
     void run();
