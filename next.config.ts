@@ -52,10 +52,10 @@ const appVersion = readAppVersion();
 // inline <script> RSC-bootstrap payloads, and src/app/layout.tsx ships
 // one inline script that unregisters the legacy service worker. Moving to
 // a nonce-based CSP (middleware + x-nonce) is the documented follow-up.
-// Dev additionally gets 'unsafe-eval' (Next dev runtime / HMR).
+// 'unsafe-eval' and 'wasm-unsafe-eval' are unconditional now, not dev-only: the Next.js runtime and the Pusher client both eval at runtime in production, so the dev-only exemption made the prod app throw under CSP.
 const cspDirectives = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'`,
   "style-src 'self' 'unsafe-inline'",
   'img-src \'self\' data: blob: https://*.tile.openstreetmap.org https://raw.githubusercontent.com https://unpkg.com https://*.vercel-storage.com https://*.public.blob.vercel-storage.com',
   "font-src 'self' data:",
