@@ -68,16 +68,26 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
-        {/* Dev hygiene: this app previously shipped a service worker (PWA-era build).
-            Stale registrations keep serving outdated bundles and break auth flows.
-            Unregister any existing service workers on every load until a real PWA
-            strategy is reintroduced deliberately. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){for(var i=0;i<rs.length;i++){rs[i].unregister();}}).catch(function(){});}",
-          }}
+        {/* PWA / iOS home-screen install support.
+            - `apple-mobile-web-app-capable` is what makes an iOS Safari
+              "Add to Home Screen" launch standalone instead of in a browser
+              chrome.
+            - `theme-color` is declared here (and mirrored in app/manifest.ts)
+              so the browser/OS chrome matches the brand on mobile.
+            The previous inline script in this slot force-unregistered every
+            service worker on each load (a PWA-era workaround for a stale-cache
+            bug). It was removed together with public/sw.js: with no service
+            worker registered anywhere in the app, that script could only ever
+            undo a future one. If a deliberate offline strategy is added later,
+            reintroduce caching deliberately — never as a blanket unregister. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
         />
+        <meta name="apple-mobile-web-app-title" content="WASSILHA" />
+        <meta name="theme-color" content="#0E6B5E" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}

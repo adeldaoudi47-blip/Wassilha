@@ -1,5 +1,36 @@
 apply plugin: 'com.android.application'
 
+// SINGLE SOURCE OF TRUTH for the shipped version.
+//
+// `versionName` used to be hard-coded here while the server's `minVersion`
+// (src/app/api/version/route.ts) and the web bundle's version
+// (NEXT_PUBLIC_APP_VERSION, read from package.json by next.config.ts) came from
+// their own places. Nothing forced them to agree, so bumping one and forgetting
+// the other shipped a build that the server considered "too old" — the user
+// downloads the APK, installs it, and is STILL shown the force-update modal,
+// with no way out of the loop.
+//
+// Reading package.json here means `npm version`/`git tag` moves all three in
+// lockstep. A missing/unreadable package.json falls back to a literal so the
+// Android build never hard-fails on a packaging concern.
+def appVersionName = "1.1.0"
+try {
+    def pkgFile = file('../../package.json')
+    if (pkgFile.exists()) {
+        def parsed = new groovy.json.JsonSlurper().parseText(pkgFile.text)
+        def v = parsed?.version?.toString()?.trim()
+        if (v ==~ /\d+(\.\d+){0,2}/) {
+            appVersionName = v
+        } else {
+            logger.warn("wassilha: package.json version '${v}' is not a valid x.y.z — using fallback ${appVersionName}")
+        }
+    } else {
+        logger.warn("wassilha: package.json not found at ${pkgFile} — using fallback ${appVersionName}")
+    }
+} catch (Exception e) {
+    logger.warn("wassilha: could not read package.json (${e.message}) — using fallback ${appVersionName}")
+}
+
 android {
     namespace = "dz.wassilha.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +38,14 @@ android {
         applicationId "dz.wassilha.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // Bump this on EVERY release. Android refuses an install whose
+        // versionCode is not strictly greater than the installed one, so
+        // shipping a new APK without incrementing it makes the update a no-op
+        // for users who already have the app. It is intentionally manual
+        // (unlike versionName) because it must also increase for
+        // rebuilds that did not change the marketing version.
         versionCode 2
-        versionName "1.1.0"
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
