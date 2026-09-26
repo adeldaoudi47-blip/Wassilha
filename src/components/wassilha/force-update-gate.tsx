@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { App } from '@capacitor/app';
 import { RefreshCw, ShieldAlert } from 'lucide-react';
 import { shouldForceUpdate } from '@/lib/version';
 import {
@@ -88,6 +87,18 @@ export function ForceUpdateGate() {
           GET_INFO_TIMEOUT_MS
         );
         try {
+          // Dynamic import of the Capacitor plugin. `@capacitor/app` is a
+          // native-only dependency and its static import used to be evaluated
+          // for every browser load too — if that module graph ever fails to
+          // resolve on a given build/host (older Capacitor, a tree-shaking
+          // surprise, a bundler misconfiguration), a top-level `import { App }`
+          // throws during module evaluation and Next turns it into
+          // "Application error: a client-side exception has occurred" on a
+          // blank page, before this effect can even run. Loading it lazily
+          // inside the native branch confines any such failure to the try
+          // below, where it is caught and the gate degrades to the same
+          // "assume the oldest build" path as a missing plugin.
+          const { App } = await import('@capacitor/app');
           const info = await Promise.race([
             App.getInfo(),
             new Promise<never>((_, reject) => {
