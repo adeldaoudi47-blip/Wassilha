@@ -7,6 +7,7 @@
     "prebuild": "node scripts/check-versions.mjs",
     "build": "prisma generate && next build && node -e \"const fs=require('fs'); fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true}); fs.cpSync('public','.next/standalone/public',{recursive:true});\"",
     "check:versions": "node scripts/check-versions.mjs",
+    "verify:deploy": "node scripts/verify-deploy.mjs",
     "generate:icons": "node scripts/generate-icons.mjs",
     "start": "set NODE_ENV=production&& bun .next/standalone/server.js",
     "lint": "eslint .",
