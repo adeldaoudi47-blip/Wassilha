@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { PushPermissionBootstrap } from "@/components/wassilha/push-permission-bootstrap";
 import { ForceUpdateGate } from "@/components/wassilha/force-update-gate";
+import { SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,6 +23,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Absolute origin used to resolve every relative canonical/OG URL in the
+  // app. Falls back to https://wassilha.vercel.app (see lib/site.ts) so
+  // share links are absolute even when no env var is configured.
+  metadataBase: new URL(SITE_URL),
   title: "وَصِّلها · WASSILHA — نقل بضائعك بثقة في القرارة",
   description:
     "منصة النقل المحلية بالدراجة ثلاثية العجلات (Triporteur) لنقل كل أنواع البضائع بسرعة وأمان في القرارة - غرداية. اطلب، تتبع، وادفع بكل ثقة.",
@@ -38,6 +43,17 @@ export const metadata: Metadata = {
     "Ghardaïa",
   ],
   authors: [{ name: "WASSILHA" }],
+  // Root-level alternates. Every route inherits these hreflang values unless
+  // it declares its own (the /craft marketplace overrides them in its page
+  // metadata with per-store URLs).
+  alternates: {
+    canonical: "/",
+    languages: {
+      "ar-DZ": "/",
+      "fr-DZ": "/",
+      "x-default": "/",
+    },
+  },
   // Favicon is provided by src/app/icon.tsx (renders the official
   // BrandLogo as a PNG, matching the Onboarding/splash screen and
   // every app header across the app). The previous Z.ai blue "Z"
@@ -47,6 +63,18 @@ export const metadata: Metadata = {
     description: "نقل بضائعك بثقة في القرارة - غرداية",
     siteName: "WASSILHA",
     type: "website",
+    url: SITE_URL,
+    locale: "ar_DZ",
+    alternateLocale: ["fr_DZ"],
+    images: [
+      { url: "/icon-512.png", width: 512, height: 512, alt: "WASSILHA — وَصِّلها" },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "وَصِّلها · WASSILHA",
+    description: "نقل بضائعك بثقة في القرارة - غرداية",
+    images: ["/icon-512.png"],
   },
 };
 

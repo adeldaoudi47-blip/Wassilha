@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -31,6 +31,27 @@ export function ApplyArtisanDialog({
   const [phone, setPhone] = useState('');
   const [areaSlug, setAreaSlug] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Radix <Select.Item> throws at render time on an empty-string value, which
+  // would unmount the dialog mid-application — the user would lose everything
+  // they had typed into the store name, bio and phone fields.
+  //
+  // `deliveryAreas` is a hand-maintained local constant (src/lib/delivery-data.ts),
+  // NOT API data: all 41 of its slugs were verified non-empty and unique, so
+  // this is defence in depth rather than a live bug fix. It exists so that a
+  // future hand-edited entry with a blank slug is caught in development instead
+  // of crashing a real application form.
+  //
+  // As in the product form, unusable rows are dropped rather than given a
+  // placeholder: a placeholder slug would be submitted to the API as
+  // `areaSlug` and silently create a PENDING store with the wrong area.
+  const selectableAreas = useMemo(
+    () =>
+      deliveryAreas.filter(
+        ([, , slug]) => typeof slug === 'string' && slug.trim() !== ''
+      ),
+    []
+  );
 
   const handleSubmit = async () => {
     const name = displayName.trim();
@@ -89,7 +110,7 @@ export function ApplyArtisanDialog({
             <Select value={areaSlug} onValueChange={setAreaSlug}>
               <SelectTrigger className="w-full"><SelectValue placeholder={t.chooseArea} /></SelectTrigger>
               <SelectContent>
-                {deliveryAreas.map(([nameAr, nameFr, slug]) => (
+                {selectableAreas.map(([nameAr, nameFr, slug]) => (
                   <SelectItem key={slug} value={slug}>{isAr ? nameAr : nameFr || nameAr}</SelectItem>
                 ))}
               </SelectContent>

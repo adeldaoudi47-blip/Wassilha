@@ -33,10 +33,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const entries: MetadataRoute.Sitemap = [
     {
+      // The root landing page. It is the app entry point, but since Phase 1 it
+      // is ALSO the main indexable marketing surface (static h1 + service copy
+      // in the first HTML payload), so it is listed first with top priority.
+      url: absoluteUrl('/'),
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 1.0,
+      alternates: { languages: { ar: absoluteUrl('/'), fr: absoluteUrl('/?lang=fr') } },
+    },
+    {
       url: absoluteUrl('/craft'),
       lastModified: now,
       changeFrequency: 'daily',
-      priority: 1.0,
+      priority: 0.9,
       alternates: { languages: { ar: absoluteUrl('/craft'), fr: absoluteUrl('/craft?lang=fr') } },
     },
   ];

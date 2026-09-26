@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, ImagePlus, X, Loader2, Plus, Trash2, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -51,6 +51,29 @@ export function ArtisanProductForm({
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [categories, setCategories] = useState<CraftCategoryPublic[]>([]);
+
+  // Radix <Select.Item> THROWS at render time when its `value` is an empty
+  // string ("A <Select.Item /> must have a value prop that is not an empty
+  // string"). That is not a cosmetic warning: it unmounts the whole screen, so
+  // a single bad category row makes the product form unusable and the artisan
+  // cannot save anything at all.
+  //
+  // `categories` is LIVE data from /api/craft/categories (Prisma
+  // craftCategory.id), so an empty id is possible in principle — unlike the
+  // hard-coded option lists elsewhere in the app.
+  //
+  // Such rows are DROPPED rather than given a placeholder value such as
+  // 'default': a placeholder would stop the crash, but the artisan could then
+  // select a category that does not exist and submit `categoryId: 'default'`
+  // to POST/PATCH /api/craft/products — trading a visible crash for silent
+  // data corruption. With two broken rows it would also produce duplicate
+  // values and duplicate React keys. Removing the row is the only option that
+  // is safe in both directions; the Select just shows fewer options, and the
+  // placeholder covers the empty state.
+  const selectableCategories = useMemo(
+    () => categories.filter((c) => typeof c.id === 'string' && c.id.trim() !== ''),
+    [categories]
+  );
   const [form, setForm] = useState({
     nameAr: product?.nameAr ?? '',
     nameFr: product?.nameFr ?? '',
@@ -223,7 +246,7 @@ export function ArtisanProductForm({
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productName} (FR)</label><Input value={form.nameFr} onChange={(e) => set('nameFr', e.target.value)} maxLength={120} /></div>
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productDescription}</label><Textarea value={form.descriptionAr} onChange={(e) => set('descriptionAr', e.target.value)} rows={3} maxLength={2000} /></div>
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productDescription} (FR)</label><Textarea value={form.descriptionFr} onChange={(e) => set('descriptionFr', e.target.value)} rows={3} maxLength={2000} /></div>
-        <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productCategory}</label><Select value={form.categoryId} onValueChange={(v) => set('categoryId', v)}><SelectTrigger className="w-full"><SelectValue placeholder={t.chooseArea} /></SelectTrigger><SelectContent>{categories.map((c) => (<SelectItem key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameFr || c.nameAr}</SelectItem>))}</SelectContent></Select></div>
+        <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productCategory}</label><Select value={form.categoryId} onValueChange={(v) => set('categoryId', v)}><SelectTrigger className="w-full"><SelectValue placeholder={t.chooseArea} /></SelectTrigger><SelectContent>{selectableCategories.map((c) => (<SelectItem key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameFr || c.nameAr}</SelectItem>))}</SelectContent></Select></div>
         <div className="space-y-1.5"><label className="text-xs font-bold text-foreground">{t.productPrice}</label><Input value={form.price} onChange={(e) => set('price', e.target.value)} inputMode="numeric" dir="ltr" placeholder="300" /></div>
         {/* "حسب الطلب" toggle: crafted on demand, so stock is ignored everywhere. */}
         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-muted/30 p-2.5">
