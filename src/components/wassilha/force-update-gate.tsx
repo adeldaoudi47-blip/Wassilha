@@ -173,12 +173,46 @@ export function ForceUpdateGate() {
   // we are deliberately failing open).
   if (!state.open) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     // Fallback to the canonical public APK path if the API omitted a url.
     const url = state.apkUrl ?? 'https://wassilha.vercel.app/wassilha.apk';
-    // In a Capacitor WebView this opens the system browser, which is what we
-    // want: the OS handles the download + install prompt, not the WebView.
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // Inside a Capacitor WebView, window.open() does NOT trigger a file
+    // download — the WebView has no download manager, so the APK either opens
+    // as a blank/broken page or the call is swallowed entirely. The official
+    // @capacitor/browser plugin hands the URL to the *system* browser
+    // (Chrome/Safari), whose download manager handles the .apk and shows the
+    // OS install prompt — which is the only path that actually installs the
+    // update. Loaded dynamically so the plugin module is only resolved on a
+    // native shell (the web never reaches this handler anyway, since the gate
+    // is native-only).
+    try {
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.open({ url });
+    } catch {
+      // TIER 2 — copy + instruct. Reached when the plugin is missing or
+      // rejected: a v1.0 shell that predates @capacitor/browser (the exact
+      // outdated installs this gate exists to catch), or a plain browser. We
+      // do NOT jump straight to window.open: inside a WebView that call is
+      // silently useless, which would strand the user on this modal with a
+      // button that appears to do nothing. Copying the URL and telling the
+      // user to open the phone browser manually is the reliable escape hatch.
+      try {
+        await navigator.clipboard.writeText(url);
+        alert(
+          'تعذر فتح المتصفح الخارجي تلقائياً. تم نسخ رابط التحديث. يرجى فتح متصفح الهاتف (Chrome) ولصق الرابط لتحميل التطبيق.'
+        );
+      } catch {
+        // TIER 3 — last resort. The clipboard API is unavailable or rejected
+        // (an old/insecure WebView context, or the permission was denied).
+        // Attempt window.open anyway in case a real browser is hosting this,
+        // then spell out the raw URL so the user can type it by hand. The
+        // short host form is intentional — it is readably short to retype.
+        window.open(url, '_blank', 'noopener,noreferrer');
+        alert(
+          'تعذر تحميل التحديث تلقائياً. يرجى فتح متصفح الهاتف (Chrome) والذهاب إلى: wassilha.vercel.app/wassilha.apk'
+        );
+      }
+    }
   };
 
   return (
