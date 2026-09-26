@@ -19,57 +19,91 @@
 // an independent source; what is verified here is that the literal FALLBACK in
 // that file still agrees, because it is what ships if package.json is ever
 // unreadable at build time.
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * Read a file, or return null if it is absent.
+ *
+ * Returning null matters: this check runs as `prebuild`, and it is executed in
+ * environments that legitimately do not contain every file. Vercel, for
+ * instance, only uploads `public/` and the sources it needs — the whole
+ * `android/` tree is in `.vercelignore`, so `build.gradle` simply does not
+ * exist during a web deploy. Crashing there would break every production
+ * deploy over a check that has nothing to verify there.
+ */
+function readIfPresent(...segments) {
+  const p = path.join(root, ...segments);
+  if (!existsSync(p)) return null;
+  try {
+    return readFileSync(p, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const pkgVersion = String(pkg.version ?? '').trim();
 
-const gradle = readFileSync(path.join(root, 'android', 'app', 'build.gradle'), 'utf8');
-const gradleFallback = gradle.match(/def\s+appVersionName\s*=\s*"([^"]+)"/)?.[1] ?? null;
+const gradle = readIfPresent('android', 'app', 'build.gradle');
+const gradleFallback = gradle?.match(/def\s+appVersionName\s*=\s*"([^"]+)"/)?.[1] ?? null;
 const gradleUsesPkg =
-  /versionName\s+appVersionName/.test(gradle) && gradle.includes('package.json');
+  !!gradle &&
+  /versionName\s+appVersionName/.test(gradle) &&
+  gradle.includes('package.json');
 
-const route = readFileSync(
-  path.join(root, 'src', 'app', 'api', 'version', 'route.ts'),
-  'utf8'
-);
-const minVersion = route.match(/minVersion:\s*'([^']+)'/)?.[1] ?? null;
-const latestVersion = route.match(/latestVersion:\s*'([^']+)'/)?.[1] ?? null;
+const route = readIfPresent('src', 'app', 'api', 'version', 'route.ts');
+const minVersion = route?.match(/minVersion:\s*'([^']+)'/)?.[1] ?? null;
+const latestVersion = route?.match(/latestVersion:\s*'([^']+)'/)?.[1] ?? null;
 
 const problems = [];
 
 if (!/^\d+(\.\d+){0,2}$/.test(pkgVersion)) {
   problems.push(`package.json version is not a valid x.y.z: "${pkgVersion}"`);
 }
-if (!gradleUsesPkg) {
-  problems.push(
-    'build.gradle no longer derives versionName from package.json — the ' +
-      'APK and the web bundle can drift apart again'
-  );
-}
-if (!gradleFallback) {
-  problems.push('could not find the versionName fallback literal in build.gradle');
-}
-if (minVersion && gradleFallback && minVersion !== gradleFallback) {
-  problems.push(
-    `minVersion (${minVersion}) != build.gradle fallback (${gradleFallback})`
-  );
-}
-if (minVersion && latestVersion && minVersion !== latestVersion) {
-  problems.push(
-    `minVersion (${minVersion}) != latestVersion (${latestVersion}) — a user ` +
-      'on the newest build would still be forced to update'
-  );
+
+// Only enforceable when the file is actually in the build context.
+if (gradle) {
+  if (!gradleUsesPkg) {
+    problems.push(
+      'build.gradle no longer derives versionName from package.json — the ' +
+        'APK and the web bundle can drift apart again'
+    );
+  }
+  if (!gradleFallback) {
+    problems.push('could not find the versionName fallback literal in build.gradle');
+  }
+  if (minVersion && gradleFallback && minVersion !== gradleFallback) {
+    problems.push(
+      `minVersion (${minVersion}) != build.gradle fallback (${gradleFallback})`
+    );
+  }
 }
 
+if (route) {
+  if (!minVersion || !latestVersion) {
+    problems.push('could not parse minVersion/latestVersion from api/version/route.ts');
+  } else if (minVersion !== latestVersion) {
+    problems.push(
+      `minVersion (${minVersion}) != latestVersion (${latestVersion}) — a user ` +
+        'on the newest build would still be forced to update'
+    );
+  }
+}
+
+const notPresent = (label) => `${label} (absent in this build context — skipped)`;
+
 console.log(`  package.json   ${pkgVersion}`);
-console.log(`  build.gradle   ${gradleFallback}${gradleUsesPkg ? ' (from package.json)' : ' (HARDCODED)'}`);
-console.log(`  minVersion     ${minVersion ?? 'NOT FOUND'}`);
-console.log(`  latestVersion  ${latestVersion ?? 'NOT FOUND'}`);
+console.log(
+  `  build.gradle   ${
+    gradle ? `${gradleFallback}${gradleUsesPkg ? ' (from package.json)' : ' (HARDCODED)'}` : notPresent('—')
+  }`
+);
+console.log(`  minVersion     ${minVersion ?? notPresent('—')}`);
+console.log(`  latestVersion  ${latestVersion ?? notPresent('—')}`);
 
 if (problems.length) {
   console.error('\n✗ Version check FAILED:');
