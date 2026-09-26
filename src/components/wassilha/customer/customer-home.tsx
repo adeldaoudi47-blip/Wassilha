@@ -115,10 +115,14 @@ export function CustomerHome() {
   // service tab does not silently drop a scheduled booking.
   const [bookingMode, setBookingMode] = useState<'now' | 'scheduled'>('now');
   const [scheduledAt, setScheduledAt] = useState<string>('');
-  // VEHICLE-TYPE MATCHING (Phase 2): the category the customer requires,
-  // '' = "any available vehicle". Held as a string because the Select
-  // component speaks strings; it is only sent to the API when non-empty.
-  const [requiredVehicleType, setRequiredVehicleType] = useState<string>('');
+  // VEHICLE-TYPE MATCHING (Phase 2): the category the customer requires.
+  // Held as a string because the Select component speaks strings. The
+  // "any vehicle" choice is the sentinel below, NOT '': Radix throws at
+  // render time if a SelectItem's value is an empty string. The sentinel is
+  // mapped back to null on submit so it never reaches the API.
+  const ANY_VEHICLE_VALUE = '__any__';
+  const [requiredVehicleType, setRequiredVehicleType] =
+    useState<string>(ANY_VEHICLE_VALUE);
   // PRICE NEGOTIATION (Phase 3): the customer opts into driver
   // counter-offers. Default false keeps the original fixed-price flow for
   // everyone who never touches the switch.
@@ -237,9 +241,10 @@ export function CustomerHome() {
         // VEHICLE-TYPE MATCHING (Phase 2): only forward a non-empty value —
         // the API validates the vocabulary and stores null otherwise, which
         // reproduces the pre-Phase-2 "any vehicle" behaviour.
-        requiredVehicleType: requiredVehicleType
-          ? (requiredVehicleType as VehicleCategory)
-          : null,
+        requiredVehicleType:
+          requiredVehicleType && requiredVehicleType !== ANY_VEHICLE_VALUE
+            ? (requiredVehicleType as VehicleCategory)
+            : null,
         // PRICE NEGOTIATION (Phase 3): the switch's state is the source of
         // truth; the server re-coerces anything but explicit true to false.
         isNegotiable,
@@ -689,7 +694,12 @@ export function CustomerHome() {
             <SelectValue placeholder={t.requiredVehicleTypePlaceholder} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t.requiredVehicleTypeAny}</SelectItem>
+            {/* Radix forbids an empty-string SelectItem value (it throws
+                "A <Select.Item /> must have a value prop that is not an
+                empty string" at render time), so the "any vehicle" choice
+                uses a sentinel token instead. It is mapped back to null at
+                submit below and never leaves the client. */}
+            <SelectItem value="__any__">{t.requiredVehicleTypeAny}</SelectItem>
             {VEHICLE_CATEGORY_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {t[opt.labelKey] ?? opt.value}

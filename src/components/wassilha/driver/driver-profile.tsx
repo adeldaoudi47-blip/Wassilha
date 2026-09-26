@@ -250,10 +250,13 @@ function VehicleEditDialog({
   // below to decide which fields to validate on save.
   const [seats, setSeats] = useState('');
   // VEHICLE CLASSIFICATION (Phase 1): the driver's chosen category. Held as
-  // a string ('' = none chosen) because the <Select> component's values are
-  // strings; it is only persisted when non-empty or when the driver
-  // explicitly clears it via the "none" option.
-  const [vehicleCategory, setVehicleCategory] = useState<string>('');
+  // a string because the <Select> component's values are strings. The
+  // explicit "no category" choice is the sentinel below, NOT '': Radix
+  // throws at render time if a SelectItem's value is an empty string. It is
+  // mapped back to null on save so it never reaches the API.
+  const NO_CATEGORY_VALUE = '__none__';
+  const [vehicleCategory, setVehicleCategory] =
+    useState<string>(NO_CATEGORY_VALUE);
   const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
   const [saving, setSaving] = useState(false);
 
@@ -285,12 +288,14 @@ function VehicleEditDialog({
         : 'CARGO'
     );
     // VEHICLE CLASSIFICATION (Phase 1): seed the dropdown from the stored
-    // category. Unknown values are coerced to '' (none) so the dropdown
-    // never shows a stale placeholder after the vocabulary grows.
+    // category. Unknown/absent values are coerced to the "no category"
+    // sentinel so the dropdown never shows a stale placeholder after the
+    // vocabulary grows, and a driver with no category sees the option that
+    // matches what is persisted.
     setVehicleCategory(
       typeof v.vehicleCategory === 'string' && v.vehicleCategory
         ? v.vehicleCategory
-        : ''
+        : NO_CATEGORY_VALUE
     );
   }, [open, vehicle]);
 
@@ -320,12 +325,15 @@ function VehicleEditDialog({
                 const n = parseInt(seats, 10);
                 return Number.isFinite(n) ? n : null;
               })(),
-        // VEHICLE CLASSIFICATION (Phase 1): '' is sent as null (explicit
-        // "no category"); a real value is validated server-side against
-        // VEHICLE_CATEGORIES. We always send the key so the saved state
-        // always matches what the driver sees in the dropdown. The cast is
-        // safe because the dropdown only ever yields real categories.
-        vehicleCategory: (vehicleCategory || null) as VehicleCategory | null,
+        // VEHICLE CLASSIFICATION (Phase 1): the "no category" sentinel is
+        // sent as null (explicit "no category"); any other value is
+        // validated server-side against VEHICLE_CATEGORIES. We always send
+        // the key so the saved state always matches what the driver sees in
+        // the dropdown. The cast is safe because the dropdown only ever
+        // yields real categories or the sentinel.
+        vehicleCategory: (vehicleCategory !== NO_CATEGORY_VALUE
+          ? vehicleCategory
+          : null) as VehicleCategory | null,
       });
       onSaved(updated);
       toast.success(t.vehicleUpdated);
@@ -453,8 +461,12 @@ function VehicleEditDialog({
               </SelectTrigger>
               <SelectContent>
                 {/* Explicit "no category" option so a driver who picked one
-                    by mistake can clear it again. */}
-                <SelectItem value="">{t.noVehicleCategory}</SelectItem>
+                    by mistake can clear it again. Radix forbids an
+                    empty-string SelectItem value (it throws "A
+                    <Select.Item /> must have a value prop that is not an
+                    empty string" at render time), so this uses a sentinel
+                    token that is mapped back to null on submit. */}
+                <SelectItem value="__none__">{t.noVehicleCategory}</SelectItem>
                 {VEHICLE_CATEGORIES.map((cat) => (
                   <SelectItem key={cat} value={cat}>
                     {t[VEHICLE_CATEGORY_LABELS[cat]] ?? cat}
