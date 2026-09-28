@@ -3,7 +3,7 @@
 import { createElement } from 'react';
 import {
   Package, Layers, Store, Sofa, Refrigerator, HardHat,
-  Briefcase, CircleEllipsis, Car, type LucideIcon,
+  Briefcase, CircleEllipsis, Car, UtensilsCrossed, type LucideIcon,
 } from 'lucide-react';
 import type { CargoKey, OrderStatus } from '@/lib/types';
 import { CARGO_TYPES } from '@/lib/wassilha-data';
@@ -21,6 +21,10 @@ const ICONS: Record<string, LucideIcon> = {
   // type. The yellow color comes from `CARGO_TYPES`, so the visual is
   // Yassir-like without us having to ship a custom asset.
   Car,
+  // CARGO DEDICATED FLOW (Phase 4): the `food` (restaurant delivery) type.
+  // Distinct from `Store` (groceries) so the two cargo kinds never blur
+  // together on a driver's request card.
+  UtensilsCrossed,
 };
 
 export function CargoIcon({ cargo, size = 20, className }: { cargo: CargoKey; size?: number; className?: string }) {

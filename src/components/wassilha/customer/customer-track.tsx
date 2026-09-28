@@ -12,6 +12,7 @@ import { telHref, smsHref } from '@/lib/phone';
 import { toast } from 'sonner';
 import { useNavStore } from '@/lib/store';
 import { onOrderStatus, onDriverLocation, subscribeToOrder, unsubscribeFromOrder } from '@/lib/realtime';
+import { applyOrderEvent, shouldNotifyOnce } from '@/lib/realtime-merge';
 // LiveMap is dynamically imported with ssr:false because Leaflet touches
 // `window` at module init. The bundled component is loaded only on the
 // client; during SSR a lightweight placeholder div is rendered.
@@ -73,7 +74,7 @@ export function CustomerTrack() {
         const orders = await api.listOrders({ role: 'customer' });
         const active = orders.find((o) => ['searching', 'accepted', 'picked'].includes(o.status));
         if (active) {
-          setOrder(active);
+          setOrder((prev) => applyOrderEvent(prev, active));
           useNavStore.getState().setActiveOrderId(active.id);
         } else {
           setOrder(null);
@@ -87,7 +88,11 @@ export function CustomerTrack() {
     }
     try {
       const o = await api.getOrder(activeOrderId);
-      setOrder(o);
+      // PHASE 6: the refetch is authoritative, but it was issued at some point
+      // in the past — an `order:status` event that landed while it was in
+      // flight may be NEWER than this response. Routing it through
+      // `applyOrderEvent` stops a slow poll from undoing a live update.
+      setOrder((prev) => applyOrderEvent(prev, o));
     } catch {
       setOrder(null);
     } finally {
@@ -97,12 +102,29 @@ export function CustomerTrack() {
 
   useEffect(() => {
     loadOrder();
-    // Poll every 4s as a fallback to websocket
-    pollRef.current = setInterval(loadOrder, 4000);
+    // PHASE 6: 4s -> 15s. `order:status` + `driver:location` already deliver
+    // both the status change and the GPS marker live, so this interval only
+    // matters when Pusher is unreachable (Part 16: realtime failure must never
+    // break the core ordering journey, it just degrades it).
+    pollRef.current = setInterval(loadOrder, 15000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [loadOrder]);
+
+  // PHASE 6 (Part 12/13): a delivery is at-least-once and can arrive out of
+  // order, so a status event goes through `applyOrderEvent` instead of being
+  // assigned straight into state — a late `accepted` can never drag a screen
+  // that is already showing `picked` backwards, and a re-delivery is a no-op.
+  // This applies to the realtime path AND the authoritative refetch, so a poll
+  // that races an in-flight event cannot regress the screen either.
+  const applyOrder = useCallback((incoming: Order | null) => {
+    setOrder((prev) => applyOrderEvent(prev, incoming));
+  }, []);
+
+  // Toast de-dup: `order:status` may be delivered more than once, and the
+  // "delivered" toast must ring exactly once per order.
+  const notifiedRef = useRef<Set<string>>(new Set());
 
   // Realtime: listen for order status + driver location.
   //
@@ -114,8 +136,8 @@ export function CustomerTrack() {
   useEffect(() => {
     const offStatus = onOrderStatus(order?.id ?? '', (updated) => {
       if (order && updated.id === order.id) {
-        setOrder(updated);
-        if (updated.status === 'delivered') {
+        applyOrder(updated);
+        if (updated.status === 'delivered' && shouldNotifyOnce(notifiedRef.current, `order:${updated.id}:delivered`)) {
           toast.success(t.delivered);
         }
       }
@@ -132,7 +154,7 @@ export function CustomerTrack() {
       offStatus();
       offLoc();
     };
-  }, [order, t.delivered]);
+  }, [order, applyOrder, t.delivered]);
 
   // Subscribe to order location stream when accepted/picked
   useEffect(() => {
@@ -402,8 +424,23 @@ export function CustomerTrack() {
           </div>
         )}
         <div className="flex items-center justify-between p-3.5">
-          <span className="text-sm font-bold text-foreground">{t.estimate}</span>
-          <span className="text-xl font-black text-primary">{formatDzd(order.price)} {t.dzd}</span>
+          <span className="text-sm font-bold text-foreground">
+            {order.finalPrice ? t.finalAgreedPrice : t.estimate}
+          </span>
+          {/* NEGOTIATION ENGINE (Phase 4): once a driver's offer has been
+              accepted, the estimate is no longer what the customer pays —
+              showing it alone would contradict the receipt and the offer
+              card above. The estimate stays as struck-through context. */}
+          <span className="flex items-baseline gap-2">
+            {order.finalPrice ? (
+              <span className="text-xs font-semibold text-muted-foreground line-through" dir="ltr">
+                {formatDzd(order.price)}
+              </span>
+            ) : null}
+            <span className="text-xl font-black text-primary">
+              {formatDzd(order.finalPrice ?? order.price)} {t.dzd}
+            </span>
+          </span>
         </div>
       </Card>
 

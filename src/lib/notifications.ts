@@ -1,5 +1,6 @@
 import { db } from './db';
 import { notificationSelect } from './dto';
+import { emitNotificationNew } from './pusher-server';
 import type { Prisma } from '@prisma/client';
 import type { NotificationType, NotificationData } from './types';
 
@@ -26,6 +27,15 @@ export interface CreateNotificationInput {
   title: string;
   body: string;
   data?: NotificationData;
+  /**
+   * PHASE 6: set `false` to skip the realtime `notification:new` trigger.
+   *
+   * The mass fan-out (`dispatch.fanOutNewOrder`) does exactly that: it already
+   * delivers one `order:new-request` per eligible driver plus a single FCM
+   * batch, so N additional Pusher triggers would only add latency to order
+   * creation without telling anyone anything new.
+   */
+  realtime?: boolean;
 }
 
 // Creates one notification for one user. Returns the row as the API serves it
@@ -34,7 +44,7 @@ export interface CreateNotificationInput {
 // Prisma needs InputJsonValue (not JS null) for a `Json?` column, so the key
 // is omitted entirely when there is no payload.
 export async function createNotification(input: CreateNotificationInput) {
-  return db.notification.create({
+  const notification = await db.notification.create({
     data: {
       userId: input.userId,
       type: input.type,
@@ -46,4 +56,20 @@ export async function createNotification(input: CreateNotificationInput) {
     },
     select: notificationSelect,
   });
+
+  // PHASE 6 - realtime delivery, strictly AFTER the row committed (Part 3).
+  //
+  // A rolled-back write never reaches this line, so no "you have a
+  // notification" hint can ever describe a row that does not exist. The emit is
+  // fire-and-forget and swallowed: the notification center is a delivery
+  // surface, and a Pusher outage must never fail the write the caller awaited.
+  if (input.realtime !== false) {
+    try {
+      emitNotificationNew(input.userId, notification);
+    } catch (e) {
+      console.warn('[notifications] realtime emit failed:', e);
+    }
+  }
+
+  return notification;
 }

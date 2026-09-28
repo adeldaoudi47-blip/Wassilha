@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { isVehicleCompatible, serviceCategoryFor } from '@/lib/dispatch';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 
 // GET /api/driver/incoming  — orders with status='searching' OR
@@ -26,6 +27,22 @@ export async function GET() {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
 
+    // PHASE 1 - ELIGIBILITY GATE. The feed must apply the SAME policy as the
+    // push fan-out (dispatch.ts), otherwise a driver sees - and can try to
+    // accept - orders their service type or vehicle cannot serve. The policy
+    // is not duplicated here: it is the shared serviceCategoryFor +
+    // isVehicleCompatible pair used by the fan-out and by /accept.
+    const driver = await db.driver.findUnique({
+      where: { userId: session.id },
+      select: {
+        serviceType: true,
+        vehicleRegistration: { select: { vehicleCategory: true, seats: true } },
+      },
+    });
+    if (!driver) {
+      return NextResponse.json({ error: 'noDriverProfile' }, { status: 403 });
+    }
+
     const orders = await db.order.findMany({
       where: {
         // SCHEDULED BOOKINGS: include future-dated bookings so the
@@ -48,7 +65,13 @@ export async function GET() {
         { createdAt: 'asc' },
       ],
     });
-    return NextResponse.json(orders);
+    const eligible = orders.filter(
+      (o) =>
+        (driver.serviceType === 'BOTH' ||
+          driver.serviceType === serviceCategoryFor(o.cargoType)) &&
+        isVehicleCompatible(o, driver.vehicleRegistration),
+    );
+    return NextResponse.json(eligible);
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },

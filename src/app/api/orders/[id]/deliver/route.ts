@@ -68,7 +68,11 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         where: { userId: driverId },
         data: {
           totalTrips: { increment: 1 },
-          totalEarnings: { increment: updated.price },
+          // NEGOTIATION ENGINE (Phase 4): when the order settled on an
+          // accepted offer the agreed amount — not the listed estimate — is
+          // what the driver earned. `finalPrice` is null unless an offer was
+          // accepted, so non-negotiated jobs are unaffected.
+          totalEarnings: { increment: updated.finalPrice ?? updated.price },
           rating: newRating,
         },
       });

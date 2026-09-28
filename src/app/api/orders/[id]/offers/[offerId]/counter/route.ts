@@ -9,7 +9,7 @@ import {
 } from '@/lib/dto';
 import { createNotification } from '@/lib/notifications';
 import { sendPushNotification } from '@/lib/firebase-admin';
-import { emitOrderStatus } from '@/lib/pusher-server';
+import { emitOfferUpdateToDriver, emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string; offerId: string }> };
 
@@ -76,6 +76,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
             code: true,
             customerId: true,
             status: true,
+            // PHASE 5: a counter is only meaningful while the order is still up
+            // for grabs, so the guard below needs the assignment as well.
+            driverId: true,
             isNegotiable: true,
           },
         },
@@ -96,17 +99,58 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       // Idempotency guard: only a live pending offer can be countered.
       return NextResponse.json({ error: 'offerNotPending' }, { status: 409 });
     }
+    if (offer.order.status !== 'searching' || offer.order.driverId !== null) {
+      // PHASE 5: the ORDER must still be open, not just the offer row. A
+      // counter on a bid that belongs to an already-awarded (or cancelled)
+      // order used to succeed and pushed a "customer countered" alert to a
+      // driver who could no longer win. The decision is re-made inside the
+      // transaction below; this early exit gives the common stale-screen tap
+      // its specific error.
+      return NextResponse.json({ error: 'orderNotSearchable' }, { status: 409 });
+    }
 
-    // The counter is atomic with the status precondition, so a race with an
-    // /accept of the same offer can never both win: the first writer flips
-    // the status away from "pending" and the second call matches zero rows
-    // (surfaced as the 409 below).
-    const updated = await db.orderOffer.updateMany({
-      where: { id: offer.id, status: 'pending' },
-      data: { status: 'countered', counterPrice: price },
+    // PHASE 5 - TRANSACTIONAL COUNTER.
+    //
+    // Two guarantees now hold together instead of one:
+    //   1. The offer update keeps Phase 3's `status: 'pending'` precondition,
+    //      so a race with an /accept of the same bid can never have both sides
+    //      win - the first writer flips the status, the second matches zero
+    //      rows (surfaced as the 409 below).
+    //   2. The ORDER is re-read inside the same transaction, so a bid on an
+    //      order that has since been awarded or cancelled is refused before the
+    //      counter is recorded and before a notification is sent about it.
+    //
+    // Guarantee 1 is what makes this airtight rather than merely narrower:
+    // every path that closes the negotiation window (offer award, flat accept,
+    // cancel) now rejects the order's pending bids in ITS OWN transaction, so
+    // "this offer is still pending" and "this order is still open" can no
+    // longer disagree.
+    //
+    // The journal write moved inside the transaction with them: a counter that
+    // is visible on the offer card can no longer be missing from the timeline.
+    const outcome = await db.$transaction(async (tx) => {
+      const live = await tx.order.findUnique({
+        where: { id: offer.orderId },
+        select: { status: true, driverId: true },
+      });
+      if (!live || live.status !== 'searching' || live.driverId !== null) {
+        return 'orderNotSearchable' as const;
+      }
+      const updated = await tx.orderOffer.updateMany({
+        where: { id: offer.id, status: 'pending' },
+        data: { status: 'countered', counterPrice: price },
+      });
+      if (updated.count === 0) return 'offerNotPending' as const;
+
+      // NEGOTIATION ENGINE (Phase 4): journal the customer's counter so the
+      // timeline keeps every price of the conversation.
+      await tx.offerEvent.create({
+        data: { orderId: offer.orderId, offerId: offer.id, actorId: session.id, type: 'customer_counter', price },
+      });
+      return 'ok' as const;
     });
-    if (updated.count === 0) {
-      return NextResponse.json({ error: 'offerNotPending' }, { status: 409 });
+    if (outcome !== 'ok') {
+      return NextResponse.json({ error: outcome }, { status: 409 });
     }
 
     // Re-read so the response carries the settled row (counterPrice set +
@@ -167,6 +211,24 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       select: { ...publicOrderSelect },
     });
     if (fresh) emitOrderStatus(fresh);
+    // PHASE 6 - the negotiation event: the driver who owns the bid learns the
+    // new price instantly on their OWN channel, and the order channel mirrors
+    // it so the customer's other tabs converge. No other driver is a
+    // destination, so a competing price never leaves this negotiation.
+    emitOfferUpdateToDriver(
+      {
+        kind: 'countered',
+        offerId: offer.id,
+        orderId: offer.orderId,
+        orderCode: offer.order.code,
+        driverId: offer.driverId,
+        driverName: offer.driver?.name ?? null,
+        price: offer.price,
+        status: 'countered',
+        counterPrice: price,
+      },
+      { alsoOrder: true },
+    );
 
     return NextResponse.json(settled ?? offer);
   } catch (e) {

@@ -201,11 +201,23 @@ export const api = {
     // the order goes to every eligible driver. The server validates
     // the value against VEHICLE_CATEGORIES before storing it.
     requiredVehicleType?: VehicleCategory | null;
+    // SEAT-CAPACITY MATCHING (Phase 1): how many passengers the customer is
+    // travelling with (TAXI mode). Null / omitted = no seat requirement, so
+    // every pre-Phase-1 caller keeps its exact previous behaviour.
+    requiredSeats?: number | null;
+
     // PRICE NEGOTIATION (Phase 3): when true the customer is open to
     // drivers sending counter-offers (`OrderOffer`). The server
     // defaults it to false when omitted so legacy callers keep the
-    // fixed-price behaviour.
+    // fixed-price behaviour. CARGO DEDICATED FLOW (Phase 4): for every
+    // non-taxi cargoType the server forces negotiation on — the field is
+    // only meaningful for taxi.
     isNegotiable?: boolean;
+    // CARGO DEDICATED FLOW (Phase 4): bulk of the shipment (drives the
+    // moto rule + reference pricing weight) and the optional photo of the
+    // goods (URL produced by uploadOrderImage).
+    cargoSize?: 'small' | 'medium' | 'large' | null;
+    cargoImageUrl?: string | null;
   }) =>
     req<Order>('/api/orders', {
       method: 'POST',
@@ -593,6 +605,14 @@ export const api = {
     const fd = new FormData();
     fd.append("file", file);
     return req<{ url: string }>("/api/craft/upload", { method: "POST", body: fd });
+  },
+  // CARGO DEDICATED FLOW (Phase 4): any signed-in user can photograph the
+  // goods for an order; the returned URL is stored as `cargoImageUrl` when
+  // the order is created (server re-validates the host).
+  uploadOrderImage: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return req<{ url: string }>('/api/uploads/order-image', { method: 'POST', body: fd });
   },
 
   // HIRFA (P6): order lifecycle — create, list, status transitions

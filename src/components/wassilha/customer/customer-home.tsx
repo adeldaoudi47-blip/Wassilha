@@ -29,6 +29,11 @@ const InteractiveMap = dynamic(
   },
 );
 import { CargoIcon } from '../cargo-icon';
+import { SuperAppHome } from './super-app-home';
+// CARGO DEDICATED FLOW (Phase 4): the dedicated cargo order wizard.
+import { CargoCreateOrderWizard } from './cargo-wizard/cargo-create-order-wizard';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -90,6 +95,11 @@ export function CustomerHome() {
   const setActiveOrderId = useNavStore((s) => s.setActiveOrderId);
   const setCustomerTab = useNavStore((s) => s.setCustomerTab);
 
+  // SUPER APP HOME VIEW (Phase 2):
+  // When activeView === 'home', the user is on the Super App central hub.
+  // When 'service_flow', the user opened either the Taxi or Cargo dedicated order form.
+  const [activeView, setActiveView] = useState<'home' | 'service_flow'>('home');
+
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   // `serviceMode` picks between the two top-level tabs above the form:
   //   - 'cargo' → the original triporteur flow (parcels, furniture, …)
@@ -123,6 +133,13 @@ export function CustomerHome() {
   const ANY_VEHICLE_VALUE = '__any__';
   const [requiredVehicleType, setRequiredVehicleType] =
     useState<string>(ANY_VEHICLE_VALUE);
+  // SEAT-CAPACITY MATCHING (Phase 1): how many passengers the customer is
+  // travelling with (TAXI mode only). Same string-sentinel pattern as the
+  // vehicle picker above, so Radix never sees an empty SelectItem value;
+  // the sentinel is mapped back to null at submit and never leaves the
+  // client. No seat requirement = every taxi is eligible (pre-Phase-1).
+  const ANY_SEATS_VALUE = '__any_seats__';
+  const [requiredSeats, setRequiredSeats] = useState<string>(ANY_SEATS_VALUE);
   // PRICE NEGOTIATION (Phase 3): the customer opts into driver
   // counter-offers. Default false keeps the original fixed-price flow for
   // everyone who never touches the switch.
@@ -245,6 +262,17 @@ export function CustomerHome() {
           requiredVehicleType && requiredVehicleType !== ANY_VEHICLE_VALUE
             ? (requiredVehicleType as VehicleCategory)
             : null,
+        // SEAT-CAPACITY MATCHING (Phase 1): taxi-only, and only forwarded
+        // when the customer actually picked a passenger count. The sentinel
+        // maps back to null so 'no preference' never reaches the API.
+        ...(isTaxi
+          ? {
+              requiredSeats:
+                requiredSeats !== ANY_SEATS_VALUE
+                  ? parseInt(requiredSeats, 10)
+                  : null,
+            }
+          : {}),
         // PRICE NEGOTIATION (Phase 3): the switch's state is the source of
         // truth; the server re-coerces anything but explicit true to false.
         isNegotiable,
@@ -354,8 +382,52 @@ export function CustomerHome() {
     );
   };
 
+  if (activeView === 'home') {
+    return (
+      <SuperAppHome
+        onSelectService={(mode) => {
+          setServiceMode(mode);
+          setActiveView('service_flow');
+        }}
+      />
+    );
+  }
+
+  const BackChevron = isRtl ? ArrowRight : ArrowLeft;
+
+  // CARGO DEDICATED FLOW (Phase 4): a cargo job runs through the step-by-step
+  // wizard (size, photo, description -> the rules that decide which vehicles
+  // may carry it) instead of the legacy single-screen form below. Taxi keeps
+  // that form: a passenger request has nothing to describe or photograph, and
+  // the form also stays as the fallback for flows that pre-date Phase 4.
+  //
+  // The mode is read through a function on purpose: a plain
+  // `if (serviceMode === 'cargo')` would narrow `serviceMode` to `'taxi'` for
+  // the rest of this component, and the form below still renders both tab
+  // labels (switching to the cargo tab from there re-enters this wizard).
+  const isCargoMode = () => serviceMode === 'cargo';
+  if (isCargoMode()) {
+    return <CargoCreateOrderWizard onExit={() => setActiveView('home')} />;
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-28">
+      {/* Return to Super App Home Button */}
+      <div className="flex items-center justify-between pb-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setActiveView('home')}
+          className="gap-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+        >
+          <BackChevron className="h-4 w-4" />
+          <span>{t.backToHome}</span>
+        </Button>
+        <span className="text-xs font-semibold text-primary">
+          {serviceMode === 'taxi' ? t.taxiServiceTitle : t.cargoServiceTitle}
+        </span>
+      </div>
+
       {/* HIRFA marketplace entry (P3) - navigates to the dedicated hirfa tab. */}
       <button
         onClick={() => setCustomerTab('hirfa')}
@@ -711,6 +783,35 @@ export function CustomerHome() {
           {t.requiredVehicleTypeHelp}
         </p>
       </div>
+
+      {/* SEAT-CAPACITY MATCHING (Phase 1): TAXI mode only. The customer says
+          how many passengers are travelling, and the dispatch fan-out then
+          offers the trip only to vehicles whose carte-grise seat count covers
+          that number. "Any" (the sentinel) keeps the pre-Phase-1 behaviour,
+          so nothing changes for a customer who ignores this control. */}
+      {serviceMode === 'taxi' && (
+        <div className="space-y-1.5">
+          <label className="block text-[11px] font-semibold text-muted-foreground">
+            {t.passengerCount}
+          </label>
+          <Select value={requiredSeats} onValueChange={setRequiredSeats}>
+            <SelectTrigger className="h-10 w-full" dir={isRtl ? 'rtl' : 'ltr'}>
+              <SelectValue placeholder={t.passengerCountAny} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__any_seats__">{t.passengerCountAny}</SelectItem>
+              {['1', '2', '3', '4', '5', '6', '7'].map((n) => (
+                <SelectItem key={n} value={n}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground">
+            {t.passengerCountHelp}
+          </p>
+        </div>
+      )}
 
       {/* PRICE NEGOTIATION (Phase 3): a switch that lets the customer
           invite drivers to propose a different price. Off by default; when

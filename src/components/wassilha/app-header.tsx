@@ -4,6 +4,7 @@ import { LogOut, RefreshCw, UserCog, Bike, User } from 'lucide-react';
 import { BrandLogo } from './brand-logo';
 import { LangToggle } from './lang-toggle';
 import { NotificationBell } from './notifications/notification-bell';
+import { RealtimeStatusChip } from './realtime-status';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useT } from './use-t';
 import { useAppStore } from '@/lib/store';
@@ -63,6 +64,9 @@ export function AppHeader({ title, subtitle, rightSlot }: AppHeaderProps) {
         </div>
         {rightSlot}
         <NotificationBell />
+        {/* PHASE 6 (Part 18): honest connection state. Sits next to the bell so
+            a user who can tell the app is "behind" sees why without a banner. */}
+        <RealtimeStatusChip className="hidden sm:inline-flex" />
         <ThemeToggle />
         <LangToggle />
         {user && (

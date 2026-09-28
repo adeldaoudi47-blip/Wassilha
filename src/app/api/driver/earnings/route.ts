@@ -51,12 +51,18 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
+    // NEGOTIATION ENGINE (Phase 4): an order that settled on an accepted
+    // offer pays the agreed amount, so every earnings sum below reads
+    // `finalPrice ?? price`. `finalPrice` stays null for non-negotiated jobs.
+    const earnedBy = (o: { price: number; finalPrice?: number | null }) =>
+      o.finalPrice ?? o.price;
+
     // thisWeek: sum of delivered order prices where deliveredAt is within last 7 days.
     const thisWeekOrders = deliveredOrders.filter((o) => {
       const dt = o.deliveredAt ? new Date(o.deliveredAt) : null;
       return dt && dt >= weekAgo;
     });
-    const thisWeek = thisWeekOrders.reduce((s, o) => s + o.price, 0);
+    const thisWeek = thisWeekOrders.reduce((s, o) => s + earnedBy(o), 0);
 
     // weekly breakdown: array of 7 entries {day, earnings}, oldest -> newest.
     const weekly: { day: string; earnings: number }[] = [];
@@ -69,7 +75,7 @@ export async function GET() {
 
       const dayEarnings = deliveredOrders.reduce((s, o) => {
         const dt = o.deliveredAt ? new Date(o.deliveredAt) : null;
-        if (dt && dt >= dayStart && dt < dayEnd) return s + o.price;
+        if (dt && dt >= dayStart && dt < dayEnd) return s + earnedBy(o);
         return s;
       }, 0);
 

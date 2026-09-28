@@ -99,6 +99,10 @@ export const publicOrderSelect = {
   // (or null). Returned to drivers so they can tell whether their
   // vehicle fits before accepting, and to the customer in track view.
   requiredVehicleType: true,
+  // SEAT-CAPACITY MATCHING (Phase 1): the minimum passenger seats the
+  // customer asked for (TAXI), null when unspecified. Returned to drivers
+  // so a vehicle with too few seats never appears in their list.
+  requiredSeats: true,
   // PRICE NEGOTIATION (Phase 3): the negotiability flag drives the
   // "make an offer" affordance on the driver side and the "offers
   // received" badge on the customer side. Defaulted by the DB so old
@@ -108,6 +112,11 @@ export const publicOrderSelect = {
   // is still open or was never negotiable. UI reads this in preference
   // to `price` when it is set.
   finalPrice: true,
+  // CARGO DEDICATED FLOW (Phase 4): bulk of the shipment (drives the
+  // moto-compatibility display / badge) and the optional photo of the
+  // goods drivers see on the request card. Null on legacy rows.
+  cargoSize: true,
+  cargoImageUrl: true,
 } as const;
 
 /**
@@ -129,6 +138,25 @@ export const orderOfferSelect = {
   // while status = "countered". Nullable, so every older row / state still
   // deserialises as null.
   counterPrice: true,
+  createdAt: true,
+  // NEGOTIATION ENGINE (Phase 4): last state change. Nullable column, so
+  // rows written before Phase 4 serialise as null.
+  updatedAt: true,
+} as const;
+
+/**
+ * NEGOTIATION ENGINE (Phase 4) — columns of an `OfferEvent` journal row
+ * that are safe to return to the negotiation participants (order owner +
+ * offering driver). `actorId` is an id only, never joined to a User, so
+ * no extra personal data leaks through the timeline.
+ */
+export const offerEventSelect = {
+  id: true,
+  orderId: true,
+  offerId: true,
+  actorId: true,
+  type: true,
+  price: true,
   createdAt: true,
 } as const;
 

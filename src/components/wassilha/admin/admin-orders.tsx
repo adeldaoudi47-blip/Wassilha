@@ -11,6 +11,8 @@ import { CargoIcon, StatusBadge } from '../cargo-icon';
 import { formatDzd } from '@/lib/wassilha-data';
 import { cn } from '@/lib/utils';
 import type { Order, OrderStatus } from '@/lib/types';
+import { onAdminOrderStatus } from '@/lib/realtime';
+import { upsertById, applyOrderEvent } from '@/lib/realtime-merge';
 
 export function AdminOrders() {
   const { t, isAr } = useT();
@@ -27,8 +29,28 @@ export function AdminOrders() {
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
-    const id = setInterval(refresh, 6000);
+    // PHASE 6: 6s -> 30s. `order:status` is fanned out to `private-admin`, so
+    // the list is live now; this poll is only the degraded path.
+    const id = setInterval(refresh, 30000);
     return () => clearInterval(id);
+  }, []);
+
+  // PHASE 6: live admin console. The payload is the same order projection the
+  // admin API returns (server-side `publicOrderSelect`), so the row is complete
+  // and carries nothing a non-admin could see. `upsertById` keeps the merge
+  // idempotent under duplicate delivery (Part 12) and `applyOrderEvent` keeps a
+  // late event from moving a row backwards (Part 13).
+  useEffect(() => {
+    const off = onAdminOrderStatus((updated) => {
+      setOrders((prev) => {
+        const index = prev.findIndex((o) => o.id === updated.id);
+        if (index === -1) return upsertById(prev, updated);
+        const next = [...prev];
+        next[index] = applyOrderEvent(prev[index], updated) ?? prev[index];
+        return next;
+      });
+    });
+    return off;
   }, []);
 
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
@@ -135,7 +157,10 @@ export function AdminOrders() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className="text-sm font-black text-primary">{formatDzd(o.price)}</span>
+                  {/* PHASE 5: admins review earnings, so the table must show
+                      the settled price (`finalPrice`) once a negotiation
+                      ended - matching the driver earnings view. */}
+                  <span className="text-sm font-black text-primary">{formatDzd(o.finalPrice ?? o.price)}</span>
                   <span className="text-[9px] text-muted-foreground">{t.dzd}</span>
                   <span className="text-[9px] text-muted-foreground">{o.distance} {t.km}</span>
                   <button

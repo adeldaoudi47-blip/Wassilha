@@ -33,6 +33,10 @@ model User {
   // PRICE NEGOTIATION (Phase 3): the price offers this driver has sent.
   // Back-relation of OrderOffer.driver; cascade-deleted with the driver.
   priceOffers  OrderOffer[] @relation("DriverOffers")
+  // NEGOTIATION ENGINE (Phase 4): every event (driver offer, customer
+  // counter, accept, reject) the user caused. Back-relation of
+  // OfferEvent.actor; cascade-deleted with the account.
+  offerEvents  OfferEvent[] @relation("OfferEvents")
   ratingsGiven Rating[]    @relation("Rater")
   ratingsRecv  Rating[]    @relation("Ratee")
   // TRIP OFFERS: a customer can book one or more trip offers
@@ -355,6 +359,32 @@ model Order {
   // (the legacy behaviour, and what every pre-existing row has).
   requiredVehicleType String?
 
+  // SEAT-CAPACITY MATCHING (Phase 1 - Security & Matching Foundation):
+  // the minimum number of passenger seats the customer needs (TAXI mode).
+  // Null = no requirement: every pre-existing row, and every CARGO order,
+  // keeps behaving exactly as before. When set, the dispatch fan-out and
+  // the driver's incoming feed both require
+  // `VehicleRegistration.seats >= requiredSeats`, so a 2-seat car is never
+  // offered a 5-passenger trip. Additive + nullable, so no backfill is
+  // needed and no existing row is touched.
+  requiredSeats Int?
+
+  // CARGO DEDICATED FLOW (Phase 4): the bulk of the shipment, decoupled
+  // from `weight` so the customer-facing wizard only asks for a size:
+  //   "small"  - fits a moto / any vehicle
+  //   "medium" - three-wheeler and up
+  //   "large"  - truck-only (isVehicleCompatible blocks moto, see dispatch.ts)
+  // Free String to mirror the rest of this schema. Null = legacy order
+  // created before Phase 4 (or a taxi booking): every pre-Phase-4 read
+  // path and the dispatch filters keep behaving exactly as before.
+  cargoSize     String?
+
+  // CARGO DEDICATED FLOW (Phase 4): public URL of the optional photo the
+  // customer took of the goods (Vercel Blob, uploaded through
+  // /api/uploads/order-image). Lets the driver see what they are picking
+  // up before offering a price. Null = no photo (every legacy row).
+  cargoImageUrl String?
+
   // PRICE NEGOTIATION (Phase 3): when true the customer accepts counter-
   // offers from drivers (`OrderOffer` rows) instead of a flat take-it-or-
   // leave-it price. Defaults to false so existing rows / API callers keep
@@ -385,6 +415,11 @@ model Order {
   // are created/transitioned by the offer API). Cascade-deleted with the
   // order so an expired / cancelled order does not leave orphan offers.
   offers OrderOffer[]
+
+  // NEGOTIATION ENGINE (Phase 4): the full negotiation timeline for this
+  // order (offers, counters, accept/reject events). Read-only here; rows
+  // are appended by the offer API and cascade-deleted with the order.
+  offerEvents OfferEvent[]
 
   // SECURITY (V14): indexes for hot queries. customerId/driverId are
   // used by /api/orders GET to scope the listing. status and the
@@ -433,6 +468,10 @@ model OrderOffer {
   price     Int
   status    String   @default("pending") // pending, accepted, rejected, countered
   createdAt DateTime @default(now())
+  // NEGOTIATION ENGINE (Phase 4): last time this offer changed state.
+  // Nullable so pre-Phase-4 rows need no backfill (`db push` adds an
+  // empty column); @updatedAt stamps every write from now on.
+  updatedAt DateTime? @updatedAt
 
   // PRICE NEGOTIATION (Phase 3) — the customer's counter-price, set only
   // while status = "countered". Null for every other state (and for rows
@@ -440,12 +479,47 @@ model OrderOffer {
   // a driver's UI shows `price` unless `counterPrice` is set.
   counterPrice Int?
 
+  // NEGOTIATION ENGINE (Phase 4): the journal rows describing how this
+  // offer evolved (initial offer, refreshes, counters, accept / reject).
+  events OfferEvent[]
+
   // One live offer per driver per order: this unique pair is what the
   // upsert in the offer API keys on, so a driver re-sending a price
   // refreshes their existing row instead of creating duplicates.
   @@unique([orderId, driverId])
   @@index([orderId])
   @@index([driverId])
+}
+
+/// NEGOTIATION ENGINE (Phase 4) — an append-only journal of everything
+/// that happened during the negotiation of an order. The OrderOffer row
+/// keeps only the driver's *current* position (Phase 3 upsert semantics);
+/// this table preserves the full history so the customer's negotiation
+/// card and the driver's request card can render a real conversation:
+///   "driver_offer"     - driver sent / refreshed their price for this order
+///   "customer_counter" - customer replied with a different price
+///   "accepted"         - customer accepted an offer (order.finalPrice set)
+///   "rejected"         - customer (or order cancellation) declined
+/// Kept as free Strings like every other status column in this schema, so
+/// new event types never require a migration.
+model OfferEvent {
+  id      String   @id @default(cuid())
+  orderId String
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // The offer this event refers to. Nullable so an event can survive the
+  // (rare) deletion of its offer row via nullify instead of cascading away
+  // the order's whole history.
+  offerId String?
+  offer   OrderOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  // Whichever user (customer or driver) caused the event.
+  actorId String
+  actor   User     @relation("OfferEvents", fields: [actorId], references: [id], onDelete: Cascade)
+  type    String   // driver_offer | customer_counter | accepted | rejected
+  price   Int?     // the amount the event is about (offer / counter price)
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([offerId])
 }
 
 /// A pre-published trip a driver advertises so that customers can

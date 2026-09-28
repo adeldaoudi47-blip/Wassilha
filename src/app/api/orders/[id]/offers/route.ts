@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { publicUserSelect, orderOfferSelect } from '@/lib/dto';
+import { publicUserSelect, orderOfferSelect, offerEventSelect } from '@/lib/dto';
+import { canDriverOfferOnOrder } from '@/lib/offer-policy';
 import { createNotification } from '@/lib/notifications';
 import { sendPushNotification } from '@/lib/firebase-admin';
-import { emitOrderStatus } from '@/lib/pusher-server';
+import { emitOfferNew, emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -42,9 +43,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
 
     // The driver must have an active Driver profile — checked before any
-    // order lookup so a non-driver cannot probe order ids.
+    // order lookup so a non-driver cannot probe order ids. Phase 4 also
+    // pulls the facts the offer gate needs (verification, approval, service
+    // type, registered vehicle) in the same query.
     const driver = await db.driver.findUnique({
       where: { userId: session.id },
+      select: {
+        userId: true,
+        isVerified: true,
+        applicationStatus: true,
+        serviceType: true,
+        vehicleRegistration: { select: { vehicleCategory: true, seats: true } },
+      },
     });
     if (!driver) {
       return NextResponse.json(
@@ -65,9 +75,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const { price } = parsed.data;
 
     const { id } = await params;
-    // Guard the order state before writing the offer. The customer's
-    // negotiability flag is part of the guard: a fixed-price order never
-    // receives offers, and an already-accepted order cannot be bid on.
+    // Guard the order state before writing the offer. NEGOTIATION ENGINE
+    // (Phase 4): every rule (live order, negotiable, not own order, not
+    // already assigned, driver verified / approved / right service type /
+    // vehicle compatible — including the cargoSize rule) lives in
+    // `canDriverOfferOnOrder` so offers can never slip past a check the
+    // flat-accept path enforces.
     const order = await db.order.findUnique({
       where: { id },
       select: {
@@ -76,44 +89,95 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         customerId: true,
         price: true,
         status: true,
-        isNegotiable: true,
         driverId: true,
+        cargoType: true,
+        requiredVehicleType: true,
+        requiredSeats: true,
+        cargoSize: true,
+        isNegotiable: true,
       },
     });
     if (!order) {
       return NextResponse.json({ error: 'notFound' }, { status: 404 });
     }
-    if (order.status !== 'searching') {
-      return NextResponse.json({ error: 'orderNotSearchable' }, { status: 409 });
-    }
-    if (!order.isNegotiable) {
-      return NextResponse.json({ error: 'orderNotNegotiable' }, { status: 403 });
-    }
-    // The customer cannot bid their own order's price down, and a driver
-    // who already claimed the order has no reason to re-offer.
-    if (order.customerId === session.id) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
-    if (order.driverId === session.id) {
-      return NextResponse.json({ error: 'alreadyAssigned' }, { status: 409 });
+    const gate = canDriverOfferOnOrder(order, {
+      id: session.id,
+      isVerified: driver.isVerified,
+      applicationStatus: driver.applicationStatus,
+      serviceType: driver.serviceType,
+      vehicleCategory: driver.vehicleRegistration?.vehicleCategory ?? null,
+      seats: driver.vehicleRegistration?.seats ?? null,
+    });
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.reason }, { status: gate.status });
     }
 
     // Upsert on the (orderId, driverId) unique pair keeps one live offer
     // per driver per order and refreshes its price.
-    const offer = await db.orderOffer.upsert({
-      where: { orderId_driverId: { orderId: order.id, driverId: session.id } },
-      create: {
-        orderId: order.id,
-        driverId: session.id,
-        price,
-        status: 'pending',
-      },
-      update: { price, status: 'pending' },
-      select: {
-        ...orderOfferSelect,
-        driver: { select: publicUserSelect },
-      },
+    //
+    // PHASE 5 - THE BID IS CREATED INSIDE A TRANSACTION WITH THE ORDER'S OWN
+    // STATE GUARD. `canDriverOfferOnOrder` above is a read: between it and this
+    // write the order can be awarded or cancelled, and the upsert would then
+    // plant a fresh `pending` bid on a closed order - after the losers' sweep
+    // had already run, so nothing would ever close it again. That is exactly
+    // how a "live-looking" bid survives forever on a finished order.
+    //
+    // The guarded `updateMany` below re-asserts "still searching, still
+    // unassigned" and takes the ORDER row lock, in this order:
+    //   * if an award/cancel committed first, the predicate matches zero rows
+    //     after the lock is granted and we bail out with a 409;
+    //   * if we win, the order row stays locked until we commit, so the
+    //     concurrent award/cancel blocks, then re-reads and sweeps our new bid.
+    // Either way no bid can outlive the open window. Lock order is always
+    // order-row first, then offer rows (same as the award and cancel routes),
+    // so the three writers cannot deadlock.
+    //
+    // The journal row is written in the same transaction: a price the card
+    // shows can no longer be missing from the timeline.
+    const offer = await db.$transaction(async (tx) => {
+      const stillOpen = await tx.order.updateMany({
+        where: { id: order.id, status: 'searching', driverId: null },
+        // Idempotent write: the same status value, re-asserted. What matters is
+        // the row lock + re-check, i.e. a compare-and-swap with no state change.
+        data: { status: 'searching' },
+      });
+      if (stillOpen.count === 0) return null;
+
+      const row = await tx.orderOffer.upsert({
+        where: { orderId_driverId: { orderId: order.id, driverId: session.id } },
+        create: {
+          orderId: order.id,
+          driverId: session.id,
+          price,
+          status: 'pending',
+        },
+        update: {
+          price,
+          status: 'pending',
+          // PHASE 5: the driver's new price supersedes the customer's counter.
+          // Leaving `counterPrice` behind kept the "customer countered with X"
+          // affordance (and the accept-the-counter button) alive on a row the
+          // driver had already answered with a fresh price.
+          counterPrice: null,
+        },
+        select: {
+          ...orderOfferSelect,
+          driver: { select: publicUserSelect },
+        },
+      });
+
+      // NEGOTIATION ENGINE (Phase 4): journal the event so the customer's
+      // timeline shows every price the driver proposed even though the row
+      // itself is refreshed in place.
+      await tx.offerEvent.create({
+        data: { orderId: order.id, offerId: row.id, actorId: session.id, type: 'driver_offer', price },
+      });
+      return row;
     });
+    if (!offer) {
+      // The order stopped being claimable between the gate and the write.
+      return NextResponse.json({ error: 'notAvailable' }, { status: 409 });
+    }
 
     // Fire-and-forget: tell the customer a driver proposed a price. Push +
     // in-app row mirror the accept flow's reliability contract; the DB
@@ -155,6 +219,22 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     // Realtime: the customer's tracking screen subscribes to order events,
     // so a new offer appears instantly without a poll.
     emitOrderStatus(order);
+    // PHASE 6 - the negotiation event itself. `order:status` alone tells the
+    // customer's screen that *something* happened and forced a refetch; this
+    // carries the bid (price, driver name, status) so the offer list renders it
+    // immediately. Emitted AFTER the transaction committed, and only on the
+    // ORDER channel: no other driver ever sees a competing price.
+    emitOfferNew({
+      kind: 'new',
+      offerId: offer.id,
+      orderId: offer.orderId,
+      orderCode: order.code,
+      driverId: session.id,
+      driverName: offer.driver?.name ?? null,
+      price: offer.price,
+      status: offer.status,
+      counterPrice: offer.counterPrice ?? null,
+    });
     return NextResponse.json(offer, { status: 201 });
   } catch (e) {
     return NextResponse.json(
@@ -196,6 +276,10 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
         // The customer needs the driver's identity to choose; the driver
         // already knows it, but joining keeps one response shape.
         driver: { select: publicUserSelect },
+        // NEGOTIATION ENGINE (Phase 4): the full negotiation journal for
+        // each offer, oldest first, so both sides can render the price
+        // conversation instead of just the last position.
+        events: { select: offerEventSelect, orderBy: { createdAt: 'asc' } },
       },
     });
 

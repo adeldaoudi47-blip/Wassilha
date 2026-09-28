@@ -14,6 +14,8 @@ import Pusher from 'pusher';
 //   private-admin            — privileged admin only.
 //   private-driver-<userId>  — that exact user (drivers subscribe to their own
 //                              feed to receive incoming order requests).
+//   private-user-<userId>    — that exact user, any role (Phase 6: the
+//                              `notification:new` feed behind the bell).
 //   private-order-<orderId>  — the order's customer or its assigned driver.
 //                              An admin can also watch any order.
 //
@@ -75,6 +77,13 @@ async function maySubscribe(
 
   if (channelName.startsWith('private-driver-')) {
     return channelName === `private-driver-${userId}`;
+  }
+
+  // PHASE 6 - a user's own notification feed. Same exact-id rule as the driver
+  // channel: the session may only ever sign ITS OWN feed, so customer A can
+  // never subscribe to customer B's notifications (Part 11).
+  if (channelName.startsWith('private-user-')) {
+    return channelName === `private-user-${userId}`;
   }
 
   if (channelName.startsWith('private-order-')) {

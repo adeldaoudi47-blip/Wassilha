@@ -6,9 +6,14 @@ import {
   publicOrderSelect,
   orderOfferSelect,
 } from '@/lib/dto';
+import { isVehicleCompatible, serviceCategoryFor } from '@/lib/dispatch';
 import { createNotification } from '@/lib/notifications';
 import { sendPushNotification } from '@/lib/firebase-admin';
-import { emitOrderStatus } from '@/lib/pusher-server';
+import {
+  emitOfferSettledToLosers,
+  emitOfferUpdateToDriver,
+  emitOrderStatus,
+} from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string; offerId: string }> };
 
@@ -51,6 +56,12 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
             status: true,
             driverId: true,
             isNegotiable: true,
+            // NEGOTIATION ENGINE (Phase 4): the vehicle-match facts needed
+            // to re-verify the offering driver before claiming (below).
+            cargoType: true,
+            requiredVehicleType: true,
+            requiredSeats: true,
+            cargoSize: true,
           },
         },
       },
@@ -72,42 +83,136 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: 'offerNotPending' }, { status: 409 });
     }
 
-    // Atomic claim: flip the order to accepted + stamp the agreed price.
-    // The status/driverId precondition makes this safe against a race with
-    // the flat /accept route or a second offer acceptance.
-    const claim = await db.order.updateMany({
-      where: {
-        id: offer.orderId,
-        customerId: session.id,
-        status: 'searching',
-        driverId: null,
-      },
-      data: {
-        driverId: offer.driverId,
-        status: 'accepted',
-        acceptedAt: new Date(),
-        finalPrice: offer.price,
+    // NEGOTIATION ENGINE (Phase 4): re-verify the offering driver's vehicle
+    // against the order before claiming. Offers created BEFORE the gate
+    // existed could be vehicle-incompatible; accepting one would hand a
+    // large shipment to a motorbike. Rejecting here (409) keeps the order
+    // `searching` so the customer can pick another offer instead.
+    const offeringDriver = await db.driver.findUnique({
+      where: { userId: offer.driverId },
+      select: {
+        isVerified: true,
+        applicationStatus: true,
+        // PHASE 5: the service-type half of the bid policy is re-checked at
+        // award time too - the offer row is never the only proof of
+        // eligibility.
+        serviceType: true,
+        vehicleRegistration: { select: { vehicleCategory: true, seats: true } },
       },
     });
-    if (claim.count === 0) {
-      return NextResponse.json({ error: 'notAvailable' }, { status: 409 });
+    if (!offeringDriver || !offeringDriver.isVerified || offeringDriver.applicationStatus !== 'active') {
+      return NextResponse.json({ error: 'driverNotEligible' }, { status: 409 });
+    }
+    // SERVICE-TYPE GATE (Phase 5): `serviceCategoryFor` is the same helper the
+    // dispatch fan-out and `canDriverOfferOnOrder` use, so "who may serve this
+    // order" has exactly one answer across the feed, the bid and the award. A
+    // driver who was switched to TAXI-only (or dropped to `pending`) between
+    // bidding and award is no longer eligible, whatever their old offer says.
+    const requiredService = serviceCategoryFor(offer.order.cargoType);
+    if (offeringDriver.serviceType !== 'BOTH' && offeringDriver.serviceType !== requiredService) {
+      return NextResponse.json({ error: 'serviceTypeMismatch' }, { status: 409 });
+    }
+    if (
+      !isVehicleCompatible(
+        {
+          cargoType: offer.order.cargoType,
+          requiredVehicleType: offer.order.requiredVehicleType,
+          requiredSeats: offer.order.requiredSeats,
+          cargoSize: offer.order.cargoSize,
+        },
+        offeringDriver.vehicleRegistration,
+      )
+    ) {
+      return NextResponse.json({ error: 'vehicleNotCompatible' }, { status: 409 });
     }
 
-    // Settle the offer rows: the winner is `accepted`, every other pending
-    // offer on this order is `rejected` so the losing drivers get a clear
-    // final state instead of a hung "pending".
-    await db.orderOffer.update({
-      where: { id: offer.id },
-      data: { status: 'accepted' },
+    // PHASE 5 - ATOMIC AWARD.
+    //
+    // Phase 3/4 made the claim itself atomic, but the settlement around it was
+    // not: the claim, the winner update, the loser sweep and the journal were
+    // four independent writes. A failure in the middle (timeout, cold-start
+    // kill, DB blip) could commit the order as `accepted` while every
+    // competing offer stayed `pending` forever - drivers holding a live-looking
+    // bid on an order that was already gone, and a timeline that never ends.
+    // All of it now shares ONE transaction: either the whole award lands or
+    // nothing does.
+    //
+    // The preconditions are what make the race safe. `updateMany` still
+    // matches only an order that is `searching`, unassigned and owned by the
+    // caller, so a second acceptance - of this offer, of a competing one, or
+    // from the flat /accept route - matches zero rows and the transaction
+    // aborts before it can touch an offer row.
+    const awarded = await db.$transaction(async (tx) => {
+      const claim = await tx.order.updateMany({
+        where: {
+          id: offer.orderId,
+          customerId: session.id,
+          status: 'searching',
+          driverId: null,
+        },
+        data: {
+          driverId: offer.driverId,
+          status: 'accepted',
+          acceptedAt: new Date(),
+          finalPrice: offer.price,
+        },
+      });
+      if (claim.count === 0) return null;
+
+      // Settle the offer rows: the winner is `accepted`, every other pending
+      // offer on this order is `rejected` so the losing drivers get a clear
+      // final state instead of a hung "pending".
+      const losers = await tx.orderOffer.findMany({
+        where: {
+          orderId: offer.orderId,
+          status: 'pending',
+          id: { not: offer.id },
+        },
+        select: { id: true, driverId: true, price: true },
+      });
+      const winner = await tx.orderOffer.updateMany({
+        where: { id: offer.id, status: 'pending' },
+        data: { status: 'accepted' },
+      });
+      if (winner.count === 0) {
+        // Belt and braces: the order row was claimed but this offer is no
+        // longer `pending` (a concurrent writer settled it). Bail out - the
+        // rollback undoes the claim too, so the order never ends up assigned
+        // on the strength of a stale bid.
+        return null;
+      }
+      await tx.orderOffer.updateMany({
+        where: {
+          orderId: offer.orderId,
+          status: 'pending',
+          id: { not: offer.id },
+        },
+        data: { status: 'rejected' },
+      });
+
+      // NEGOTIATION ENGINE (Phase 4): journal the settlement (accepted +
+      // every auto-rejected alternative) so the timeline ends visibly.
+      // PHASE 5: written INSIDE the transaction, so the journal is exactly as
+      // durable as the award it describes - the two can no longer disagree.
+      await tx.offerEvent.createMany({
+        data: [
+          { orderId: offer.orderId, offerId: offer.id, actorId: session.id, type: 'accepted', price: offer.price },
+          ...losers.map((l) => ({
+            orderId: offer.orderId,
+            offerId: l.id,
+            actorId: session.id,
+            type: 'rejected',
+            price: l.price,
+          })),
+        ],
+      });
+      // PHASE 6: the rejected bids are handed back so the caller can tell each
+      // losing driver, AFTER the commit, on their own channel.
+      return losers;
     });
-    await db.orderOffer.updateMany({
-      where: {
-        orderId: offer.orderId,
-        status: 'pending',
-        id: { not: offer.id },
-      },
-      data: { status: 'rejected' },
-    });
+    if (!awarded) {
+      return NextResponse.json({ error: 'notAvailable' }, { status: 409 });
+    }
 
     const updated = await db.order.findUnique({
       where: { id: offer.orderId },
@@ -161,7 +266,39 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     // Realtime: the driver's list and the customer's tracking screen both
     // subscribe to order status, so this flips both UIs in one event.
     emitOrderStatus(updated);
-    return NextResponse.json({ order: updated, offer });
+    // PHASE 6 - the negotiation half of the award, emitted only AFTER the
+    // transaction above committed:
+    //   * the WINNER learns on their own channel (and the order channel, so the
+    //     customer's other tabs flip the card too);
+    //   * every LOSER gets one `rejected` on their own channel, so a dead bid
+    //     stops looking actionable without waiting for their next poll.
+    // Neither destination is a fan-out list: no driver ever sees another
+    // driver's negotiation.
+    emitOfferUpdateToDriver(
+      {
+        kind: 'accepted',
+        offerId: offer.id,
+        orderId: updated.id,
+        orderCode: updated.code,
+        driverId: offer.driverId,
+        driverName: offer.driver?.name ?? null,
+        price: offer.price,
+        status: 'accepted',
+        counterPrice: null,
+      },
+      { alsoOrder: true },
+    );
+    emitOfferSettledToLosers(awarded, { id: updated.id, code: updated.code });
+    // Re-read the winner so the response carries the SETTLED row (`accepted`)
+    // instead of the `pending` snapshot taken before the award. The customer's
+    // offer list renders straight from this payload, so a stale status would
+    // leave Accept/Decline buttons on a negotiation that is already over.
+    const settledOffer =
+      (await db.orderOffer.findUnique({
+        where: { id: offer.id },
+        select: { ...orderOfferSelect, driver: { select: publicUserSelect } },
+      })) ?? offer;
+    return NextResponse.json({ order: updated, offer: settledOffer });
   } catch (e) {
     return NextResponse.json(
       { error: 'serverError', detail: String(e) },

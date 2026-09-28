@@ -142,7 +142,11 @@ export function CustomerHistory() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className="text-sm font-black text-primary">{formatDzd(o.price)}</span>
+                  {/* PHASE 5: a negotiated order must show the AGREED price
+                      everywhere, not only on the tracking screen - the
+                      history list was the last place still quoting the
+                      original estimate. */}
+                  <span className="text-sm font-black text-primary">{formatDzd(o.finalPrice ?? o.price)}</span>
                   <span className="text-[10px] text-muted-foreground">{t.dzd}</span>
                   <div className="flex items-center gap-1">
                     {isDeletable(o) && (

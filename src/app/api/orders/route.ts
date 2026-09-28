@@ -8,7 +8,8 @@ import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
 import { emitOrderNewRequest } from '@/lib/pusher-server';
 import type { CargoKey, OrderStatus } from '@/lib/types';
-import { VEHICLE_CATEGORIES, isVehicleCategory } from '@/lib/types';
+import { VEHICLE_CATEGORIES, isVehicleCategory, CARGO_SIZE_WEIGHT } from '@/lib/types';
+import { isAllowedCargoImageUrl } from '@/lib/offer-policy';
 
 /**
  * C7 — retry a Prisma write that can fail with `P2002` (unique-constraint
@@ -45,6 +46,8 @@ const VALID_CARGO: CargoKey[] = [
   'appliance',
   'construction',
   'personal',
+  // CARGO DEDICATED FLOW (Phase 4): restaurant / food delivery.
+  'food',
   'other',
   // `taxi` is the passenger-transport service (Yassir-style). It is
   // routed through the same Order table — the `cargoType` column is
@@ -130,10 +133,31 @@ const createOrderSchema = z.object({
     .optional()
     .nullable()
     .transform((v) => (v ? v : null)),
+  // SEAT-CAPACITY MATCHING (Phase 1): passengers the customer travels with
+  // (TAXI mode). Same 1..30 window as the carte-grise seats column, so the
+  // two sides can never disagree. Null / omitted = no seat requirement.
+  requiredSeats: z
+    .number({ message: 'invalidSeats' })
+    .int('invalidSeats')
+    .min(1, 'invalidSeats')
+    .max(30, 'invalidSeats')
+    .optional()
+    .nullable(),
   // PRICE NEGOTIATION (Phase 3): the customer opts into driver
   // counter-offers. Anything but an explicit boolean true is coerced to
   // false so a legacy / malicious payload can't smuggle a truthy value.
+  // CARGO DEDICATED FLOW (Phase 4) layers a policy on top of this field
+  // (see POST below): cargo orders are ALWAYS negotiable, so an explicit
+  // `false` there is ignored; taxi keeps this exact opt-in behaviour.
   isNegotiable: z.boolean().optional(),
+  // CARGO DEDICATED FLOW (Phase 4): bulk of the shipment. Drives the moto
+  // incompatibility rule and the pricing weight when no explicit weight is
+  // sent. Null / omitted = legacy client (no size policy applies).
+  cargoSize: z.enum(['small', 'medium', 'large']).optional().nullable(),
+  // CARGO DEDICATED FLOW (Phase 4): optional photo of the goods. Must be a
+  // Vercel Blob URL produced by /api/uploads/order-image (host allow-list
+  // enforced below) so a client can never plant arbitrary external URLs.
+  cargoImageUrl: z.string().trim().max(600).optional().nullable(),
 });
 
 // GET /api/orders?role=&status=
@@ -249,6 +273,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // CARGO DEDICATED FLOW (Phase 4) — cargo wizard fields.
+    // (a) A "large" shipment and a required motorbike contradict each
+    // other; block the impossible request with a structured 400 instead of
+    // letting the order starve in `searching` with zero eligible drivers.
+    const cargoSize = data.cargoSize ?? null;
+    if (cargoSize === 'large' && data.requiredVehicleType === 'moto') {
+      return NextResponse.json({ error: 'vehicleTooSmallForCargo' }, { status: 400 });
+    }
+    // (b) The goods photo must be one of OUR uploads (Vercel Blob host
+    // allow-list), never an arbitrary URL the client invents.
+    const cargoImageUrl =
+      typeof data.cargoImageUrl === 'string' && data.cargoImageUrl ? data.cargoImageUrl : null;
+    if (cargoImageUrl && !isAllowedCargoImageUrl(cargoImageUrl)) {
+      return NextResponse.json({ error: 'invalidCargoImageUrl' }, { status: 400 });
+    }
+    // (c) Price policy: a cargo job is ALWAYS open to driver counter-offers
+    // — the customer sets the service in motion, the driver names the
+    // price. (The flat /accept path still works, so this only ADDS the
+    // offer option; no caller loses a capability.) Taxi keeps the Phase 3
+    // explicit opt-in semantics.
+    const isNegotiable = cargoType !== 'taxi' ? true : data.isNegotiable === true;
+    // (d) Double-submit guard: the wizard's confirm button, a flaky
+    // connection retry or an impatient double-tap must not create two live
+    // orders. An identical active order (same customer, route and cargo
+    // type) created in the last 10 seconds is reported back instead of
+    // duplicated — the client surfaces "order already in progress".
+    const dupe = await db.order.findFirst({
+      where: {
+        customerId: session.id,
+        status: { in: ['searching', 'scheduled', 'accepted', 'picked'] },
+        cargoType,
+        pickup,
+        dropoff,
+        createdAt: { gte: new Date(Date.now() - 10_000) },
+      },
+      select: { id: true, code: true },
+    });
+    if (dupe) {
+      return NextResponse.json({ error: 'duplicateSubmit', orderId: dupe.id, code: dupe.code }, { status: 409 });
+    }
+
     // SECURITY (V7): the fare is ALWAYS recomputed server-side. We do
     // not read or store any client-supplied price; even if a client
     // sends one, the actual price is derived from the active Pricing
@@ -291,7 +356,10 @@ export async function POST(req: NextRequest) {
             weight:
               typeof data.weight === 'number' && data.weight >= 0
                 ? Math.round(data.weight)
-                : 20,
+                : // CARGO DEDICATED FLOW (Phase 4): the wizard sends a size,
+                  // not a weight — price from the size's reference kg so the
+                  // estimate matches what the driver will be quoted.
+                  (cargoSize ? CARGO_SIZE_WEIGHT[cargoSize] : 20),
             // SECURITY (V7): server-computed; any client-supplied price is
             // ignored. The Prisma Order model has both distance and
             // price columns, so we persist the recomputed values here.
@@ -311,10 +379,17 @@ export async function POST(req: NextRequest) {
             // and the driver request cards can filter on it. Null = the
             // customer did not require a specific vehicle.
             requiredVehicleType: data.requiredVehicleType ?? null,
-            // PRICE NEGOTIATION (Phase 3): the customer explicitly opted
-            // into negotiation. Defaults to false so legacy clients and
-            // the scheduled-booking flow keep the fixed-price behaviour.
-            isNegotiable: data.isNegotiable === true,
+            // SEAT-CAPACITY MATCHING (Phase 1): persisted verbatim (already
+            // validated above) so dispatch + the driver feed can filter on it.
+            requiredSeats: data.requiredSeats ?? null,
+            // CARGO DEDICATED FLOW (Phase 4): bulk of the shipment (drives
+            // isVehicleCompatible rule (4) on the driver feed + accept) and
+            // the optional photo of the goods shown on the request card.
+            cargoSize,
+            cargoImageUrl,
+            // PRICE NEGOTIATION (Phase 3) + CARGO policy (Phase 4): cargo
+            // orders are always negotiable, taxi keeps the explicit opt-in.
+            isNegotiable,
             notes:
               typeof data.notes === 'string' && data.notes.trim()
                 ? data.notes.trim()
@@ -353,6 +428,7 @@ export async function POST(req: NextRequest) {
           // so the fan-out only pings drivers whose vehicle matches. Null
           // (no preference) reproduces the original whole-pool behaviour.
           requiredVehicleType: order.requiredVehicleType ?? null,
+          requiredSeats: order.requiredSeats ?? null,
         });
         // C4 — realtime new-order event. customer-home used to emit
         // `order:created` from the client; with Pusher the client cannot
@@ -364,6 +440,7 @@ export async function POST(req: NextRequest) {
           await findAvailableDrivers(
             order.cargoType,
             order.requiredVehicleType ?? null,
+            order.requiredSeats ?? null,
           ),
         );
       } catch (e) {

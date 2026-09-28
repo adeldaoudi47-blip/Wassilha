@@ -33,7 +33,11 @@ export function CustomerProfile() {
   const stats = {
     total: orders.length,
     delivered: orders.filter((o) => o.status === 'delivered').length,
-    spent: orders.filter((o) => o.status === 'delivered').reduce((s, o) => s + o.price, 0),
+    // PHASE 5: "spent" is money actually paid, so negotiated orders count at
+    // their agreed price - summing the estimate contradicted the receipts.
+    spent: orders
+      .filter((o) => o.status === 'delivered')
+      .reduce((s, o) => s + (o.finalPrice ?? o.price), 0),
   };
 
   const handleLogout = async () => {

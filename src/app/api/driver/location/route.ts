@@ -55,6 +55,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // PHASE 1 - ORDER OWNERSHIP CHECK. orderId decides whose realtime
+    // channel receives this fix, so an unvalidated id would let any driver
+    // broadcast into - and leak their position to - another driver's order.
+    // Only the assigned driver may publish here, and a mismatch is rejected
+    // before anything is written (so the client fails loudly, not silently).
+    if (orderId) {
+      const owned = await db.order.findFirst({
+        where: { id: orderId, driverId: session.id },
+        select: { id: true },
+      });
+      if (!owned) {
+        return NextResponse.json({ error: 'notYourOrder' }, { status: 403 });
+      }
+    }
+
     // Persist the last known position on the Driver row. This is the
     // source-of-truth fallback when the customer opens the tracking page
     // before the first live tick arrives.

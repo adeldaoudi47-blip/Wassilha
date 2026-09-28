@@ -23,10 +23,11 @@ import {
   pusherClient,
   orderChannel,
   driverChannel,
+  userChannel,
   ADMIN_CHANNEL,
   type PusherEventHandler,
 } from './pusher-client';
-import type { Order, Role } from './types';
+import type { Order, RealtimeNotificationEvent, RealtimeOfferEvent, Role } from './types';
 
 // ---------------------------------------------------------------------------
 // Connection lifecycle.
@@ -46,22 +47,37 @@ export function getSocket() {
 // Called by use-realtime.ts on login. Subscribing to the driver's personal
 // channel up-front is what lets order requests reach them without a reload;
 // `subscribe()` is idempotent for an already-joined channel.
+//
+// PHASE 6: EVERY role now joins `private-user-<id>` here, because that is where
+// `notification:new` is delivered. Doing it once at login (instead of per
+// component) keeps the app on a single logical connection with a single auth
+// round-trip (Part 21), and guarantees the bell and the toast layer can never
+// race each other onto the channel.
 export function connectSocket(userId: string, role: Role) {
   currentUserId = userId;
   currentRole = role;
   const c = pusherClient();
+  client = c;
+  c.subscribe(userChannel(userId));
   if (role === 'driver') c.subscribe(driverChannel(userId));
   if (role === 'admin') c.subscribe(ADMIN_CHANNEL);
   return c;
 }
 
 export function disconnectSocket(): void {
-  const existing = client;
+  const existing = client ?? pusherClient();
   if (existing) {
+    // `client` is set by connectSocket, so this now actually tears the socket
+    // down on logout. Before Phase 6 it read a variable nothing ever assigned,
+    // so the previous session's private channels stayed joined and a logged-out
+    // tab could still have been receiving events.
     existing.disconnect();
+    existing.unsubscribe(ADMIN_CHANNEL);
   }
   currentUserId = null;
   currentRole = null;
+  // A fresh connectSocket must re-subscribe, so drop the memoised handle.
+  client = null;
 }
 
 let client: ReturnType<typeof pusherClient> | null = null;
@@ -137,14 +153,10 @@ export function onOrderStatus(orderId: string, cb: (order: Order) => void): () =
   );
 }
 
-// Admin aggregated feed.
-export function onOrderUpdate(cb: (order: Order) => void): () => void {
-  return bindOn(
-    ADMIN_CHANNEL,
-    'order:update',
-    (data) => cb((data as { order: Order }).order),
-  );
-}
+// PHASE 6: the old `onOrderUpdate` (which bound the RETIRED `order:update`
+// event) is gone. That event had zero emitters, so the listener could never
+// fire; the admin console now subscribes to the real `order:status` fan-out
+// through `onAdminOrderStatus` below.
 
 // Live driver GPS fix on the order channel (customer tracking screen).
 export function onDriverLocation(
@@ -166,6 +178,148 @@ export function onAdminDriverLocation(
   return bindOn(ADMIN_CHANNEL, 'driver:location', (data) =>
     cb(data as { orderId: string; lat: number; lng: number; driverId: string }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 6 - negotiation + notification subscriptions.
+//
+// All three bind through `bindOnShared`, which unbinds the handler but LEAVES the
+// channel joined. `bindOn` unsubscribes the channel on cleanup, which is correct
+// for a one-consumer per-order channel but wrong for `private-user-<id>`: the
+// bell and the toast listener both sit on it, so tearing it down when the first
+// of them unmounts would silently kill the other's live feed. Keeping the single
+// connection (Part 21) also means one auth round-trip for the whole session.
+// ---------------------------------------------------------------------------
+
+function bindOnShared(
+  channelName: string,
+  event: string,
+  cb: (data: unknown) => void,
+): () => void {
+  const channel = pusherClient().subscribe(channelName);
+  const handler: PusherEventHandler = (data: unknown) => cb(data);
+  channel.bind(event, handler);
+  return () => {
+    // Unbind only - the channel stays joined for the other consumers.
+    channel.unbind(event, handler);
+  };
+}
+
+/**
+ * A new bid landed on `orderId` (or an existing one changed state while this
+ * order channel is the audience). Customer-facing: the customer owns the order
+ * channel, so this can only ever deliver that order's own negotiation.
+ */
+export function onOfferEvent(
+  orderId: string,
+  cb: (event: RealtimeOfferEvent) => void,
+): () => void {
+  return bindOnShared(orderChannel(orderId), 'offer:new', (data) =>
+    cb(data as RealtimeOfferEvent),
+  );
+}
+
+/**
+ * The result of MY offer - countered, accepted or rejected. Driver-facing: the
+ * driver owns `private-driver-<id>`, so this only ever carries bids this driver
+ * placed, and the server never puts another driver's negotiation on the channel.
+ */
+export function onMyOfferUpdate(
+  driverId: string,
+  cb: (event: RealtimeOfferEvent) => void,
+): () => void {
+  return bindOnShared(driverChannel(driverId), 'offer:update', (data) =>
+    cb(data as RealtimeOfferEvent),
+  );
+}
+
+/**
+ * A notification row was committed for this user. Used by the bell (live badge
+ * + list) and the toast layer, both of which read the SAME `private-user-<id>`
+ * channel.
+ */
+export function onNotificationNew(
+  userId: string,
+  cb: (event: RealtimeNotificationEvent) => void,
+): () => void {
+  return bindOnShared(userChannel(userId), 'notification:new', (data) =>
+    cb(data as RealtimeNotificationEvent),
+  );
+}
+
+/**
+ * PHASE 6: the same `order:status` event, on the admin channel. The server
+ * fans `order:status` out to `private-admin` alongside the order channel, so
+ * the admin console sees every transition without subscribing to N order
+ * channels. `private-admin` is admin-only (see /api/pusher/auth), so nothing
+ * here widens access beyond what the admin APIs already permit (Part 2).
+ */
+export function onAdminOrderStatus(
+  cb: (order: Order) => void,
+): () => void {
+  // `bindOnShared`, not `bindOn`: the fleet map also binds to `private-admin`,
+  // so unsubscribing the channel when THIS screen unmounts would silently kill
+  // the other one's live feed.
+  return bindOnShared(ADMIN_CHANNEL, 'order:status', (data) => cb(data as Order));
+}
+
+// ---------------------------------------------------------------------------
+// Connection state (Part 18 - connecting / connected / reconnecting / offline).
+//
+// pusher-js owns reconnection and retries; we only SURFACE what it is doing so
+// the UI can show an honest chip and so `useRealtime` can refetch authoritative
+// state the moment the socket comes back (Part 14 - events missed while asleep
+// are not replayed).
+//
+// Listeners are fanned out from one `state_change` binding: the status chip and
+// the refetch hook both care, and a second `connection.bind` would be a second
+// listener for the same signal on the same connection (Part 21).
+// ---------------------------------------------------------------------------
+
+export type RealtimeStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'offline'
+  | 'unavailable';
+
+const stateListeners = new Set<(status: RealtimeStatus) => void>();
+let stateBound = false;
+
+function toStatus(state: string): RealtimeStatus {
+  if (state === 'connected') return 'connected';
+  if (state === 'connecting' || state === 'initialized') return 'connecting';
+  if (state === 'unavailable') return 'unavailable';
+  if (state === 'failed' || state === 'disconnected') return 'offline';
+  return 'reconnecting';
+}
+
+function emitState(state: string): void {
+  const status = toStatus(state);
+  for (const listener of stateListeners) listener(status);
+}
+
+function ensureStateBound(): void {
+  if (stateBound) return;
+  const connection = pusherClient().connection;
+  connection.bind('state_change', (states: { current: string }) => {
+    emitState(states.current);
+  });
+  stateBound = true;
+}
+
+/** Current connection state, for a component's first render (no waiting). */
+export function getRealtimeStatus(): RealtimeStatus {
+  return toStatus(pusherClient().connection.state);
+}
+
+/** Subscribe to connection-state changes. Returns an unsubscribe function. */
+export function onRealtimeStateChange(cb: (status: RealtimeStatus) => void): () => void {
+  ensureStateBound();
+  stateListeners.add(cb);
+  return () => {
+    stateListeners.delete(cb);
+  };
 }
 
 // ---------------------------------------------------------------------------

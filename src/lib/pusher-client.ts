@@ -44,6 +44,17 @@ export function driverChannel(userId: string): string {
   return `private-driver-${userId}`;
 }
 
+// Personal channel for a user of ANY role. It carries `notification:new`, so the
+// bell updates live for customers, drivers and admins alike.
+//
+// Security: /api/pusher/auth only ever signs `private-user-<the session's own
+// id>` (see that route's `userChannel` branch), so a client cannot reach
+// another user's notifications by guessing an id — the same private-channel
+// signature that already protects the driver channel.
+export function userChannel(userId: string): string {
+  return `private-user-${userId}`;
+}
+
 export const ADMIN_CHANNEL = 'private-admin';
 
 // Pusher's own type for the callbacks registered on a channel — avoids

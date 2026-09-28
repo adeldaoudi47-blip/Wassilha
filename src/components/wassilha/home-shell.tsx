@@ -24,6 +24,8 @@ import { HirfaHome } from '@/components/wassilha/craft/hirfa-home';
 import { CustomerTrack } from '@/components/wassilha/customer/customer-track';
 import { CustomerHistory } from '@/components/wassilha/customer/customer-history';
 import { CustomerProfile } from '@/components/wassilha/customer/customer-profile';
+import { CustomerWallet } from '@/components/wassilha/customer/customer-wallet';
+
 import { DriverRequests } from '@/components/wassilha/driver/driver-requests';
 import { DriverOffers } from '@/components/wassilha/driver/driver-offers';
 import { CustomerOffers } from '@/components/wassilha/customer/customer-offers';
@@ -100,6 +102,8 @@ export function HomeShell() {
       // TRIP OFFERS: dedicated tab for browsing driver-published offers.
       else if (customerTab === 'offers') { title = t.tripOffers; content = <CustomerOffers />; }
       else if (customerTab === 'cart') { title = t.cart; content = <CraftCart />; }
+      else if (customerTab === 'wallet') { title = t.myWallet; content = <CustomerWallet />; }
+
     } else if (effectiveRole === 'driver') {
       if (driverTab === 'requests') { title = t.incomingRequests; subtitle = t.location; content = <DriverRequests />; }
       else if (driverTab === 'trips') { title = t.myTrips; content = <DriverTrips />; }

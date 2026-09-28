@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Check, X, Scale, Loader2, BadgeCheck, ArrowLeftRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, X, Scale, Loader2, BadgeCheck, ArrowLeftRight, ChevronDown, ChevronUp, History } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -19,8 +19,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { formatDzd } from '@/lib/wassilha-data';
+import { cn } from '@/lib/utils';
 import type { Order, OrderOffer } from '@/lib/types';
-import { ORDER_OFFER_STATUS_LABELS } from '@/lib/types';
+import { ORDER_OFFER_STATUS_LABELS, OFFER_EVENT_LABEL_KEYS } from '@/lib/types';
+import { onOfferEvent } from '@/lib/realtime';
+import {
+  shouldApplyOfferEvent,
+  offerFromRealtimeEvent,
+  shouldNotifyOnce,
+} from '@/lib/realtime-merge';
+
+/**
+ * NEGOTIATION ENGINE (Phase 4): `t` is typed as the full dictionary, so a
+ * journal row label (whose key comes from `OFFER_EVENT_LABEL_KEYS` at
+ * runtime) needs a widened lookup. Falling back to the raw key keeps a
+ * future event type visible instead of crashing the card.
+ */
+const labelFor = (t: object, key: string): string =>
+  (t as Record<string, string>)[key] ?? key;
 
 // PRICE NEGOTIATION (Phase 3) — the customer's list of drivers' price offers
 // for one order. Shown inside the tracking screen while the order is still
@@ -52,6 +68,11 @@ export function CustomerNegotiation({
   const [counterFor, setCounterFor] = useState<OrderOffer | null>(null);
   const [counterPrice, setCounterPrice] = useState('');
 
+  // NEGOTIATION ENGINE (Phase 4): which offer cards have their price journal
+  // expanded. The journal ships with the offer list (`offer.events`), so
+  // expanding is instant and costs no request.
+  const [openJournal, setOpenJournal] = useState<Record<string, boolean>>({});
+
   // Offers can only arrive while the order is live. Once accepted the
   // settled list stays visible (read-only) but we stop polling.
   const live = order.status === 'searching';
@@ -70,14 +91,50 @@ export function CustomerNegotiation({
     };
     load();
     if (!live) return () => { cancelled = true; };
-    // 6s cadence: fast enough to catch a driver's offer while the customer
-    // is watching, slow enough not to hammer the API on a long search.
-    const id = setInterval(load, 6000);
+    // PHASE 6: 6s -> 30s. `offer:new` / `offer:update` now deliver this list
+    // live, so the poll is only the degraded path (Pusher unreachable, tab
+    // asleep, connection capped). Running both at 6s was the duplication Part 21
+    // warns about; 30s keeps recovery bounded without competing with realtime.
+    const id = setInterval(load, 30000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, [order.id, live]);
+
+  // PHASE 6 (Part 4 - negotiation realtime): a driver bid, countered an existing
+  // offer, or an offer the customer made was declined — all arrive on this
+  // order's channel, which only this order's customer, its assigned driver and
+  // an admin can sign. The customer's own counter is mirrored back here
+  // (`alsoOrder` in pusher-server) so her second tab converges too.
+  //
+  // Realtime is a HINT here: a new bid is merged optimistically so the card
+  // appears instantly, then the (relaxed) poll refetches the full rows with
+  // their journals. `shouldApplyOfferEvent` drops a delivery older than what we
+  // already applied for that offer (Part 13).
+  const latestOfferAt = useRef<Map<string, string>>(new Map());
+  const notifiedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!live) return;
+    const off = onOfferEvent(order.id, (event) => {
+      if (!shouldApplyOfferEvent(latestOfferAt.current, event)) return;
+      setOffers((prev) => {
+        const index = prev.findIndex((o) => o.id === event.offerId);
+        if (index === -1) return [offerFromRealtimeEvent(event), ...prev];
+        const next = [...prev];
+        next[index] = offerFromRealtimeEvent(event, prev[index]);
+        return next;
+      });
+      // Part 10: only a genuinely NEW bid is worth interrupting the customer
+      // for. A counter arriving on an offer she is already looking at, or a
+      // re-delivery of either, must not ring.
+      if (event.kind !== 'new') return;
+      if (!shouldNotifyOnce(notifiedRef.current, `offer:${event.offerId}:new`)) return;
+      toast.info(t.newOffer);
+    });
+    return off;
+  }, [order.id, live, t.newOffer]);
 
   const handleAccept = async (offer: OrderOffer) => {
     setActing(offer.id);
@@ -95,6 +152,12 @@ export function CustomerNegotiation({
         ),
       );
       toast.success(t.offerAcceptedToast);
+      // NEGOTIATION ENGINE (Phase 4): refresh so the journal shows the
+      // settlement rows (accepted + auto-rejected alternatives) if the list
+      // stays on screen. Best-effort — the claim itself already committed.
+      try {
+        setOffers(await api.listOrderOffers(order.id));
+      } catch { /* ignore — best-effort refresh */ }
       onAccepted?.(updated);
     } catch (err) {
       // `notAvailable` (someone else claimed it) / `offerNotPending` are the
@@ -141,6 +204,12 @@ export function CustomerNegotiation({
       setOffers((prev) =>
         prev.map((o) => (o.id === settled.id ? { ...o, ...settled } : o)),
       );
+      // NEGOTIATION ENGINE (Phase 4): the counter route returns the offer
+      // row without its journal, so refetch to pull the appended event. The
+      // optimistic merge above already covers the visible state.
+      try {
+        setOffers(await api.listOrderOffers(order.id));
+      } catch { /* ignore — best-effort refresh */ }
       toast.success(t.counterSent);
       setCounterFor(null);
       setCounterPrice('');
@@ -283,6 +352,82 @@ export function CustomerNegotiation({
                     >
                       {formatDzd(offer.counterPrice ?? 0)} {t.dzd}
                     </span>
+                  </div>
+                )}
+
+                {/* NEGOTIATION ENGINE (Phase 4): the price journal. Every
+                     driver offer and customer counter of this negotiation,
+                     oldest first, so the card shows the whole conversation
+                     instead of only the last position. Collapsed by default
+                     to keep the list scannable; the journal already arrived
+                     with the list, so expanding costs nothing. */}
+                {offer.events && offer.events.length > 0 && (
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenJournal((prev) => ({ ...prev, [offer.id]: !prev[offer.id] }))
+                      }
+                      aria-expanded={!!openJournal[offer.id]}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {openJournal[offer.id] ? (
+                        <ChevronUp size={12} />
+                      ) : (
+                        <ChevronDown size={12} />
+                      )}
+                      <History size={11} />
+                      {t.offerTimelineTitle}
+                      <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-bold">
+                        {offer.events.length}
+                      </span>
+                    </button>
+                    {openJournal[offer.id] && (
+                      <ol className="space-y-1 rounded-lg bg-background/70 p-2">
+                        {offer.events.map((ev) => {
+                          const settled = ev.type === 'accepted' || ev.type === 'rejected';
+                          return (
+                            <li
+                              key={ev.id}
+                              className="flex items-center justify-between gap-2 text-[11px]"
+                            >
+                              <span
+                                className={
+                                  ev.type === 'accepted'
+                                    ? 'font-bold text-emerald-600'
+                                    : ev.type === 'rejected'
+                                      ? 'text-muted-foreground line-through'
+                                      : ev.type === 'customer_counter'
+                                        ? 'font-medium text-amber-700 dark:text-amber-300'
+                                        : 'text-foreground'
+                                }
+                              >
+                                {labelFor(t, OFFER_EVENT_LABEL_KEYS[ev.type] ?? ev.type)}
+                              </span>
+                              <span className="flex items-center gap-2">
+                                {ev.price != null && (
+                                  <span
+                                    className={cn(
+                                      'font-bold',
+                                      settled ? 'text-muted-foreground' : 'text-foreground',
+                                    )}
+                                    dir="ltr"
+                                  >
+                                    {formatDzd(ev.price)} {t.dzd}
+                                  </span>
+                                )}
+                                <span className="text-[9px] text-muted-foreground" dir="ltr">
+                                  {new Date(ev.createdAt).toLocaleTimeString(
+                                    isAr ? 'ar-DZ' : 'fr-FR',
+                                    { hour: '2-digit', minute: '2-digit' },
+                                  )}
+                                </span>
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
                   </div>
                 )}
               </div>

@@ -264,8 +264,15 @@ export function ActiveTrip({
             <p className="mt-0.5 text-sm font-bold text-foreground">{active.weight} {t.kg}</p>
           </div>
           <div className="rounded-lg bg-primary/10 p-2 text-center">
-            <p className="text-sm font-black text-primary">{formatDzd(active.price)}</p>
-            <p className="text-[9px] text-muted-foreground">{t.dzd}</p>
+            {/* NEGOTIATION ENGINE (Phase 4): show the amount actually agreed
+                when the job was booked through an accepted offer — the
+                estimate the driver saw in the feed is not what they get paid. */}
+            <p className="text-sm font-black text-primary">
+              {formatDzd(active.finalPrice ?? active.price)}
+            </p>
+            <p className="text-[9px] text-muted-foreground">
+              {active.finalPrice ? t.finalAgreedPrice : t.dzd}
+            </p>
           </div>
         </div>
 

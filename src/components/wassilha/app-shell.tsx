@@ -16,17 +16,14 @@ interface NavItem {
 
 const CUSTOMER_NAV: NavItem[] = [
   { key: 'home', label: 'home', icon: Home },
-  // HIRFA marketplace (craft) - dedicated customer tab (P3).
-  { key: 'hirfa', label: 'hirfa', icon: Hammer },
-  // HIRFA (P6): craft cart tab.
-  { key: 'cart', label: 'cart', icon: ShoppingBag },
-  // TRIP OFFERS: customer browses available offers. Sits between
-  // `home` and `history` so it's discoverable without being
-  // aggressive on the home screen.
-  { key: 'offers', label: 'tripOffers', icon: CalendarClock },
   { key: 'history', label: 'history', icon: ClipboardList },
+  // HIRFA marketplace (craft) - dedicated customer tab (P3).
+  { key: 'hirfa', label: 'hirfa', icon: Store },
+  // WALLET (Phase 2): dedicated customer wallet & payment hub tab.
+  { key: 'wallet', label: 'myWallet', icon: Wallet },
   { key: 'profile', label: 'profile', icon: User },
 ];
+
 const DRIVER_NAV: NavItem[] = [
   { key: 'requests', label: 'incomingRequests', icon: Bike },
   { key: 'trips', label: 'myTrips', icon: Package },

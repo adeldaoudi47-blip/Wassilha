@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   Package, MapPin, Flag, Navigation, Bike, CheckCircle2, Phone,
@@ -11,7 +11,8 @@ import { useT } from "../use-t";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store";
-import { emitOrderStatus } from "@/lib/realtime";
+import { emitOrderStatus, onOrderStatus, subscribeToOrder, unsubscribeFromOrder } from "@/lib/realtime";
+import { applyOrderEvent, shouldNotifyOnce } from "@/lib/realtime-merge";
 import { ActiveTrip } from "./active-trip";
 import { CargoIcon, StatusBadge } from "../cargo-icon";
 import { Card } from "@/components/ui/card";
@@ -50,12 +51,43 @@ export function DriverTrips() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 5000);
+    // PHASE 6: 5s -> 20s. The active trip now listens to `order:status` on its
+    // own order channel, so this interval is the degraded path only (Part 16).
+    const id = setInterval(load, 20000);
     return () => clearInterval(id);
   }, [load]);
 
+
   const active = orders.find((o) => o.status === "accepted" || o.status === "picked");
   const past = orders.filter((o) => o.status === "delivered" || o.status === "cancelled");
+
+  // PHASE 6 (Part 6 - driver realtime): the assigned driver is an authorised
+  // member of this order's channel, so a customer-side change — above all
+  // CANCELLATION, which must reach the driver the moment it is committed —
+  // lands here without a refresh. Merged through `applyOrderEvent` so a
+  // duplicate or a late event can never move the trip backwards.
+  const notifiedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!active) return;
+    const orderId = active.id;
+    subscribeToOrder(orderId);
+    const off = onOrderStatus(orderId, (updated) => {
+      if (updated.id !== orderId) return;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === updated.id ? (applyOrderEvent(o, updated) ?? o) : o)),
+      );
+      if (
+        updated.status === "cancelled" &&
+        shouldNotifyOnce(notifiedRef.current, `order:${orderId}:cancelled`)
+      ) {
+        toast.error(t.orderCancelled);
+      }
+    });
+    return () => {
+      off();
+      unsubscribeFromOrder(orderId);
+    };
+  }, [active?.id, t.orderCancelled]);
 
   const statusLabel = (s: OrderStatus) =>
     (t as unknown as Record<string, string>)[
@@ -158,7 +190,7 @@ export function DriverTrips() {
                     )}
                   </div>
                   <div className="text-end">
-                    <p className="text-sm font-black text-primary">{formatDzd(o.price)}</p>
+                    <p className="text-sm font-black text-primary">{formatDzd(o.finalPrice ?? o.price)}</p>
                     <p className="text-[10px] text-muted-foreground">{t.dzd}</p>
                   </div>
                 </div>

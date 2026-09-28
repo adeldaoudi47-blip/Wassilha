@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------
 // C3 — Driver fan-out for a live order.
 //
 // This used to be an inline block inside POST /api/orders; it was extracted
@@ -30,6 +30,9 @@ export interface DispatchableOrder {
   // matches this category are notified. `null` / undefined = no preference,
   // which reproduces the pre-Phase-2 behaviour for every existing caller.
   requiredVehicleType?: string | null;
+  // SEAT-CAPACITY MATCHING (Phase 1): copied off the order so the fan-out
+  // can drop drivers whose registered vehicle has too few seats.
+  requiredSeats?: number | null;
 }
 
 // Order.cargoType is a free String; translate it into the Driver.serviceType
@@ -54,6 +57,9 @@ export function serviceCategoryFor(cargoType: string): 'CARGO' | 'TAXI' {
 export async function findAvailableDrivers(
   cargoType: string,
   requiredVehicleType?: string | null,
+  // SEAT-CAPACITY MATCHING (Phase 1): the minimum number of passenger seats
+  // the order asks for (TAXI mode). Null = no seat requirement.
+  requiredSeats?: number | null,
 ): Promise<string[]> {
   const requestedService = serviceCategoryFor(cargoType);
   const drivers = await db.driver.findMany({
@@ -74,9 +80,20 @@ export async function findAvailableDrivers(
         ? { vehicleRegistration: { vehicleCategory: requiredVehicleType } }
         : {}),
     },
-    select: { userId: true },
+    select: {
+      userId: true,
+      vehicleRegistration: { select: { vehicleCategory: true, seats: true } },
+    },
   });
-  return drivers.map((d) => d.userId);
+  const eligible = drivers.filter((d) =>
+    isVehicleCompatible(
+      { cargoType, requiredVehicleType, requiredSeats },
+      d.vehicleRegistration,
+    ),
+  );
+  // eslint-disable-next-line no-console
+  console.log('[DISPATCH] Filtered drivers:', eligible.length, 'from:', drivers.length);
+  return eligible.map((d) => d.userId);
 }
 
 // Fan out a now-live order to every eligible driver: one FCM batch (push)
@@ -87,6 +104,7 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
   const driverUserIds = await findAvailableDrivers(
     order.cargoType,
     order.requiredVehicleType ?? null,
+    order.requiredSeats ?? null,
   );
   if (driverUserIds.length === 0) return { notified: 0 };
 
@@ -120,6 +138,11 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
         type: 'order',
         title,
         body,
+        // PHASE 6: no per-driver `notification:new` trigger here. This loop can
+        // run once per online driver, and these same drivers already receive the
+        // single `order:new-request` fan-out plus one batched push; N extra
+        // Pusher calls would only slow the customer's order creation down.
+        realtime: false,
         data: {
           orderId: order.id,
           code: order.code,
@@ -142,4 +165,90 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
   }
 
   return { notified: driverUserIds.length };
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 1 - VEHICLE COMPATIBILITY (single source of truth).
+//
+// `isVehicleCompatible` below is THE decision function: the driver fan-out
+// (findAvailableDrivers), the driver's incoming feed and
+// POST /api/orders/:id/accept all route through it, so a driver can never
+// receive - or claim - an order their registered vehicle cannot serve.
+// ---------------------------------------------------------------------------
+
+// CARGO-CAPACITY POLICY (deliberately conservative): only a motorbike is
+// excluded, and only for the three cargo types that cannot physically travel
+// on two wheels. A driver with NO category on file (legacy rows) is never
+// penalised, and every other category stays eligible, so no order loses
+// candidates in a small fleet. Widen only with real fleet data.
+export const OVERSIZED_CARGO_TYPES = ['furniture', 'appliance', 'construction'] as const;
+export const UNDER_CAPACITY_VEHICLE_CATEGORIES = ['moto'] as const;
+
+/** Vehicle-side constraints carried by an order. */
+export interface OrderVehicleConstraint {
+  requiredVehicleType?: string | null;
+  requiredSeats?: number | null;
+  cargoType?: string | null;
+  // CARGO DEDICATED FLOW (Phase 4): 'small' | 'medium' | 'large'. Null /
+  // absent on every pre-Phase-4 order and on taxi bookings, so the new
+  // size rule below never touches legacy rows.
+  cargoSize?: string | null;
+}
+
+/** Vehicle facts read off `VehicleRegistration`. */
+export interface DriverVehicleFacts {
+  vehicleCategory?: string | null;
+  seats?: number | null;
+}
+/**
+ * Does this driver's registered vehicle satisfy the order's requirements?
+ * Null / undefined on either side means "not specified" and never blocks a
+ * match - that is what keeps every pre-Phase-1 order working unchanged.
+ *
+ * Rules, in order:
+ *   1. a categorical request matches only that exact category;
+ *   2. a seat request needs `seats >= requiredSeats` (a vehicle with no seat
+ *      count on file cannot satisfy it);
+ *   3. the cargo-capacity policy above.
+ */
+export function isVehicleCompatible(
+  order: OrderVehicleConstraint,
+  vehicle: DriverVehicleFacts | null | undefined,
+): boolean {
+  const category = vehicle?.vehicleCategory ?? null;
+  const seats = typeof vehicle?.seats === 'number' ? vehicle.seats : null;
+
+  // (1) Vehicle category ("moto", "truck", "taxi_car_7", ...).
+  if (order.requiredVehicleType && category !== order.requiredVehicleType) {
+    return false;
+  }
+
+  // (2) Seat capacity (TAXI).
+  if (typeof order.requiredSeats === 'number' && order.requiredSeats > 0) {
+    if (seats === null || seats < order.requiredSeats) return false;
+  }
+
+  // (3) Cargo capacity: oversized goods never reach a motorbike.
+  if (
+    order.cargoType &&
+    (OVERSIZED_CARGO_TYPES as readonly string[]).includes(order.cargoType) &&
+    category !== null &&
+    (UNDER_CAPACITY_VEHICLE_CATEGORIES as readonly string[]).includes(category)
+  ) {
+    return false;
+  }
+
+  // (4) CARGO DEDICATED FLOW (Phase 4): a "large" shipment is truck-scale
+  // and never travels on two wheels, whatever the cargoType says. Same
+  // conservative posture as rule (3): a vehicle with no category on file
+  // is never penalised, and only motorbikes are excluded.
+  if (
+    order.cargoSize === 'large' &&
+    category !== null &&
+    (UNDER_CAPACITY_VEHICLE_CATEGORIES as readonly string[]).includes(category)
+  ) {
+    return false;
+  }
+
+  return true;
 }

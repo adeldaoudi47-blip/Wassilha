@@ -17,7 +17,9 @@ interface EarningsData {
   thisWeek: number;
   trips: number;
   rating: number;
-  recent: { id: string; code: string; price: number; cargoType: any; createdAt: string; status: string }[];
+  // NEGOTIATION ENGINE (Phase 4): `finalPrice` is the amount agreed through
+  // an accepted offer; null means the job ran at the listed estimate.
+  recent: { id: string; code: string; price: number; finalPrice?: number | null; cargoType: any; createdAt: string; status: string }[];
   weekly: { day: string; earnings: number }[];
 }
 
@@ -130,7 +132,7 @@ export function DriverEarnings() {
                   </p>
                 </div>
                 <span className={cn('text-sm font-black', o.status === 'delivered' ? 'text-emerald-600' : 'text-amber-600')}>
-                  {o.status === 'delivered' ? '+' : ''}{formatDzd(o.price)}
+                  {o.status === 'delivered' ? '+' : ''}{formatDzd(o.finalPrice ?? o.price)}
                 </span>
               </Card>
             ))}

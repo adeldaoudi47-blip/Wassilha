@@ -1,16 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Bike, Wifi, WifiOff, Package, MapPin, Flag, Scale, Navigation,
-  Check, X, Bell, BellOff, Zap, CalendarClock, Clock, ShoppingBag,
-  Loader2,
+  Check, X, Bell, BellOff, Zap, CalendarClock, Clock, ShoppingBag, Users,
+  Loader2, Image as ImageIcon,
 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useNavStore, useAppStore } from '@/lib/store';
-import { onOrderNewRequest } from '@/lib/realtime';
+import { onOrderNewRequest, onMyOfferUpdate } from '@/lib/realtime';
+import {
+  shouldAcceptIncomingOrder,
+  rememberSettledOrder,
+  offerFromRealtimeEvent,
+} from '@/lib/realtime-merge';
 import { CargoIcon } from '../cargo-icon';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +34,8 @@ import { cn } from '@/lib/utils';
 import { formatDzd } from '@/lib/wassilha-data';
 import type { DriverProfile, Order, OrderOffer } from '@/lib/types';
 import { ORDER_OFFER_STATUS_LABELS } from '@/lib/types';
+// CARGO DEDICATED FLOW (Phase 4): size vocabulary shown on the request card.
+import { CARGO_SIZE_LABELS } from '@/lib/types';
 import { ListSkeleton, Skeleton } from '../skeleton';
 
 export function DriverRequests() {
@@ -59,22 +66,55 @@ export function DriverRequests() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // Poll incoming orders every 5s as a realtime fallback
+  // PHASE 6: safety poll. The feed is now driven by `order:new-request`, so this
+  // no longer has to race realtime for latency - it exists so the screen still
+  // converges when Pusher is unreachable (offline / serverless cold start /
+  // free-tier connection cap). 5s -> 20s: realtime handles the fast path, this
+  // is the degraded path, and running both at 5s was the "polling + realtime
+  // duplication" Part 21 asks us to avoid.
   useEffect(() => {
     const id = setInterval(async () => {
       try {
         const inc = await api.incomingOrders();
         setIncoming(inc);
+        // The poll is authoritative, so anything it no longer returns has left
+        // the claimable window - remember that so a late `order:new-request`
+        // for the same order cannot resurrect a dead card.
+        const live = new Set(inc.map((o) => o.id));
+        for (const seen of seenOrderIds.current) {
+          if (!live.has(seen)) rememberSettledOrder(settledOrderIds.current, seen);
+        }
       } catch { /* ignore */ }
-    }, 5000);
+    }, 20000);
     return () => clearInterval(id);
   }, []);
+
+  // PHASE 6 (Part 6 - late fan-out): `order:new-request` is fire-and-forget, so
+  // it can arrive AFTER another driver claimed the order or the customer
+  // cancelled it. `settledOrderIds` is the memory of orders this feed has seen
+  // leave the claimable window; `seenOrderIds` is every order id ever shown.
+  const settledOrderIds = useRef<Set<string>>(new Set());
+  const seenOrderIds = useRef<Set<string>>(new Set());
+  // Toast de-dup (Part 12): a re-delivered event must not ring twice.
+  const notifiedRef = useRef<Set<string>>(new Set());
 
   // Realtime: listen for new order requests
   useEffect(() => {
     const off = onOrderNewRequest((order) => {
-      setIncoming((prev) => prev.some((o) => o.id === order.id) ? prev : [order, ...prev]);
+      seenOrderIds.current.add(order.id);
+      setIncoming((prev) => {
+        if (prev.some((o) => o.id === order.id)) return prev;
+        // Ignore an order that already left the claim window (claimed/cancelled)
+        // even if this delivery is the first time we see the payload.
+        if (!shouldAcceptIncomingOrder(order, settledOrderIds.current)) {
+          rememberSettledOrder(settledOrderIds.current, order.id);
+          return prev;
+        }
+        return [order, ...prev];
+      });
+      if (notifiedRef.current.has(`new:${order.id}`)) return;
       if (profile?.isOnline) {
+        notifiedRef.current.add(`new:${order.id}`);
         toast.custom((id) => (
           <div className="flex items-center gap-3 rounded-xl bg-card p-3 shadow-xl ring-1 ring-border">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
@@ -90,6 +130,46 @@ export function DriverRequests() {
     });
     return off;
   }, [profile?.isOnline, t.newOrder]);
+
+  // PHASE 6 (Part 4 - negotiation realtime): the outcome of THIS driver's own
+  // bids, delivered on `private-driver-<id>`. Only this driver's own offers can
+  // appear on that channel (Part 11), and the payload carries no other driver's
+  // negotiation. This is what makes "the customer countered" / "the customer
+  // accepted" appear on the card without the driver touching refresh.
+  useEffect(() => {
+    if (!user?.id) return;
+    const off = onMyOfferUpdate(user.id, (event) => {
+      // Merge, never replace: the REST row carries the driver/order joins the
+      // realtime payload omits (see realtime-merge.offerFromRealtimeEvent).
+      setMyOffers((prev) => ({
+        ...prev,
+        [event.orderId]: offerFromRealtimeEvent(event, prev[event.orderId]),
+      }));
+      // Part 12: one toast per offer OUTCOME, not per delivery.
+      const key = `offer:${event.offerId}:${event.status}`;
+      if (notifiedRef.current.has(key)) return;
+      notifiedRef.current.add(key);
+
+      if (event.status === 'countered') {
+        toast.info(t.customerCountered);
+      } else if (event.status === 'accepted') {
+        toast.success(t.offerAcceptedToast);
+      } else if (event.status === 'rejected') {
+        // A losing bid: the order has left the claim window, so remember it
+        // (a late `order:new-request` must not resurrect the card) and drop the
+        // dead "you offered" row rather than leaving it on screen.
+        rememberSettledOrder(settledOrderIds.current, event.orderId);
+        setMyOffers((prev) => {
+          const next = { ...prev };
+          delete next[event.orderId];
+          return next;
+        });
+        toast.error(t.offerRejectedToast);
+      }
+    });
+    return off;
+  }, [user?.id, t.customerCountered, t.offerAcceptedToast, t.offerRejectedToast]);
+
 
   const toggleOnline = async (online: boolean) => {
     try {
@@ -126,8 +206,25 @@ export function DriverRequests() {
       setIncoming((prev) => prev.filter((o) => o.id !== order.id));
       setActiveOrderId(updated.id);
       setDriverTab('trips');
-    } catch {
-      toast.error(isAr ? 'فشل القبول' : 'Échec');
+    } catch (err) {
+      // PHASE 1: /accept now rejects a claim whose vehicle cannot serve the
+      // order (403 vehicleNotCompatible). Surface that exact reason instead
+      // of a generic failure, so the driver knows to refresh the list.
+      const msg = err instanceof Error ? err.message : '';
+      toast.error(
+        msg === 'vehicleNotCompatible'
+          ? t.vehicleNotCompatible
+          : // PHASE 5: the accept path now also enforces the service-type and
+            // account-state gates the offer path always had, so a stale card
+            // tells the driver WHY it was refused instead of failing silently.
+            msg === 'serviceTypeMismatch'
+            ? t.serviceTypeMismatch
+            : msg === 'driverNotEligible'
+              ? t.driverNotEligible
+              : isAr
+            ? 'فشل القبول'
+            : 'Échec',
+      );
     } finally {
       setActing(null);
     }
@@ -175,6 +272,27 @@ export function DriverRequests() {
     } catch (err) {
       // The API's error codes (orderNotNegotiable / orderNotSearchable /
       // invalidPrice) are stable strings the UI can match directly.
+      const msg = err instanceof Error ? err.message : '';
+      toast.error(msg || t.updateFailed);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  // NEGOTIATION ENGINE (Phase 4): accept the customer's counter without
+  // re-opening the sheet. This re-sends the driver's offer AT their amount —
+  // the customer always makes the last move — and goes through the same
+  // POST /offers route, so the policy gate (verified account, still
+  // searchable, vehicle fit, price bounds) applies exactly as for a new
+  // offer. A rejected gate surfaces the API's message instead of a silent
+  // badge change.
+  const handleAcceptCounter = async (order: Order, price: number) => {
+    setActing(order.id);
+    try {
+      const offer = await api.createOrderOffer(order.id, price);
+      setMyOffers((prev) => ({ ...prev, [order.id]: offer }));
+      toast.success(t.offerSent);
+    } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       toast.error(msg || t.updateFailed);
     } finally {
@@ -360,6 +478,74 @@ export function DriverRequests() {
                       </span>
                     </div>
                   )}
+
+                  {/* SEAT-CAPACITY MATCHING (Phase 1): the customer asked for a
+                      specific passenger count. The feed already hides orders this
+                      vehicle cannot seat, so the badge is informational - it
+                      explains why the request appeared at all. */}
+                  {typeof o.requiredSeats === 'number' && o.requiredSeats > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-primary/10 px-2 py-1">
+                      <Users size={12} className="text-primary" />
+                      <span className="text-[11px] font-semibold text-primary">
+                        {t.seatsRequired}: {o.requiredSeats}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* CARGO DEDICATED FLOW (Phase 4): the bulk the customer
+                      declared on the wizard's size step. The feed already
+                      hides this job from a motorbike when the size is
+                      "large" (isVehicleCompatible rule 4), so the warning
+                      only explains why the job skipped that vehicle. */}
+                  {o.cargoSize && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg bg-muted/60 px-2 py-1">
+                      <Package size={12} className="text-muted-foreground" />
+                      <span className="text-[11px] font-semibold text-foreground">
+                        {t.cargoSizeLabel}:{' '}
+                        {(t as unknown as Record<string, string>)[CARGO_SIZE_LABELS[o.cargoSize]] ??
+                          o.cargoSize}
+                      </span>
+                      {o.cargoSize === 'large' && (
+                        <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">
+                          {t.cargoLargeNotForMoto}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CARGO DEDICATED FLOW (Phase 4): the optional photo of the
+                      goods. Tapping opens the Vercel Blob URL in a new tab so
+                      the driver can inspect the load before pricing it; the
+                      URL is host-allow-listed server-side, never user input. */}
+                  {o.cargoImageUrl && (
+                    <div className="mt-2 space-y-1">
+                      <p className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+                        <ImageIcon size={11} /> {t.cargoPhotoHelp}
+                      </p>
+                      <a
+                        href={o.cargoImageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block overflow-hidden rounded-lg border border-border/60"
+                      >
+                        <img
+                          src={o.cargoImageUrl}
+                          alt=""
+                          loading="lazy"
+                          className="h-28 w-full object-cover"
+                        />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* CARGO DEDICATED FLOW (Phase 4): the free-text description
+                      (handling notes, fragile contents, loading help). Clamped
+                      so a long text never pushes the fare row off the card. */}
+                  {o.notes && (
+                    <p className="mt-2 line-clamp-3 whitespace-pre-line rounded-lg bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground">
+                      {o.notes}
+                    </p>
+                  )}
                   <div
                     className={cn(
                       'mt-2.5 grid gap-1.5',
@@ -483,6 +669,27 @@ export function DriverRequests() {
                                   {formatDzd(myOffers[o.id].counterPrice ?? 0)} {t.dzd}
                                 </span>
                               </button>
+                            )}
+                          {/* NEGOTIATION ENGINE (Phase 4): one tap that sends
+                              the offer back AT the customer's counter instead
+                              of opening the sheet again. A driver can never
+                              close the deal alone (only the customer claims),
+                              so matching their amount is the fastest route to
+                              a booking: it clears the "countered" badge and
+                              leaves the customer a single accept tap. */}
+                          {myOffers[o.id].status === 'countered' &&
+                            myOffers[o.id].counterPrice != null && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="mt-1.5 w-full"
+                                disabled={acting === o.id}
+                                onClick={() =>
+                                  handleAcceptCounter(o, myOffers[o.id].counterPrice ?? 0)
+                                }
+                              >
+                                {t.acceptCustomerPrice}
+                              </Button>
                             )}
                         </div>
                       ) : null}

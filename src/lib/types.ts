@@ -26,6 +26,7 @@ export const VEHICLE_CATEGORIES = [
   'refrigerated',
   'truck',
   'taxi_car',
+  'taxi_car_7',
 ] as const;
 
 export type VehicleCategory = (typeof VEHICLE_CATEGORIES)[number];
@@ -49,6 +50,7 @@ export const VEHICLE_CATEGORY_LABELS: Record<VehicleCategory, string> = {
   refrigerated: 'vehicleCategoryRefrigerated',
   truck: 'vehicleCategoryTruck',
   taxi_car: 'vehicleCategoryTaxiCar',
+  taxi_car_7: 'vehicleCategoryTaxiCar7',
 };
 
 // Returns the localised label for a category, or the "unset" fallback when
@@ -86,7 +88,37 @@ export type CargoKey =
   // `craft` is the Hirfa handmade delivery type. Orders with this
   // cargoType are delivery tasks for artisan products. The DB column
   // is a free String so no migration is needed.
-  | 'craft';
+  | 'craft'
+  // `food` is the CARGO DEDICATED FLOW (Phase 4) restaurant / food-delivery
+  // type. Like every Phase 4 addition it is additive: the DB column is a
+  // free String, and pricing / dispatch treat it exactly like `parcel`
+  // until admins tune its multiplier.
+  | 'food';
+
+// CARGO DEDICATED FLOW (Phase 4): how bulky the shipment is. Decoupled
+// from the numeric `weight` (which pricing keeps using) so the wizard can
+// ask one simple question. `large` blocks motorbikes in
+// `isVehicleCompatible`; `weight` is derived from the size server-side.
+export type CargoSize = 'small' | 'medium' | 'large';
+
+export const CARGO_SIZES: readonly CargoSize[] = ['small', 'medium', 'large'] as const;
+
+// i18n label keys per size (see translations: cargoSize* / cargoSize*Hint).
+export const CARGO_SIZE_LABELS: Record<CargoSize, string> = {
+  small: 'cargoSizeSmall',
+  medium: 'cargoSizeMedium',
+  large: 'cargoSizeLarge',
+};
+
+// The weight (kg) each size maps to for PRICING only. Chosen so the
+// estimate lands near what the equivalent manual weight entry produced
+// pre-Phase-4; customers never see it. Clamped by the existing 0..50000
+// server validation.
+export const CARGO_SIZE_WEIGHT: Record<CargoSize, number> = {
+  small: 20,
+  medium: 100,
+  large: 400,
+};
 export type OrderStatus =
   | 'searching'
   // `scheduled` is the initial state of a future-dated booking. The
@@ -99,6 +131,19 @@ export type OrderStatus =
   | 'picked'
   | 'delivered'
   | 'cancelled';
+
+
+export const ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [
+  'searching',
+  'scheduled',
+  'accepted',
+  'picked',
+] as const;
+
+export function isActiveOrderStatus(status: OrderStatus | string | null | undefined): boolean {
+  if (!status) return false;
+  return (ACTIVE_ORDER_STATUSES as readonly string[]).includes(status);
+}
 
 export interface AuthUser {
   id: string;
@@ -123,6 +168,9 @@ export interface VehicleRegistrationInfo {
   // that never had one. Served to the driver on their profile so the
   // edit dialog can pre-select the right dropdown value.
   vehicleCategory?: VehicleCategory | null;
+  // Passenger seats on the carte grise (S.1 / G field). Drives the Phase 1
+  // seat-capacity match.
+  seats?: number | null;
 }
 
 export interface DriverProfile {
@@ -253,6 +301,10 @@ export interface Order {
   // Surfaced in the order card so drivers can see at a glance whether
   // their vehicle matches before accepting.
   requiredVehicleType?: VehicleCategory | null;
+  // SEAT-CAPACITY MATCHING (Phase 1): minimum passenger seats the customer
+  // asked for (TAXI mode). Null = no requirement, so every pre-Phase-1 row
+  // and every CARGO order keeps its exact previous behaviour.
+  requiredSeats?: number | null;
   // PRICE NEGOTIATION (Phase 3): the customer is open to drivers
   // proposing a different price (`OrderOffer` rows). False by default,
   // which is what every pre-negotiation order has.
@@ -262,6 +314,13 @@ export interface Order {
   // once an offer has been accepted; null while still searching or when
   // the order was never negotiable.
   finalPrice?: number | null;
+  // CARGO DEDICATED FLOW (Phase 4): bulk of the shipment ('small' /
+  // 'medium' / 'large'); drives the moto-compatibility rule. Null on
+  // every pre-Phase-4 row and on taxi bookings.
+  cargoSize?: CargoSize | null;
+  // CARGO DEDICATED FLOW (Phase 4): public URL of the optional photo of
+  // the goods, shown to drivers on the request card. Null = no photo.
+  cargoImageUrl?: string | null;
   customer?: AuthUser;
   driver?: AuthUser | null;
 }
@@ -288,16 +347,50 @@ export interface OrderOffer {
   // for rows written before the column existed.
   counterPrice?: number | null;
   createdAt: string;
+  // NEGOTIATION ENGINE (Phase 4): when this offer last changed state.
+  // Null on rows written before Phase 4, so older clients can ignore it.
+  updatedAt?: string | null;
   // Optional inline joins the API may include so the UI can render an
   // offer card without a second roundtrip: the driver's public identity
   // for the customer-facing list, and the parent order's key fields for
   // the driver-facing list.
   driver?: AuthUser;
+  // PHASE 6: delivery-only fallback for the driver's display name, populated by
+  // the realtime `offer:new` / `offer:update` payloads. The REST list sends the
+  // full `driver` join instead, which always wins when present - this exists so
+  // a freshly delivered bid can render a name before the (debounced) refetch
+  // lands. Never persisted, never sent to the server.
+  driverName?: string | null;
+  // NEGOTIATION ENGINE (Phase 4): the negotiation journal for this offer,
+  // oldest first, when the API includes it (customer negotiation card and
+  // the driver's own offer view). Absent = not included by this endpoint.
+  events?: OfferEventPublic[];
   order?: Pick<
     Order,
     'id' | 'code' | 'pickup' | 'dropoff' | 'price' | 'cargoType' | 'scheduledAt'
   > | null;
 }
+
+// NEGOTIATION ENGINE (Phase 4): one row of the append-only negotiation
+// journal (`OfferEvent` in the schema). Rendered as a timeline under each
+// offer so the full price conversation survives counters and refreshes.
+export interface OfferEventPublic {
+  id: string;
+  orderId: string;
+  offerId: string | null;
+  actorId: string;
+  type: 'driver_offer' | 'customer_counter' | 'accepted' | 'rejected' | string;
+  price: number | null;
+  createdAt: string;
+}
+
+// i18n label keys for the journal timeline rows (translations: offerEvent*).
+export const OFFER_EVENT_LABEL_KEYS: Record<string, string> = {
+  driver_offer: 'offerEventDriverOffer',
+  customer_counter: 'offerEventCustomerCounter',
+  accepted: 'offerEventAccepted',
+  rejected: 'offerEventRejected',
+};
 
 // Human-readable Arabic / French label for each offer state, used by the
 // offer cards. Unknown / future states fall back to the raw value so a
@@ -678,7 +771,41 @@ export interface NotificationData {
   [key: string]: unknown;
 }
 
-// One notification row as returned by notificationSelect / the API.
+// ---------------------------------------------------------------------------
+// PHASE 6 - realtime delivery payloads.
+//
+// DELIVERY shapes only: the `OfferEvent` journal stays the historical source of
+// truth and the REST rows stay the authoritative state. Both payloads are
+// deliberately small and carry no phone, token, OTP or coordinate - only fields
+// the recipient could already read from the REST route that emitted them.
+// ---------------------------------------------------------------------------
+
+// `offer:new` / `offer:update` payload. `kind` lets a client toast without
+// diffing the previous row; `status` mirrors `OrderOffer.status`.
+export interface RealtimeOfferEvent {
+  kind: 'new' | 'countered' | 'accepted' | 'rejected';
+  offerId: string;
+  orderId: string;
+  orderCode: string;
+  driverId: string;
+  driverName: string | null;
+  price: number;
+  status: string;
+  counterPrice: number | null;
+  // Emission time (ISO), used as a cheap out-of-order hint: a client that has
+  // already applied a newer event for the same offer ignores an older one.
+  at: string;
+}
+
+// `notification:new` payload - exactly the `notificationSelect` projection,
+// delivered on the recipient's own `private-user-<id>` channel.
+export interface RealtimeNotificationEvent {
+  notification: AppNotification;
+}
+
+// One notification row as returned by notificationSelect / the API. Phase 6
+// reuses that exact projection for the `notification:new` realtime payload, so
+// the live bell and the fetched list can never disagree on the row shape.
 export interface AppNotification {
   id: string;
   type: string;

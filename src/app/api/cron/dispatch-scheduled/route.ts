@@ -104,6 +104,10 @@ export async function GET(req: NextRequest) {
           // its required category through the scheduled → searching flip
           // so the same matching rule applies as for an immediate order.
           requiredVehicleType: order.requiredVehicleType ?? null,
+          // SEAT-CAPACITY MATCHING (Phase 1): the seat requirement must
+          // survive the scheduled -> searching flip too, otherwise a future
+          // booking could reach a vehicle too small for it.
+          requiredSeats: order.requiredSeats ?? null,
         });
         notified += res.notified;
       } catch (e) {

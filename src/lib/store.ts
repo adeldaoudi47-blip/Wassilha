@@ -39,7 +39,7 @@ export const useAppStore = create<AppState>()(
 // TRIP OFFERS: `offers` is a new screen on both customer and driver
 // sides. The customer browses available offers; the driver
 // manages their own published offers.
-type CustomerScreen = 'home' | 'hirfa' | 'cart' | 'track' | 'history' | 'profile' | 'offers';
+type CustomerScreen = 'home' | 'hirfa' | 'cart' | 'track' | 'history' | 'profile' | 'offers' | 'wallet';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
 type ArtisanScreen = 'dashboard' | 'products' | 'orders' | 'profile';
 type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet' | 'craft';

@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/store';
+import { onNotificationNew } from '@/lib/realtime';
+import { toast } from 'sonner';
 import {
   Sheet,
   SheetContent,
@@ -20,13 +22,19 @@ import { NotificationCenter } from './notification-center';
 // Center for EVERY role (customer / driver / artisan / admin).
 //
 // Owns the unread badge: fetched from /api/notifications/unread-count on
-// mount, refreshed every 30s and whenever the app returns to the
+// mount, refreshed every 60s and whenever the app returns to the
 // foreground. The count is ALSO corrected instantly by the center itself
 // via onUnreadChange (mark-one / mark-all), so the badge never waits for a
 // poll after the user reads something.
+//
+// PHASE 6: the badge is now driven LIVE by `notification:new` on this user's
+// own `private-user-<id>` channel, so a new offer / assignment / counter rings
+// the moment its DB row commits instead of up to 30s later. The poll stays as
+// the degraded path (Part 16) and on foreground (Part 14 — a backgrounded tab
+// misses realtime events, so the refetch is what restores the truth).
 // ---------------------------------------------------------------------------
 
-const POLL_MS = 30_000;
+const POLL_MS = 60_000;
 
 export function NotificationBell() {
   const { t, isRtl } = useT();
@@ -64,6 +72,27 @@ export function NotificationBell() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [user, refresh]);
+
+  // PHASE 6: live badge. `notification:new` is emitted by createNotification()
+  // AFTER its row commits, so the badge and the toast can only ever appear for a
+  // notification that really exists — and only for THIS user, because
+  // /api/pusher/auth only signs `private-user-<own id>` (Part 11).
+  //
+  // Part 12: a re-delivered event must not double-increment the badge, and the
+  // user must not be interrupted twice by the same notification.
+  const seenIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user) return;
+    const off = onNotificationNew(user.id, ({ notification }) => {
+      if (!notification?.id) return;
+      if (seenIds.current.has(notification.id)) return;
+      seenIds.current.add(notification.id);
+      if (notification.isRead) return;
+      setUnread((prev) => prev + 1);
+      toast.info(notification.title);
+    });
+    return off;
+  }, [user]);
 
   // No signed-in user: no bell (the auth screen has its own header).
   if (!user) return null;

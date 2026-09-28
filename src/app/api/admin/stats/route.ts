@@ -51,6 +51,10 @@ export async function GET() {
         where: { status: 'delivered' },
         select: {
           price: true,
+          // PHASE 5: revenue must use the AGREED price, not the estimate.
+          // Orders settled through negotiation were mis-counted in every
+          // revenue figure (total, per-day) because only `price` was summed.
+          finalPrice: true,
           createdAt: true,
           deliveredAt: true,
           cargoType: true,
@@ -58,7 +62,12 @@ export async function GET() {
       }),
     ]);
 
-    const revenue = allDeliveredOrders.reduce((s, o) => s + o.price, 0);
+    // PHASE 5: the agreed price wins wherever it exists - the same display
+    // rule Phase 4 applied to the receipt, now applied to the numbers.
+    const revenue = allDeliveredOrders.reduce(
+      (s, o) => s + (o.finalPrice ?? o.price),
+      0
+    );
 
     // avg delivery time in minutes (createdAt -> deliveredAt)
     let totalMins = 0;
@@ -99,7 +108,7 @@ export async function GET() {
       const rev = allDeliveredOrders.reduce((s, o) => {
         if (!o.deliveredAt) return s;
         const dt = new Date(o.deliveredAt);
-        if (dt >= dayStart && dt < dayEnd) return s + o.price;
+        if (dt >= dayStart && dt < dayEnd) return s + (o.finalPrice ?? o.price);
         return s;
       }, 0);
       revenueByDay.push({ day: toIsoDay(dayStart), revenue: rev });

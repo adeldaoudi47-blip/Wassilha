@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import Pusher from 'pusher';
-import type { Order } from './types';
+import type { Order, RealtimeOfferEvent } from './types';
 
 /**
  * The Prisma schema stores `cargoType` / `status` as plain `String` and the
@@ -109,7 +109,8 @@ function pusherClient(): Pusher | null {
 // server achieved the same with a session check on connect.
 //
 //   private-order-<orderId>   customer + assigned driver (live tracking + status)
-//   private-driver-<userId>   driver's personal feed (incoming requests)
+//   private-driver-<userId>   driver's personal feed (incoming requests + bids)
+//   private-user-<userId>     any role's personal feed (notification center)
 //   private-admin             admin fleet / dashboard feed
 // ---------------------------------------------------------------------------
 
@@ -121,15 +122,42 @@ export function driverChannel(userId: string): string {
   return `private-driver-${userId}`;
 }
 
+// PHASE 6 - the per-user channel behind the realtime notification badge.
+//
+// Drivers have had `private-driver-<id>` since C4, but customers had no personal
+// channel at all (they only ever joined an order channel), so a customer's bell
+// could only ever be polled. One channel per user, authorised in
+// /api/pusher/auth by an exact id match, keeps the isolation property: a
+// signed-in user can only ever open their OWN feed.
+export function userChannel(userId: string): string {
+  return `private-user-${userId}`;
+}
+
 const ADMIN_CHANNEL = 'private-admin';
 
-// Event names. Kept identical to the socket.io names so the migration is
-// invisible to any client code that already binds on the string form.
+// Event names.
+//
+// The three lifecycle names below are unchanged since C4, so the migration
+// stayed invisible to clients. PHASE 6 adds the negotiation + notification half
+// of the vocabulary:
+//
+//   order:new-request  (kept)  a now-live order, fanned out to ELIGIBLE drivers
+//   order:status       (kept)  an order row changed state
+//   driver:location    (kept)  a GPS fix, on the order + admin channels
+//   offer:new          (new)   a driver bid - the order's CUSTOMER only
+//   offer:update       (new)   a bid changed state - that ONE driver only
+//   notification:new   (new)   a notification row - that ONE user only
+//
+// `order:update` was RETIRED here: it had zero emitter call sites and the admin
+// channel already receives `order:status` for every order change, so the admin
+// screens bind that instead of a second, never-fired event.
 export const EVENTS = {
   ORDER_NEW_REQUEST: 'order:new-request',
   ORDER_STATUS: 'order:status',
-  ORDER_UPDATE: 'order:update',
   DRIVER_LOCATION: 'driver:location',
+  OFFER_NEW: 'offer:new',
+  OFFER_UPDATE: 'offer:update',
+  NOTIFICATION_NEW: 'notification:new',
 } as const;
 
 // Fire a trigger without throwing. Logging only — the DB write that preceded
@@ -184,12 +212,118 @@ export function emitOrderStatus(row: PrismaOrderRow): void {
   safeTrigger(channels, EVENTS.ORDER_STATUS, { order });
 }
 
+// ---------------------------------------------------------------------------
+// PHASE 6 - negotiation + notification emitters.
+//
+// AUDIENCE (enforced twice: here, and again in /api/pusher/auth when the client
+// asks to join the channel):
+//
+//   offer:new        -> the order's CUSTOMER   (order channel)
+//   offer:update     -> the ONE driver who owns the bid (that driver's channel)
+//   notification:new -> the ONE user the row belongs to (that user's channel)
+//
+// A bid is NEVER broadcast to the fleet: the competing prices are private to
+// the customer comparing them, and no driver may read another driver's
+// negotiation. Payloads carry no phone number, token, OTP or coordinates.
+//
+// Part 3 (emit-after-commit): every caller below runs AFTER the DB write (or
+// the `$transaction`) has succeeded. A rolled-back write emits nothing, because
+// the route returns before reaching these calls.
+// ---------------------------------------------------------------------------
+
+/** Input for one negotiation event. Mirrors the fields a client renders. */
+export interface OfferEmitInput {
+  kind: RealtimeOfferEvent['kind'];
+  offerId: string;
+  orderId: string;
+  orderCode: string;
+  /** The User id of the driver who owns the bid (drives channel selection). */
+  driverId: string;
+  driverName?: string | null;
+  price: number;
+  /** `OrderOffer.status` after the write. */
+  status: string;
+  counterPrice?: number | null;
+}
+
+// Bounded fan-out. An order with more live bids than this still settles
+// correctly (the DB already rejected them); the remaining UIs converge on their
+// next poll instead of us firing an unbounded number of Pusher triggers.
+const MAX_OFFER_FAN_OUT = 20;
+
+function offerPayload(input: OfferEmitInput): RealtimeOfferEvent {
+  return {
+    kind: input.kind,
+    offerId: input.offerId,
+    orderId: input.orderId,
+    orderCode: input.orderCode,
+    driverId: input.driverId,
+    driverName: input.driverName ?? null,
+    price: input.price,
+    status: input.status,
+    counterPrice: input.counterPrice ?? null,
+    at: new Date().toISOString(),
+  };
+}
+
+/** A new bid arrived on an order - the customer watching it is notified. */
+export function emitOfferNew(input: OfferEmitInput): void {
+  safeTrigger([orderChannel(input.orderId)], EVENTS.OFFER_NEW, offerPayload(input));
+}
+
 /**
- * Admin-facing aggregated update (same payload as emitOrderStatus, different
- * channel binding for components that listen on the admin feed).
+ * A bid changed state (countered / accepted / rejected) - delivered to the
+ * driver who owns it, on their personal channel.
+ *
+ * `opts.alsoOrder` additionally mirrors the event onto the ORDER channel when
+ * the CUSTOMER is the actor (a counter or a decline). That is what makes the
+ * customer's second tab / a stale tab converge without a refetch - and it stays
+ * safe, because the order channel is only signable by that order's customer,
+ * its assigned driver and an admin. The fleet is never a destination.
  */
-export function emitOrderUpdate(row: PrismaOrderRow): void {
-  safeTrigger([ADMIN_CHANNEL], EVENTS.ORDER_UPDATE, { order: serialiseOrder(row) });
+export function emitOfferUpdateToDriver(
+  input: OfferEmitInput,
+  opts?: { alsoOrder?: boolean },
+): void {
+  const channels = [driverChannel(input.driverId)];
+  if (opts?.alsoOrder) channels.push(orderChannel(input.orderId));
+  safeTrigger(channels, EVENTS.OFFER_UPDATE, offerPayload(input));
+}
+
+/**
+ * Tell every losing bidder their bid is dead after an award or a cancellation.
+ *
+ * `safeTrigger` is fire-and-forget, so this loop adds no latency to the
+ * customer's response. The list is capped (MAX_OFFER_FAN_OUT) to bound the
+ * number of triggers a single hot order can generate.
+ */
+export function emitOfferSettledToLosers(
+  losers: Array<{ id: string; driverId: string; price: number }>,
+  order: { id: string; code: string },
+): void {
+  for (const loser of losers.slice(0, MAX_OFFER_FAN_OUT)) {
+    emitOfferUpdateToDriver({
+      kind: 'rejected',
+      offerId: loser.id,
+      orderId: order.id,
+      orderCode: order.code,
+      driverId: loser.driverId,
+      price: loser.price,
+      status: 'rejected',
+      counterPrice: null,
+    });
+  }
+}
+
+/**
+ * A notification row was committed for exactly this user.
+ *
+ * Called from `createNotification()` (the single write path), so every existing
+ * emitter - order accepted, offer received, counter, delivery, approvals -
+ * reaches the bell live without touching its call site.
+ */
+export function emitNotificationNew(userId: string, notification: unknown): void {
+  safeTrigger([userChannel(userId)], EVENTS.NOTIFICATION_NEW, { notification });
 }
 
 /**
