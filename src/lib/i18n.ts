@@ -495,14 +495,13 @@ export const translations = {
     // "upgrade to driver" dialog. The driver picks one of:
     //   - cargoService : "توصيل بضائع" — the original triporteur flow
     //   - taxiService  : "نقل ركاب / تكسي" — Yassir-like
-    //   - bothServices : "كلاهما" — accept both kinds of orders
+    //   ("bothServices" was retired on 2026-09-28 along with the BOTH service type.)
     // The selected value is sent to /api/auth/apply-driver as
     // `serviceType` and persisted in the Driver row, then used by the
     // order fan-out in POST /api/orders to filter who gets the push.
     driverService: 'الخدمة المقدمة',
     cargoService: 'توصيل بضائع',
     taxiService: 'نقل ركاب / تكسي',
-    bothServices: 'كلاهما',
     // === Scheduled bookings (future-dated orders) ======================
     // The customer toggles between immediate (الآن) and scheduled
     // (لموعد لاحق) at the top of the order form; the booking time
@@ -1221,7 +1220,6 @@ export const translations = {
     driverService: 'Service proposé',
     cargoService: 'Livraison de marchandises',
     taxiService: 'Transport de passagers / Taxi',
-    bothServices: 'Les deux',
     // === Scheduled bookings (future-dated orders) ======================
     // The customer toggles between immediate (Maintenant) and
     // scheduled (Pour plus tard); the booking time picker uses

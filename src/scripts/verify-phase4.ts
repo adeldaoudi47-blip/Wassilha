@@ -111,8 +111,10 @@ check('TAXI specialist driver offering on CARGO order => serviceTypeMismatch',
     return !res.ok && res.reason === 'serviceTypeMismatch';
   })());
 
-check('BOTH service driver offering on CARGO order => OK',
-  canDriverOfferOnOrder(baseOrder, { ...baseDriver, serviceType: 'BOTH' }).ok === true);
+// BOTH was retired on 2026-09-28: a driver now serves exactly one category,
+// so a CARGO specialist is simply "the" driver for a cargo order.
+check('CARGO service driver offering on CARGO order => OK',
+  canDriverOfferOnOrder(baseOrder, { ...baseDriver, serviceType: 'CARGO' }).ok === true);
 
 check('moto driver offering on large cargo order => vehicleNotCompatible',
   (() => {

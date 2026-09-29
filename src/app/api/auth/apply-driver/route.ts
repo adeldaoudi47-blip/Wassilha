@@ -29,18 +29,21 @@ const OWNER_TYPES: ReadonlySet<string> = new Set([
 // in the DB, so the API layer is the only enforcement point):
 //   "CARGO"  -> original triporteur flow
 //   "TAXI"   -> passenger transport (Yassir-like)
-//   "BOTH"   -> both
+// "BOTH" was removed on 2026-09-28: what a driver can serve is derived from
+// the registered vehicle category, not from a declared intent.
 // We use a free String for the column (not a Prisma enum) so that
 // adding more service types later (e.g. "HEAVY", "PHARMACY") would
 // not require a migration. Anything outside the allow-list falls
 // back to "CARGO" (legacy behaviour) instead of being rejected with
 // 400, so a misbehaving client cannot break the registration.
-const ALLOWED_SERVICE_TYPES = new Set(['CARGO', 'TAXI', 'BOTH']);
+const ALLOWED_SERVICE_TYPES = new Set(['CARGO', 'TAXI']);
 
-function normalizeServiceType(raw: unknown): 'CARGO' | 'TAXI' | 'BOTH' {
-  if (typeof raw === 'string' && ALLOWED_SERVICE_TYPES.has(raw)) {
-    return raw as 'CARGO' | 'TAXI' | 'BOTH';
-  }
+// BOTH was retired on 2026-09-28: a driver now serves exactly one kind of
+// order, and the registered `vehicleCategory` is the real source of truth for
+// what the vehicle can carry. A stale client still sending "BOTH" falls back
+// to "CARGO" here rather than failing the registration.
+function normalizeServiceType(raw: unknown): 'CARGO' | 'TAXI' {
+  if (raw === 'TAXI') return 'TAXI';
   return 'CARGO';
 }
 
@@ -58,7 +61,7 @@ interface ApplyDriverBody {
   datePremiereMiseEnCirculation?: unknown;
   adresse?: unknown;
   ptac?: unknown;
-  // Number of passenger seats -- required for TAXI / BOTH, ignored for
+  // Number of passenger seats -- required for TAXI, ignored for
   // CARGO. Stored as Int in VehicleRegistration.seats. Optional in
   // the wire format; the server validates it against the chosen
   // serviceType below (see seats resolution).
@@ -213,14 +216,13 @@ export async function POST(req: NextRequest) {
     const adresse = optStr(body.adresse);
     const ptac = optStr(body.ptac);
     // Normalize the service type with an allow-list. Anything outside
-    // "CARGO" / "TAXI" / "BOTH" falls back to "CARGO" so a typo on
+    // "CARGO" / "TAXI" falls back to "CARGO" so a typo on
     // is persisted in `Driver.serviceType` and used by the order
     // fan-out in `POST /api/orders` to filter who gets the push.
     const serviceType = normalizeServiceType(body.serviceType);
     // Resolve `seats` against the chosen serviceType:
-    //   * CARGO  -> always null (truck/triporteur doesn't carry passengers)
-    //   * TAXI   -> required, must be a positive integer (1..30)
-    //   * BOTH   -> required, same range as TAXI
+    //   * CARGO -> always null (truck/triporteur doesn't carry passengers)
+    //   * TAXI  -> required, must be a positive integer (1..30)
     // Strings/NaN/negatives are rejected with 400 so the admin dashboard
     // can trust the value is either a sane seat count or null.
     const SEATS_MIN = 1;
@@ -506,7 +508,7 @@ export async function POST(req: NextRequest) {
           applicationStatus: 'pending',
           appliedAt: new Date(),
           // serviceType comes from the client, coerced server-side via
-          // normalizeServiceType() so it is always one of CARGO/TAXI/BOTH.
+          // normalizeServiceType() so it is always CARGO or TAXI.
           // Defaults to "CARGO" for any client that omits the field,
           // matching the pre-taxi behaviour (every legacy driver
           // continues to receive the existing cargo order fan-out).

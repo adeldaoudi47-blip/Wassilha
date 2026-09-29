@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff, Car, Package, Layers, Ban, Trash2 } from 'lucide-react';
+import { Bike, Plus, Star, Phone, BadgeCheck, ShieldCheck, ShieldOff, Car, Package, Ban, Trash2 } from 'lucide-react';
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -378,7 +378,7 @@ export function AdminDrivers() {
 // Renders the lucide icon that matches `serviceType`:
 //   "CARGO" → Package (box icon, primary green)
 //   "TAXI"  → Car       (yellow accent, Yassir-style)
-//   "BOTH"  → Layers    (overlapping squares, primary green)
+// "BOTH" is retired (2026-09-28) and has no icon any more.
 // Anything else (undefined / null / unknown legacy value) falls back
 // to a muted Bike so the row stays visually consistent. Hovering
 // surfaces a localised title that explains the service.
@@ -391,16 +391,6 @@ function DriverServiceIcon({ serviceType }: { serviceType?: string | null }) {
         className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300"
       >
         <Car size={10} />
-      </span>
-    );
-  }
-  if (st === 'BOTH') {
-    return (
-      <span
-        title="Cargo + Taxi"
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"
-      >
-        <Layers size={10} />
       </span>
     );
   }

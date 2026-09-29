@@ -109,7 +109,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     // driver who was switched to TAXI-only (or dropped to `pending`) between
     // bidding and award is no longer eligible, whatever their old offer says.
     const requiredService = serviceCategoryFor(offer.order.cargoType);
-    if (offeringDriver.serviceType !== 'BOTH' && offeringDriver.serviceType !== requiredService) {
+    if (offeringDriver.serviceType !== requiredService) {
       return NextResponse.json({ error: 'serviceTypeMismatch' }, { status: 409 });
     }
     if (

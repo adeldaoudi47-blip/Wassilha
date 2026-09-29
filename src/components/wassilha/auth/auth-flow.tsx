@@ -122,7 +122,7 @@ export function AuthFlow() {
     // `taxi` ping (and vice-versa). Defaults to "CARGO" for full
     // backward compat with the pre-taxi fleet: every existing driver
     // continues to receive cargo orders exactly as before.
-    serviceType: 'CARGO' as 'CARGO' | 'TAXI' | 'BOTH',
+    serviceType: 'CARGO' as 'CARGO' | 'TAXI',
   });
   const updateVehicleRegistration = (
     field: keyof typeof vehicleRegistration,
@@ -1541,7 +1541,6 @@ export function AuthFlow() {
                     <SelectContent>
                       <SelectItem value="CARGO">{t.cargoService}</SelectItem>
                       <SelectItem value="TAXI">{t.taxiService}</SelectItem>
-                      <SelectItem value="BOTH">{t.bothServices}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

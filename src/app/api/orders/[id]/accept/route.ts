@@ -115,7 +115,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     // serve this order" has exactly one answer everywhere. A TAXI-only driver
     // never claims a cargo job, however compatible the vehicle.
     const requiredService = serviceCategoryFor(order.cargoType);
-    if (driver.serviceType !== 'BOTH' && driver.serviceType !== requiredService) {
+    if (driver.serviceType !== requiredService) {
       return NextResponse.json({ error: 'serviceTypeMismatch' }, { status: 403 });
     }
 

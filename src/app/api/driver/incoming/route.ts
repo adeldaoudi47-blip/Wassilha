@@ -67,8 +67,8 @@ export async function GET() {
     });
     const eligible = orders.filter(
       (o) =>
-        (driver.serviceType === 'BOTH' ||
-          driver.serviceType === serviceCategoryFor(o.cargoType)) &&
+        // BOTH retired: the driver must match the order's service category.
+        driver.serviceType === serviceCategoryFor(o.cargoType) &&
         isVehicleCompatible(o, driver.vehicleRegistration),
     );
     return NextResponse.json(eligible);

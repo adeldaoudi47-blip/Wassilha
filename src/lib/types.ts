@@ -184,9 +184,13 @@ export interface DriverProfile {
   // icon next to the driver name based on this value.
   //   "CARGO" → goods / parcels / furniture
   //   "TAXI"  → passenger transport (Yassir-like)
-  //   "BOTH"  → accepts both kinds of orders
+  //   "BOTH" was RETIRED (2026-09-28): what a driver can serve is now derived
+  //   from `vehicleCategory` (taxi_car / taxi_car_7 -> passengers; moto /
+  //   tricycle / truck / ... -> cargo) instead of a declared intent that could
+  //   contradict the registered vehicle. Rows were migrated in the DB and the
+  //   literal is rejected by every write path.
   // Defaults to "CARGO" for every pre-V2 driver.
-  serviceType?: 'CARGO' | 'TAXI' | 'BOTH' | string;
+  serviceType?: 'CARGO' | 'TAXI' | string;
   rating: number;
   totalTrips: number;
   totalEarnings: number;
@@ -234,9 +238,9 @@ export interface AdminDriverLocation {
 // TRIP OFFERS: lifecycle of a pre-published trip.
 export type TripOfferStatus = 'available' | 'booked' | 'cancelled';
 // TRIP OFFERS: matches Driver.serviceType (free string on the DB
-// side; narrowed here for the API surface). Old 'BOTH' drivers
-// can still publish either flavour — the value is a per-offer
-// choice, not a per-driver one.
+// side; narrowed here for the API surface). A driver publishes
+// either flavour; the value is a per-offer choice, not a per-driver
+// one. 'BOTH' is no longer a service type (see DriverProfile above).
 export type TripOfferServiceType = 'TAXI' | 'CARGO';
 
 export interface TripOffer {
@@ -264,7 +268,7 @@ export interface TripOffer {
     user: AuthUser;
     rating: number;
     totalTrips: number;
-    serviceType?: 'CARGO' | 'TAXI' | 'BOTH' | string;
+    serviceType?: 'CARGO' | 'TAXI' | string;
   } | null;
 }
 

@@ -95,7 +95,7 @@ check('award: zero-row claim aborts with 409 notAvailable',
   has(award, 'if (!awarded) {') && has(award, "error: 'notAvailable'"));
 check('award: service-type gate re-checks the same policy as the bid path',
   has(award, 'serviceCategoryFor(offer.order.cargoType)') &&
-  has(award, "offeringDriver.serviceType !== 'BOTH' && offeringDriver.serviceType !== requiredService"));
+  has(award, "offeringDriver.serviceType !== requiredService"));
 check('award: driver eligibility (verified + active) re-checked at award time',
   has(award, "!offeringDriver.isVerified || offeringDriver.applicationStatus !== 'active'"));
 check('award: vehicle compatibility re-checked at award time',
@@ -118,7 +118,7 @@ check('accept: account-state gate (verified + active) exists',
   has(accept, "!driver.isVerified || driver.applicationStatus !== 'active'"));
 check('accept: service-type gate uses the shared serviceCategoryFor policy',
   has(accept, 'serviceCategoryFor(order.cargoType)') &&
-  has(accept, "driver.serviceType !== 'BOTH' && driver.serviceType !== requiredService"));
+  has(accept, "driver.serviceType !== requiredService"));
 check('accept: driver profile is resolved BEFORE the order (no order-id probing)',
   before(accept, 'where: { userId: session.id }', 'where: { id }'));
 check('accept: pending bids on the claimed order are rejected in the same tx',
@@ -283,12 +283,12 @@ const gateDriver: OfferDriverFacts = {
   id: 'driver-1',
   isVerified: true,
   applicationStatus: 'active',
-  serviceType: 'BOTH',
+  serviceType: 'CARGO',
   vehicleCategory: 'moto',
   seats: 1,
 };
 
-check('policy: BOTH-service, verified, compatible driver is allowed to bid',
+check('policy: CARGO-service, verified, compatible driver is allowed to bid',
   canDriverOfferOnOrder(gateOrder, gateDriver).ok === true);
 check('policy: TAXI-only driver is denied on a cargo order',
   (() => {

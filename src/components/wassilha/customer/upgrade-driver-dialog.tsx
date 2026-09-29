@@ -46,9 +46,9 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
   // `serviceType` is sent to the server alongside the rest of the
   // carte-grise data and persisted in `Driver.serviceType`. Once
   // approved, the driver will only receive orders matching this
-  // service category (cargo / taxi / both). Defaults to "CARGO" so
+  // service category (cargo / taxi). Defaults to "CARGO" so
   // existing flows keep working without forcing the user to pick.
-  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
+  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI'>('CARGO');
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -246,7 +246,7 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
           <Field label={t.driverService} required>
             <Select
               value={serviceType}
-              onValueChange={(v) => setServiceType(v as 'CARGO' | 'TAXI' | 'BOTH')}
+              onValueChange={(v) => setServiceType(v as 'CARGO' | 'TAXI')}
             >
               <SelectTrigger className="h-11 rounded-xl">
                 <SelectValue />
@@ -254,7 +254,6 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
               <SelectContent>
                 <SelectItem value="CARGO">{t.cargoService}</SelectItem>
                 <SelectItem value="TAXI">{t.taxiService}</SelectItem>
-                <SelectItem value="BOTH">{t.bothServices}</SelectItem>
               </SelectContent>
             </Select>
           </Field>

@@ -25,7 +25,7 @@ export async function GET() {
         appliedAt: d.appliedAt,
         reviewedAt: d.reviewedAt,
         createdAt: d.createdAt,
-        // Service type the driver applied for (CARGO / TAXI / BOTH).
+        // Service type the driver applied for (CARGO / TAXI).
         // Surfaced in the admin review card so the reviewer can spot
         // a taxi-only application at a glance and decide whether the
         // submitted carte grise is the right vehicle class for it.

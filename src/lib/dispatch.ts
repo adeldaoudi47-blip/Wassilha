@@ -44,7 +44,7 @@ export function serviceCategoryFor(cargoType: string): 'CARGO' | 'TAXI' {
 
 // Drivers eligible to receive a given order: online, verified, active
 // account, and opted into the requested service category (`serviceType` is
-// "BOTH" or the exact category). Backed by @@index([isOnline, isVerified, serviceType]).
+// the exact category). Backed by @@index([isOnline, isVerified, serviceType]).
 //
 // VEHICLE-TYPE MATCHING (Phase 2): when `requiredVehicleType` is set, the
 // driver's vehicle must be in that category. This is expressed through the
@@ -67,11 +67,12 @@ export async function findAvailableDrivers(
       isOnline: true,
       isVerified: true,
       user: { accountStatus: 'active' },
-      // The `OR` shape lets a single Prisma query hit both the specialists
-      // (serviceType = requestedService) and the generalists ("BOTH"). A
-      // driver whose serviceType is the *opposite* of the request is
-      // excluded automatically.
-      OR: [{ serviceType: 'BOTH' }, { serviceType: requestedService }],
+      // SERVICE TYPE (BOTH retired 2026-09-28): a driver now serves exactly
+      // one kind of order, so the filter is a plain equality. The previous
+      // `OR: [{serviceType:'BOTH'}, ...]` generalist clause is gone; capability
+      // is decided by `vehicleCategory` in isVehicleCompatible() below, which is
+      // the single source of truth for "can this vehicle serve this order".
+      serviceType: requestedService,
       // VEHICLE-TYPE MATCHING (Phase 2): a categorical request narrows the
       // pool to drivers whose registered vehicle is in that category.
       // Vehicles with no category on file never satisfy a categorical

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck, CheckCircle2, XCircle, Bike, Phone, Car, Package, Layers } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, XCircle, Bike, Phone, Car, Package } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -263,7 +263,7 @@ export function AdminDriverApplications() {
 // two screens are immediately recognisable as "the same driver" —
 //   "CARGO" -> Package (primary green)
 //   "TAXI"  -> Car       (yellow accent, Yassir-like)
-//   "BOTH"  -> Layers    (primary green)
+// "BOTH" is retired (2026-09-28) and has no icon any more.
 // Anything else falls back to a muted Package so unknown legacy
 // values never break the row.
 function DriverServiceIcon({ serviceType }: { serviceType?: string | null }) {
@@ -275,16 +275,6 @@ function DriverServiceIcon({ serviceType }: { serviceType?: string | null }) {
         className='flex h-4 w-4 shrink-0 items-center justify-center rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300'
       >
         <Car size={10} />
-      </span>
-    );
-  }
-  if (st === 'BOTH') {
-    return (
-      <span
-        title='Cargo + Taxi'
-        className='flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/15 text-primary'
-      >
-        <Layers size={10} />
       </span>
     );
   }

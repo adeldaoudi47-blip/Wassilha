@@ -362,7 +362,7 @@ export const api = {
     datePremiereMiseEnCirculation?: string | null;
     adresse?: string | null;
     ptac?: string | null;
-    // Number of passenger seats — required for TAXI / BOTH service type,
+    // Number of passenger seats — required for the TAXI service type,
     // null for CARGO. Forwarded to the server unchanged.
     seats?: number | null;
     // VEHICLE CLASSIFICATION (Phase 1): the category the driver picked for
@@ -450,18 +450,19 @@ export const api = {
     datePremiereMiseEnCirculation?: string;
     adresse?: string;
     ptac?: string;
-    // Number of passenger seats (TAXI / BOTH). Optional in the wire
+    // Number of passenger seats (TAXI only). Optional in the wire
     // format — the server validates against the chosen serviceType
-    // (CARGO -> null, TAXI/BOTH -> required 1..30).
+    // (CARGO -> null, TAXI -> required 1..30).
     seats?: number;
     // Service type — the driver picks which kind(s) of orders they
     // want to receive once approved:
     //   "CARGO"  → original triporteur flow
     //   "TAXI"   → passenger transport (Yassir-like)
-    //   "BOTH"   → both
+    //   "TAXI"   → passenger transport (Yassir-like)
     // Server-side allowed-list coerces unknown values to "CARGO" so
-    // a misbehaving client never breaks the registration.
-    serviceType?: 'CARGO' | 'TAXI' | 'BOTH';
+    // a misbehaving client never breaks the registration. "BOTH" was
+    // retired on 2026-09-28 and now falls back to "CARGO".
+    serviceType?: 'CARGO' | 'TAXI';
   }) =>
     req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
       method: 'POST',
@@ -492,7 +493,7 @@ export const api = {
           datePremiereMiseEnCirculation: string | null;
           adresse: string | null;
           ptac: string | null;
-          // Number of passenger seats (TAXI / BOTH) or null for CARGO.
+          // Number of passenger seats (TAXI) or null for CARGO.
           seats: number | null;
         } | null;
       }[]

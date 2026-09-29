@@ -163,14 +163,10 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
-  // Driver who is BOTH can publish either. Driver who is only
-  // CARGO or only TAXI must stick to their category — otherwise
-  // they could publish a TAXI offer while the platform thinks
-  // they only deliver goods.
-  if (
-    driver.serviceType !== 'BOTH' &&
-    driver.serviceType !== data.serviceType
-  ) {
+  // A driver must publish an offer that matches their own service type —
+  // otherwise they could publish a TAXI offer while the platform thinks
+  // they only deliver goods. (BOTH retired: there is no longer a wildcard.)
+  if (driver.serviceType !== data.serviceType) {
     return NextResponse.json(
       {
         error: 'service_mismatch',

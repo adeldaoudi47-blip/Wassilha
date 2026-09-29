@@ -212,10 +212,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
                 isOnline: true,
                 isVerified: true,
                 user: { accountStatus: 'active' },
-                OR: [
-                  { serviceType: 'BOTH' },
-                  { serviceType: 'CARGO' },
-                ],
+                // Craft deliveries are goods: cargo drivers only
+                // (BOTH retired, so the wildcard branch is gone).
+                serviceType: 'CARGO',
               },
               select: { userId: true },
             });

@@ -80,7 +80,9 @@ export function canDriverOfferOnOrder(
   }
 
   const requiredService = serviceCategoryFor(order.cargoType);
-  if (driver.serviceType !== 'BOTH' && driver.serviceType !== requiredService) {
+  // BOTH retired 2026-09-28: a driver serves exactly one service type, and the
+  // vehicle gate below (isVehicleCompatible) is what really decides capability.
+  if (driver.serviceType !== requiredService) {
     return { ok: false, reason: 'serviceTypeMismatch', status: 403 };
   }
 

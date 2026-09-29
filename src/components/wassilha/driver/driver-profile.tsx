@@ -257,7 +257,7 @@ function VehicleEditDialog({
   const NO_CATEGORY_VALUE = '__none__';
   const [vehicleCategory, setVehicleCategory] =
     useState<string>(NO_CATEGORY_VALUE);
-  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI' | 'BOTH'>('CARGO');
+  const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI'>('CARGO');
   const [saving, setSaving] = useState(false);
 
   // Re-seed when opening with different data.
@@ -282,11 +282,7 @@ function VehicleEditDialog({
     // `serviceType` rides on the Driver row, not the VehicleRegistration
     // row, so we read it through a sibling any-cast. It is used to drive
     // the conditional UI below.
-    setServiceType(
-      v.serviceType === 'TAXI' || v.serviceType === 'BOTH'
-        ? (v.serviceType as 'TAXI' | 'BOTH')
-        : 'CARGO'
-    );
+    setServiceType(v.serviceType === 'TAXI' ? 'TAXI' : 'CARGO');
     // VEHICLE CLASSIFICATION (Phase 1): seed the dropdown from the stored
     // category. Unknown/absent values are coerced to the "no category"
     // sentinel so the dropdown never shows a stale placeholder after the

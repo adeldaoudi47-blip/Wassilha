@@ -83,7 +83,7 @@ const vehicleUpdateSchema = z.object({
     .max(OPTIONAL_STR_MAX)
     .optional()
     .nullable(),
-  // Number of passenger seats (TAXI / BOTH). Optional -- null for cargo.
+  // Number of passenger seats (TAXI only). Optional -- null for cargo.
   // Stored as Int; ranges 1..30 are accepted, anything outside returns 400.
   seats: z
     .number({ message: 'invalidSeats' })
