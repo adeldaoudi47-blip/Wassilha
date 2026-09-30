@@ -186,15 +186,25 @@ export function AuthFlow() {
       setStep('otp');
       setResendTimer(30);
 
-      // SECURITY (V?? — OTP bypass lock-down): the server no longer
-      // returns the OTP in the response (BYPASS_SMS has been removed
-      // from /api/auth/send-otp). The only user-facing message is
-      // "we sent the code" — never the code itself.
-      toast.success(
-        isAr
-          ? 'تم إرسال رمز التحقق إلى هاتفك عبر واتساب أو رسالة قصيرة'
-          : 'Le code de vérification a été envoyé sur WhatsApp ou par SMS'
-      );
+      // DEMO MODE (2026-09-28): no SMS/WhatsApp provider is configured in this
+      // deployment, so the server returns the randomly generated code as
+      // `devOtp` and the user must be shown it — otherwise nobody can sign in.
+      // When a provider is configured again, `devOtp` is simply absent and the
+      // original "we sent the code" message is used.
+      if (result.devOtp) {
+        toast.success(
+          isAr
+            ? `رمز الدخول الخاص بك هو: ${result.devOtp}`
+            : `Votre code de vérification est : ${result.devOtp}`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(
+          isAr
+            ? 'تم إرسال رمز التحقق إلى هاتفك عبر واتساب أو رسالة قصيرة'
+            : 'Le code de vérification a été envoyé sur WhatsApp ou par SMS'
+        );
+      }
     } catch (error) {
       console.error('SEND OTP ERROR:', error);
 
@@ -564,14 +574,22 @@ export function AuthFlow() {
       setOtp('');
       setStep('forgot-otp');
       setResendTimer(30);
-      // SECURITY (V?? — OTP bypass lock-down): the password-reset
-      // endpoint no longer echoes the code. The user gets a generic
-      // "code sent" message — same as the regular OTP path.
-      toast.success(
-        isAr
-          ? 'تم إرسال رمز إعادة التعيين عبر واتساب أو رسالة قصيرة'
-          : 'Le code de réinitialisation a été envoyé sur WhatsApp ou par SMS'
-      );
+      // DEMO MODE (2026-09-28): same as the login OTP — show the code when the
+      // server returns it, otherwise the user cannot complete the reset.
+      if (result.devOtp) {
+        toast.success(
+          isAr
+            ? `رمز إعادة التعيين هو: ${result.devOtp}`
+            : `Votre code de réinitialisation est : ${result.devOtp}`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(
+          isAr
+            ? 'تم إرسال رمز إعادة التعيين عبر واتساب أو رسالة قصيرة'
+            : 'Le code de réinitialisation a été envoyé sur WhatsApp ou par SMS'
+        );
+      }
     } catch (error) {
       console.error('REQUEST RESET ERROR:', error);
       // Same error-code mapping as the customer flow (see handleSendOtp).

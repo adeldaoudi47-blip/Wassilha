@@ -55,10 +55,10 @@ export function NotificationBell() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) {
-      setUnread(0);
-      return;
-    }
+    // No session => no call at all. This guard is what prevents the 401 storm:
+    // /api/notifications/unread-count requires a session, so firing it while
+    // the auth screen is mounted produced a request that could only 401.
+    if (!user) return;
     refresh();
     const id = setInterval(refresh, POLL_MS);
     // A notification created while the app was backgrounded should show up

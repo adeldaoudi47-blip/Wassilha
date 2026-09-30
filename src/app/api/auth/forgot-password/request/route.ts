@@ -3,7 +3,6 @@
 // Security: same protections as /api/auth/send-otp (rateLimit, resend cooldown).
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sendSms } from '@/lib/sms';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
@@ -23,11 +22,8 @@ export async function POST(req: NextRequest) {
     }
 
     // SECURITY: demo mode force-disabled in production.
-    const demoMode =
-      process.env.OTP_DEMO_MODE === 'true' &&
-      process.env.NODE_ENV !== 'production';
-    const demoOtp = process.env.DEMO_OTP || '0000';
-
+  // DEMO MODE (2026-09-28): a random 6-digit code is always generated;
+  // OTP_DEMO_MODE / DEMO_OTP are intentionally not read.
     // SECURITY: per-phone resend cooldown.
     const latestCode = await db.otpCode.findFirst({
       where: { phone },
@@ -74,7 +70,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const code = demoMode ? demoOtp : generateOtp();
+    const code = generateOtp();
 
     await db.otpCode.deleteMany({ where: { phone } });
 
@@ -86,22 +82,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (demoMode) {
-      // SECURITY (V?? — OTP demo lock-down): the demo code stays in
-      // the DB row but is never echoed back to the client. Local
-      // dev can read it from the server log line below.
-      console.log('[WASSILHA FORGOT-PW DEMO] ' + phone + ' -> ' + code);
-    }
-
+    // No provider dispatch: the code is returned in the response (demo flow).
+    // SECURITY (V10 - account enumeration): the public response shape is
+    // identical whether or not the account exists. `devOtp` is only echoed
+    // for a real, active account so the demo flow stays usable without
+    // leaking that a phone number is registered.
     if (user && user.accountStatus === 'active') {
-      // SECURITY (V?? — bypass removed): there used to be a
-      // BYPASS_SMS=true escape hatch that surfaced the OTP in the
-      // JSON response. It has been removed entirely. OTPs now travel
-      // through the SMS provider only.
-      const recipient = '+213' + phone.substring(1);
-      const content = 'رمز تعيين كلمة المرور في وصّلها هو: ' + code;
-      const sms = await sendSms(recipient, content);
-      return NextResponse.json({ ok: true, provider: sms.provider });
+      return NextResponse.json({ ok: true, demo: true, devOtp: code });
     }
 
     // Account does not exist (or is not active). We already created the

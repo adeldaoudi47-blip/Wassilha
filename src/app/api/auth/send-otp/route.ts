@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sendSms } from '@/lib/sms';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
@@ -28,9 +27,10 @@ if (!phone) {
 
 // SECURITY: demo mode can never activate in a production build, even if
 // OTP_DEMO_MODE is mistakenly configured on the hosting provider.
-const demoMode = process.env.OTP_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production';
-const demoOtp = process.env.DEMO_OTP || '0000';
-
+// DEMO MODE (2026-09-28): the OTP is ALWAYS a random 6-digit code from
+// generateOtp() below, returned to the caller. OTP_DEMO_MODE / DEMO_OTP are
+// intentionally NOT read: an env-provided fixed code would be guessable, and
+// the flag used to force a predictable value outside production.
 // SECURITY: per-phone resend cooldown — the newest stored code must be
 // older than the cooldown window before another SMS can be triggered.
 const latestCode = await db.otpCode.findFirst({
@@ -56,7 +56,7 @@ if (!ipCheck.ok) {
   );
 }
 
-const code = demoMode ? demoOtp : generateOtp();
+const code = generateOtp();
 
 // DB HYGIENE (V13 — OTP table cleanup): wipe expired OTPs first so the
 // table does not grow unbounded with rows nobody can ever verify. This
@@ -80,45 +80,29 @@ await db.otpCode.create({
 });
 
 
-  // DIAG: confirms the DB write actually persisted the row before we attempt
-  // to send the SMS. If a user reports "I never got the SMS", this log lets
-  // support distinguish between (a) row was saved and the provider silently
-  // failed, and (b) DB write itself failed.
+  // DIAG: confirms the DB write actually persisted the row. In the random-OTP
+  // demo flow the code is ALSO returned to the caller as `devOtp` below,
+  // because no SMS provider is wired up in this deployment.
   console.log('[SEND-OTP] Saved OTP for phone:', phone, '| Code:', code);
 
-if (demoMode) {
-  // SECURITY (V?? — OTP demo lock-down): in demo mode we still go
-  // through the real sendSms path so the integration is exercised
-  // end-to-end. The DB row holds the demo code; the response never
-  // leaks it. Local dev can read it from the DB or server logs
-  // (the log line above is still printed for that reason).
+  // DEMO MODE (reverted 2026-09-28): a random 6-digit code is returned to the
+  // caller in the response instead of being dispatched to a provider. UltraMsg
+  // / TextBee / Brevo are not configured here, so a real send would silently
+  // fail and the user could never sign in. No SMS / WhatsApp leaves the server.
+  //
+  // SECURITY: this is a DEMO affordance. It must not be exposed on a public
+  // production surface — anyone could read another account's OTP.
   console.log('[WASSILHA OTP DEMO] ' + phone + ' -> ' + code);
-} else {
-  console.log('[WASSILHA OTP] Generated fresh code for phone: ' + phone);
-}
 
-const recipient = '+213' + phone.substring(1);
-const content = 'رمز الدخول الخاص بك في وصّلها هو: ' + code;
+  return NextResponse.json({
+    ok: true,
+    sms: false,
+    demo: true,
+    devOtp: code,
+  });
+  } catch (e) {
+    console.error('[SEND-OTP] DB Error:', e);
 
-console.log('[WASSILHA SMS] Sending OTP...');
-console.log('[WASSILHA SMS] Recipient: ' + recipient);
-const sms = await sendSms(recipient, content);
-
-console.log('[WASSILHA SMS] Provider: ' + sms.provider);
-console.log('[WASSILHA SMS] SMS accepted by provider.');
-
-return NextResponse.json({
-  ok: true,
-  sms: true,
-  provider: sms.provider,
-  result: sms.response,
-});
-
-} catch (e) {
-  // DIAG: surface the exact failure so support can tell whether the DB
-  // write threw, the SMS provider rejected, or the rate limiter failed.
-  console.error('[SEND-OTP] DB or SMS Error:', e);
-  console.error('[WASSILHA SMS] Server error:', e);
 
 return NextResponse.json(
   {

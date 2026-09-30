@@ -92,9 +92,10 @@ async function req<T>(
 export const api = {
   // Auth
   sendOtp: (phone: string) =>
-    // SECURITY (V?? — OTP bypass lock-down): the server no longer
-    // returns the OTP in the response. The shape is `{ ok, sms, provider }`.
-    req<{ ok: boolean; sms: boolean; provider: string }>(
+    // DEMO MODE (2026-09-28): with no SMS/WhatsApp provider configured the
+    // server returns the random code as `devOtp` so the UI can show it.
+    // `provider` is absent in that flow, hence the optional fields.
+    req<{ ok: boolean; sms: boolean; provider?: string; demo?: boolean; devOtp?: string }>(
       '/api/auth/send-otp',
       {
         method: 'POST',
@@ -146,9 +147,10 @@ export const api = {
     req<{ pendingSignup: boolean; phone: string | null }>('/api/auth/pending-signup'),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   requestPasswordReset: (phone: string) =>
-    // SECURITY (V?? — OTP bypass lock-down): the server no longer
-    // returns the OTP in the response. The shape is `{ ok, provider }`.
-    req<{ ok: boolean; provider: string }>(
+    // DEMO MODE (2026-09-28): `devOtp` is present only when the account exists
+    // and is active; otherwise the response stays `{ ok: true }` so the
+    // endpoint still does not reveal which phone numbers are registered.
+    req<{ ok: boolean; provider?: string; demo?: boolean; devOtp?: string }>(
       '/api/auth/forgot-password/request',
       { method: 'POST', body: JSON.stringify({ phone }) }
     ),

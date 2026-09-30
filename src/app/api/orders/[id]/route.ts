@@ -35,14 +35,23 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: 'notFound' }, { status: 404 });
     }
 
+    // DIAG: the ownership decision is logged before it is enforced. Reports of
+    // "403 on my own order" were impossible to triage without this, because a
+    // forbidden response is indistinguishable from a wrong id client-side.
+    const isOwner =
+      session.role === 'customer'
+        ? order.customerId === session.id
+        : session.role === 'driver'
+          ? order.driverId === session.id
+          : false;
+    console.log(
+      `[GET /api/orders/${order.id}] role=${session.role} session=${session.id} ` +
+        `customerId=${order.customerId} driverId=${order.driverId} isOwner=${isOwner} ` +
+        `admin=${session.role === 'admin'}`,
+    );
+
     if (session.role !== 'admin') {
-      const allowed =
-        session.role === 'customer'
-          ? order.customerId === session.id
-          : session.role === 'driver'
-            ? order.driverId === session.id
-            : false;
-      if (!allowed) {
+      if (!isOwner) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403 });
       }
     }

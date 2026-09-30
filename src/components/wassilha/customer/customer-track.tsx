@@ -249,7 +249,12 @@ export function CustomerTrack() {
     );
   }
 
-  const driverName = order.driver?.name;
+  // A driver can have a null name (self-registration does not enforce one), so
+  // the tracking header must never render "undefined" or crash on .charAt().
+  const driverName =
+    order.driver?.name && order.driver.name.trim().length > 0
+      ? order.driver.name
+      : '(بدون اسم)';
   const showDriver = order.status === 'accepted' || order.status === 'picked';
 
   return (

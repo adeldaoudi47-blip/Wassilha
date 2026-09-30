@@ -29,6 +29,15 @@ type ConfirmAction =
   | { kind: 'delete'; driver: DriverProfile }
   | null;
 
+// Drivers self-register, and `User.name` is not enforced server-side, so a
+// driver can legitimately have a null/empty name. `name.charAt(0)` on such a
+// value throws, which used to blank the whole driver list. Every render path
+// goes through this helper instead.
+function displayName(name: string | null | undefined): string {
+  const trimmed = (name ?? '').trim();
+  return trimmed.length > 0 ? trimmed : '(بدون اسم)';
+}
+
 export function AdminDrivers() {
   const { t, isAr } = useT();
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
@@ -184,12 +193,12 @@ export function AdminDrivers() {
             <Card key={d.id} className="p-3">
               <div className="flex items-center gap-3">
                 <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary">
-                  {d.user.name.charAt(0)}
+                  {displayName(d.user.name).charAt(0)}
                   <span className={cn('absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-card', d.isOnline ? 'bg-emerald-500' : 'bg-slate-300')} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <p className="truncate text-sm font-bold text-foreground">{d.user.name}</p>
+                    <p className="truncate text-sm font-bold text-foreground">{displayName(d.user.name)}</p>
                     {d.isVerified ? (
                       <BadgeCheck size={13} className="shrink-0 text-emerald-500" />
                     ) : (
