@@ -13,7 +13,7 @@ import { SITE_URL } from '@/lib/site';
 export const revalidate = 300;
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ storeSlug: string; productSlug: string }> }
 ) {
   const { storeSlug, productSlug } = await params;
@@ -54,7 +54,7 @@ export async function GET(
         {
           width: OG_WIDTH,
           height: OG_HEIGHT,
-          fonts: loadCairoFonts(),
+          fonts: await loadCairoFonts(req.url),
         }
       );
     } catch (renderErr) {
