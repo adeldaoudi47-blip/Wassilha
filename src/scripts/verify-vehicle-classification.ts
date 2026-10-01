@@ -24,11 +24,13 @@ import { translations } from '../lib/i18n';
 import {
   LEGACY_CATEGORY_EQUIVALENTS,
   OFFICIAL_VEHICLE_CATEGORIES,
+  OFFICIAL_CATEGORIES_BY_SIDE,
   CARGO_VEHICLE_CATEGORIES,
   TAXI_VEHICLE_CATEGORIES,
   TAXI_CATEGORY_SEATS,
   normalizeVehicleCategory,
   rawCategoryForms,
+  retainCategoriesForService,
   validateRequiredVehicleTypes,
   vehicleCategorySide,
 } from '../lib/types';
@@ -275,6 +277,105 @@ check('offer policy carries the new field', offerPolicy.includes('requiredVehicl
 
 const vehicleRoute = src('src/app/api/driver/vehicle/route.ts');
 check('driver vehicle PATCH normalises on write', vehicleRoute.includes('normalizedCategory'));
+
+// ---------------------------------------------------------------------------
+section('5b. VEHICLE PICKER WIRING (regression: cargo driver saw taxi options)');
+// ---------------------------------------------------------------------------
+// The UI bug was that VehiclePicker derived its visible list from the `multi`
+// prop instead of the `side` prop. Every driver form passes multi={false}
+// (one vehicle per driver), so a CARGO driver was shown the two TAXI classes.
+// These checks pin the corrected contract at both levels: the data the picker
+// reads, and the component source that must read it from `side`.
+const picker = src('src/components/wassilha/vehicle-picker.tsx');
+check(
+  'picker reads its categories from `side`, never from `multi`',
+  picker.includes('OFFICIAL_CATEGORIES_BY_SIDE[side]') &&
+    !/const categories[^=]*=\s*multi\s*\?/.test(picker),
+);
+check(
+  'CARGO side exposes exactly the 4 cargo categories',
+  OFFICIAL_CATEGORIES_BY_SIDE.CARGO.length === 4 &&
+    OFFICIAL_CATEGORIES_BY_SIDE.CARGO.every((c) => (CARGO_VEHICLE_CATEGORIES as readonly string[]).includes(c)),
+  OFFICIAL_CATEGORIES_BY_SIDE.CARGO.join(', ')
+);
+check(
+  'TAXI side exposes exactly the 2 taxi categories',
+  OFFICIAL_CATEGORIES_BY_SIDE.TAXI.length === 2 &&
+    OFFICIAL_CATEGORIES_BY_SIDE.TAXI.every((c) => (TAXI_VEHICLE_CATEGORIES as readonly string[]).includes(c)),
+  OFFICIAL_CATEGORIES_BY_SIDE.TAXI.join(', ')
+);
+check(
+  'BOTH side would expose all 6, in two separated groups',
+  [...OFFICIAL_CATEGORIES_BY_SIDE.CARGO, ...OFFICIAL_CATEGORIES_BY_SIDE.TAXI].length ===
+    OFFICIAL_VEHICLE_CATEGORIES.length &&
+    picker.includes("side === 'BOTH'") &&
+    picker.includes('groups.map')
+);
+check(
+  'no category leaks across the service boundary',
+  OFFICIAL_CATEGORIES_BY_SIDE.CARGO.every((c) => vehicleCategorySide(c) === 'CARGO') &&
+    OFFICIAL_CATEGORIES_BY_SIDE.TAXI.every((c) => vehicleCategorySide(c) === 'TAXI')
+);
+
+// Every driver form must pass its real service through as `side`. The state
+// name differs per form (`serviceType` locally, `vehicleRegistration.serviceType`
+// in the application wizard), so both are accepted — what matters is that the
+// prop is driven by the live service and never hardcoded to one family.
+for (const [label, file] of [
+  ['driver application (auth-flow)', 'src/components/wassilha/auth/auth-flow.tsx'],
+  ['upgrade dialog', 'src/components/wassilha/customer/upgrade-driver-dialog.tsx'],
+  ['vehicle profile dialog', 'src/components/wassilha/driver/driver-profile.tsx'],
+] as const) {
+  const body = src(file);
+  check(
+    `${label} passes the live serviceType as \`side\``,
+    /<VehiclePicker[\s\S]{0,400}side=\{\s*(vehicleRegistration\.)?serviceType\s*\}/.test(body) &&
+      !/<VehiclePicker[\s\S]{0,400}side="(CARGO|TAXI)"/.test(body),
+  );
+}
+
+// Switching service must clear an incompatible category.
+check(
+  'switching CARGO drops a previously chosen taxi class',
+  retainCategoriesForService(['taxi_up_to_4'], 'CARGO').length === 0 &&
+    retainCategoriesForService(['taxi_over_5'], 'CARGO').length === 0
+);
+check(
+  'switching TAXI drops any previously chosen cargo category',
+  OFFICIAL_CATEGORIES_BY_SIDE.CARGO.every((c) => retainCategoriesForService([c], 'TAXI').length === 0)
+);
+check(
+  'switching service keeps a still-valid category (no needless clearing)',
+  retainCategoriesForService(['cargo_tricycle'], 'CARGO')[0] === 'cargo_tricycle' &&
+    retainCategoriesForService(['taxi_over_5'], 'TAXI')[0] === 'taxi_over_5'
+);
+check(
+  'BOTH keeps either family',
+  retainCategoriesForService(['cargo_moto_2'], 'BOTH').length === 1 &&
+    retainCategoriesForService(['taxi_up_to_4'], 'BOTH').length === 1
+);
+check(
+  'the reset helper can never invent a category',
+  retainCategoriesForService([], 'CARGO').length === 0 &&
+    retainCategoriesForService([], 'BOTH').length === 0
+);
+check(
+  'all three driver forms apply the reset on a service change',
+  [
+    'src/components/wassilha/auth/auth-flow.tsx',
+    'src/components/wassilha/customer/upgrade-driver-dialog.tsx',
+    'src/components/wassilha/driver/driver-profile.tsx',
+  ].every((f) => src(f).includes('retainCategoriesForService'))
+);
+
+// Server-side validation must still reject an incompatible pair, so a stale
+// value that slips through the UI cannot be persisted.
+const applyDrv = src('src/app/api/auth/apply-driver/route.ts');
+check(
+  'server still rejects category/service mismatch (cannot be bypassed by UI)',
+  applyDrv.includes("return badRequest('vehicleCategoryServiceMismatch'") &&
+    applyDrv.includes('vehicleCategorySide(vehicleCategory) !== serviceType')
+);
 
 // ---------------------------------------------------------------------------
 section('6. i18n (AR + FR)');

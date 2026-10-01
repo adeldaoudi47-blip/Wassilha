@@ -18,8 +18,7 @@ import { Bike, Car, Truck, Check } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import {
-  CARGO_VEHICLE_CATEGORIES,
-  TAXI_VEHICLE_CATEGORIES,
+  OFFICIAL_CATEGORIES_BY_SIDE,
   VEHICLE_CATEGORY_LABELS,
   VEHICLE_GROUP_LABELS,
   normalizeVehicleCategory,
@@ -36,8 +35,17 @@ const VEHICLE_ICON: Record<OfficialVehicleCategory, typeof Bike> = {
 };
 
 export interface VehiclePickerProps {
-  /** Which half of the vocabulary to offer. Decides the visible categories. */
-  side: VehicleServiceSide;
+  /**
+   * Which service the form is asking about. This — not `multi` — decides the
+   * visible categories:
+   *   'CARGO' → the four cargo vehicles
+   *   'TAXI'  → the two taxi capacity classes
+   *   'BOTH'  → both families, rendered as two separate groups (defensive:
+   *              no caller passes it today, "BOTH" was retired as a service)
+   */
+  side: VehicleServiceSide | 'BOTH';
+  /** Control style only: true = toggle tiles (cargo multi-select),
+   *  false = radio list. It must NOT influence which categories are shown. */
   multi: boolean;
   /** Currently selected official categories. */
   value: readonly OfficialVehicleCategory[];
@@ -58,8 +66,21 @@ export function VehiclePicker({
   className,
 }: VehiclePickerProps) {
   const tt = (k: string) => t[k] ?? k;
-  const categories = multi ? [...CARGO_VEHICLE_CATEGORIES] : [...TAXI_VEHICLE_CATEGORIES];
-  const groupTitle = tt(VEHICLE_GROUP_LABELS[side]);
+  // The visible categories come from `side` (which service the form is asking
+  // about) and NEVER from `multi`. `multi` only decides the CONTROL STYLE
+  // (toggle tiles vs a radio list) — deriving the list from it was the bug
+  // that showed taxi vehicles to a CARGO driver, because every driver form
+  // passes multi={false} (a driver owns one vehicle).
+  //
+  // 'BOTH' is supported as a defensive case: it renders the two groups
+  // separately so the two families are never visually merged. No current
+  // caller passes it (Driver.serviceType is CARGO or TAXI only, "BOTH" was
+  // retired), but the picker stays correct if that ever returns.
+  const categories: OfficialVehicleCategory[] =
+    side === 'BOTH'
+      ? [...OFFICIAL_CATEGORIES_BY_SIDE.CARGO, ...OFFICIAL_CATEGORIES_BY_SIDE.TAXI]
+      : [...OFFICIAL_CATEGORIES_BY_SIDE[side]];
+  const groupTitle = side === 'BOTH' ? '' : tt(VEHICLE_GROUP_LABELS[side]);
   const heading = multi ? tt('selectVehicleTypes') : tt('selectVehicleType');
   const help = multi ? tt('selectVehicleTypesHelp') : undefined;
 
@@ -81,6 +102,34 @@ export function VehiclePicker({
     );
   };
 
+  // One or two labelled groups. In 'BOTH' mode the cargo family and the taxi
+  // family are rendered as SEPARATE blocks, each with its own heading, so the
+  // driver can never mistake a taxi class for a cargo one.
+  const groups: { key: string; title: string; icon: string; items: OfficialVehicleCategory[] }[] =
+    side === 'BOTH'
+      ? [
+          {
+            key: 'CARGO',
+            title: tt(VEHICLE_GROUP_LABELS.CARGO),
+            icon: '🚚',
+            items: [...OFFICIAL_CATEGORIES_BY_SIDE.CARGO],
+          },
+          {
+            key: 'TAXI',
+            title: tt(VEHICLE_GROUP_LABELS.TAXI),
+            icon: '🚕',
+            items: [...OFFICIAL_CATEGORIES_BY_SIDE.TAXI],
+          },
+        ]
+      : [
+          {
+            key: side,
+            title: groupTitle,
+            icon: side === 'CARGO' ? '🚚' : '🚕',
+            items: categories,
+          },
+        ];
+
   return (
     <div className={cn('space-y-3', className)}>
       <div>
@@ -88,15 +137,19 @@ export function VehiclePicker({
         {help ? <p className="text-[11px] text-muted-foreground">{help}</p> : null}
       </div>
 
-      <div role={multi ? 'group' : 'radiogroup'} aria-label={groupTitle} className="space-y-2">
-        <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-          {side === 'CARGO' ? '🚚' : '🚕'} {groupTitle}
-        </p>
+      <div role={multi ? 'group' : 'radiogroup'} aria-label={groupTitle || heading} className="space-y-3">
+        {groups.map((group) => (
+          <div key={group.key} className="space-y-2">
+            {group.title ? (
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                {group.icon} {group.title}
+              </p>
+            ) : null}
 
-        {multi ? (
+            {multi ? (
           // Toggle tiles — the customer can pick one OR several categories.
-          <div className="grid grid-cols-2 gap-2">
-            {categories.map((category) => {
+              <div className="grid grid-cols-2 gap-2">
+                {group.items.map((category) => {
               const Icon = VEHICLE_ICON[category];
               const checked = selected.includes(category);
               const disabled = isDisabled?.(category) ?? false;
@@ -126,13 +179,13 @@ export function VehiclePicker({
             })}
           </div>
         ) : (
-          // Radio list — a taxi booking is one vehicle, never two.
-          <RadioGroup
-            value={selected[0] ?? ''}
-            onValueChange={(v) => toggle(v as OfficialVehicleCategory)}
-            className="space-y-2"
-          >
-            {categories.map((category) => {
+          // Radio list — a driver owns ONE vehicle, never two.
+              <RadioGroup
+                value={selected[0] ?? ''}
+                onValueChange={(v) => toggle(v as OfficialVehicleCategory)}
+                className="space-y-2"
+              >
+                {group.items.map((category) => {
               const Icon = VEHICLE_ICON[category];
               const disabled = isDisabled?.(category) ?? false;
               return (
@@ -150,8 +203,10 @@ export function VehiclePicker({
                 </label>
               );
             })}
-          </RadioGroup>
-        )}
+              </RadioGroup>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

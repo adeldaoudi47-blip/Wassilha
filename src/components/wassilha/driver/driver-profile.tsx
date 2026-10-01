@@ -21,6 +21,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDzd } from '@/lib/wassilha-data';
 import type { DriverProfile, VehicleCategory, OfficialVehicleCategory } from '@/lib/types';
+import { retainCategoriesForService } from '@/lib/types';
 import { VehiclePicker } from '../vehicle-picker';
 import { VEHICLE_CATEGORIES, VEHICLE_CATEGORY_LABELS } from '@/lib/types';
 import Link from 'next/link';
@@ -284,16 +285,20 @@ function VehicleEditDialog({
     // row, so we read it through a sibling any-cast. It is used to drive
     // the conditional UI below.
     setServiceType(v.serviceType === 'TAXI' ? 'TAXI' : 'CARGO');
-    // VEHICLE CLASSIFICATION (Phase 1): seed the dropdown from the stored
-    // category. Unknown/absent values are coerced to the "no category"
-    // sentinel so the dropdown never shows a stale placeholder after the
-    // vocabulary grows, and a driver with no category sees the option that
-    // matches what is persisted.
-    setVehicleCategory(
+    // VEHICLE CLASSIFICATION: seed the picker from the stored category.
+    // A category that does not belong to the driver's service is treated as
+    // "not chosen" — it is filtered out of the options anyway, so preselecting
+    // it would show nothing selected while still submitting a pair the server
+    // rejects. Unknown/absent values fall back to the "no category" sentinel.
+    // Radix forbids an empty-string option value, hence the sentinel.
+    const storedService: 'CARGO' | 'TAXI' = v.serviceType === 'TAXI' ? 'TAXI' : 'CARGO';
+    const keptCategory = retainCategoriesForService(
       typeof v.vehicleCategory === 'string' && v.vehicleCategory
-        ? v.vehicleCategory
-        : NO_CATEGORY_VALUE
+        ? [v.vehicleCategory as OfficialVehicleCategory]
+        : [],
+      storedService,
     );
+    setVehicleCategory(keptCategory[0] ?? NO_CATEGORY_VALUE);
   }, [open, vehicle]);
 
   const handleSave = async (e: React.FormEvent) => {

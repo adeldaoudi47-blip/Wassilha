@@ -31,7 +31,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 import type { OfficialVehicleCategory } from '@/lib/types';
-import { normalizeVehicleCategory, vehicleCategorySide } from '@/lib/types';
+import { normalizeVehicleCategory, vehicleCategorySide, retainCategoriesForService } from '@/lib/types';
 import { VehiclePicker } from '../vehicle-picker';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
@@ -1574,12 +1574,21 @@ export function AuthFlow() {
                   </label>
                   <Select
                     value={vehicleRegistration.serviceType}
-                    onValueChange={(v) =>
-                      updateVehicleRegistration(
-                        "serviceType",
-                        v as "CARGO" | "TAXI" | "BOTH"
-                      )
-                    }
+                    onValueChange={(v) => {
+                      const next = v as 'CARGO' | 'TAXI';
+                      updateVehicleRegistration('serviceType', next);
+                      // A vehicle picked under the previous service is not
+                      // valid under the new one, so clear it rather than
+                      // submitting a pair the server will reject with
+                      // vehicleCategoryServiceMismatch.
+                      const kept = retainCategoriesForService(
+                        vehicleRegistration.vehicleCategory
+                          ? [vehicleRegistration.vehicleCategory as OfficialVehicleCategory]
+                          : [],
+                        next,
+                      );
+                      updateVehicleRegistration('vehicleCategory', kept[0] ?? '');
+                    }}
                   >
                     <SelectTrigger className="h-12 rounded-xl">
                       <SelectValue />

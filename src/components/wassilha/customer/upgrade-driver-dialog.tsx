@@ -9,7 +9,7 @@ import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import type { OfficialVehicleCategory } from '@/lib/types';
-import { vehicleCategorySide } from '@/lib/types';
+import { vehicleCategorySide, retainCategoriesForService } from '@/lib/types';
 import { VehiclePicker } from '../vehicle-picker';
 
 interface UpgradeDriverDialogProps {
@@ -270,7 +270,15 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
           <Field label={t.driverService} required>
             <Select
               value={serviceType}
-              onValueChange={(v) => setServiceType(v as 'CARGO' | 'TAXI')}
+              onValueChange={(v) => {
+                    // Switching service invalidates a previously picked
+                    // vehicle: a taxi class must not survive a switch to CARGO
+                    // (and vice-versa), or the form would submit a pair the
+                    // server rejects with vehicleCategoryServiceMismatch.
+                    const next = v as 'CARGO' | 'TAXI';
+                    setServiceType(next);
+                    setVehicleCategory((prev) => retainCategoriesForService(prev, next));
+                  }}
             >
               <SelectTrigger className="h-11 rounded-xl">
                 <SelectValue />

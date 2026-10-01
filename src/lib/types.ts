@@ -165,6 +165,24 @@ export type VehicleTypesValidation =
   | { ok: false; reason: 'unknownCategory' | 'mixedServices' | 'tooMany' | 'empty'; value: string };
 
 /**
+ * Drop any selected category that no longer belongs to the newly chosen
+ * service, so switching CARGO <-> TAXI can never carry a stale value into the
+ * next submit. Kept next to the vocabulary rather than duplicated in each form
+ * (driver application, upgrade dialog, vehicle profile dialog).
+ *
+ * 'BOTH' accepts either family and therefore keeps whatever was selected.
+ * An already-compatible selection is returned untouched — this only ever
+ * removes, never adds, so it cannot silently pick a vehicle for the user.
+ */
+export function retainCategoriesForService(
+  selected: readonly OfficialVehicleCategory[],
+  service: VehicleServiceSide | 'BOTH',
+): OfficialVehicleCategory[] {
+  if (service === 'BOTH') return [...selected];
+  return selected.filter((c) => vehicleCategorySide(c) === service);
+}
+
+/**
  * Normalize + validate a client-supplied list of required vehicle types.
  * Shared by the order API, the wizard and the driver form so those three can
  * never disagree about what a legal value is.
