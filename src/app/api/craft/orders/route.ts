@@ -7,6 +7,9 @@ import { publicCraftOrderSelect } from '@/lib/dto';
 import { createNotification } from '@/lib/notifications';
 // HIRFA Phase 3: server-authoritative pricing (variants / tiers / coupons).
 import { couponDiscount, pickTier, unitPriceFor } from '@/lib/craft-pricing';
+import { createCraftDeliveryOrder } from '@/lib/craft-delivery';
+import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
+import { emitOrderNewRequest } from '@/lib/pusher-server';
 
 // POST /api/craft/orders
 // Customer-only. Creates a craft order from the client-side cart.
@@ -33,7 +36,17 @@ const createSchema = z.object({
     )
     .min(1, 'emptyCart')
     .max(50, 'tooManyItems'),
-  deliveryOption: z.enum(['pickup']).default('pickup'),
+  // PHASE 7A: 'wassilha_delivery' creates a real Wassilha transport Order at
+  // checkout. Backward compatible: anything omitted still defaults to 'pickup'.
+  deliveryOption: z.enum(['pickup', 'wassilha_delivery']).default('pickup'),
+  // PHASE 7A: the delivery destination belongs to the CUSTOMER and is captured
+  // here, where the customer is present. It is never persisted on CraftOrder
+  // (that would expose the customer's home address to the seller) — it goes
+  // straight onto the transport Order, where Phase 5 privacy already confines
+  // it to the assigned driver / customer / admin.
+  dropoffAddress: z.string().trim().min(2).max(200).optional().nullable(),
+  dropoffLat: z.number().min(-90).max(90).optional().nullable(),
+  dropoffLng: z.number().min(-180).max(180).optional().nullable(),
   notes: z.string().trim().max(500).optional(),
   // HIRFA Phase 3: optional discount code. Validated (and redeemed) only
   // after the server resolved the subtotal — the client never tells us how
@@ -53,6 +66,15 @@ export async function POST(req: NextRequest) {
     }
 
     const { items, deliveryOption, notes, couponCode } = parsed.data;
+    // PHASE 7A: a delivery order REQUIRES a destination. We refuse the checkout
+    // rather than inventing an address or silently downgrading to pickup — the
+    // customer asked for delivery and would otherwise never receive it.
+    const wantsDelivery = deliveryOption === 'wassilha_delivery';
+    const dropoffAddress =
+      typeof parsed.data.dropoffAddress === 'string' ? parsed.data.dropoffAddress.trim() : '';
+    if (wantsDelivery && dropoffAddress.length < 2) {
+      return NextResponse.json({ error: 'deliveryAddressRequired' }, { status: 400 });
+    }
 
     // Deduplicate items (same productId + variant merged into one line with
     // summed qty). The variant is part of the key: two different sizes of the
@@ -80,7 +102,7 @@ export async function POST(req: NextRequest) {
     // `usedCount` increment guarded by `usageLimit`), and decrements the
     // variant-level stock. A coupon is scoped to ONE artisan, so it can only
     // apply to the store it belongs to.
-    const created = await db.$transaction(async (tx) => {
+    const { orders: created, deliveries } = await db.$transaction(async (tx) => {
       const products = await tx.craftProduct.findMany({
         where: { id: { in: productIds }, isActive: true, artisan: { status: 'active' } },
         select: {
@@ -166,6 +188,9 @@ export async function POST(req: NextRequest) {
       }
 
       const orders: Prisma.CraftOrderGetPayload<{ select: typeof publicCraftOrderSelect }>[] = [];
+      // PHASE 7A: the transport Orders created in this transaction, fanned out
+      // to drivers AFTER it commits (never inside it).
+      const deliveries: { id: string; code: string }[] = [];
       for (const [artisanId, lineItems] of byArtisan) {
         // Compute totalPrice server-side from DB prices for THIS store only,
         // applying the graduated tier pricing + variant adjustment.
@@ -215,6 +240,25 @@ export async function POST(req: NextRequest) {
         });
         orders.push(order);
 
+        // PHASE 7A: create the linked Wassilha transport Order for THIS store.
+        // A multi-store cart produces one CraftOrder (and therefore one pickup)
+        // per seller, so each gets its own delivery leg - exactly how the goods
+        // would physically travel. Inside the SAME transaction as the
+        // CraftOrder, which is what makes checkout + delivery atomic.
+        if (wantsDelivery) {
+          const delivery = await createCraftDeliveryOrder({
+            tx,
+            craftOrderId: order.id,
+            craftOrderCode: order.code,
+            customerId: session.id,
+            storeId: artisanId,
+            dropoffAddress,
+            dropoffLat: parsed.data.dropoffLat ?? null,
+            dropoffLng: parsed.data.dropoffLng ?? null,
+          });
+          if (delivery) deliveries.push(delivery);
+        }
+
         // HIRFA Phase 3: burn the coupon slot atomically. The conditional
         // update (usedCount < usageLimit) is what makes two customers racing
         // for the last redemption safe — the loser's whole transaction aborts.
@@ -243,7 +287,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return orders;
+      return { orders, deliveries };
     });
 
     // HIRFA (notification center): tell each artisan they have a new
@@ -262,6 +306,52 @@ export async function POST(req: NextRequest) {
       const artisanOwner = artisanUserId.get(o.artisan.id);
       if (artisanOwner) void notifyArtisanNewOrder(artisanOwner, o);
     }
+    // PHASE 7A — hand each new delivery to the EXISTING Wassilha dispatch path.
+    // We do NOT fan out drivers ourselves: `fanOutNewOrder()` +
+    // `emitOrderNewRequest()` are the authoritative Phase 1-6 functions, so the
+    // request automatically inherits account-state gating, service type,
+    // `isVehicleCompatible()`, large-cargo rules, push, in-app notifications and
+    // the Phase 6 realtime event. This runs AFTER the transaction commits, so a
+    // rolled-back checkout can never notify a driver.
+    for (const delivery of deliveries) {
+      try {
+        const order = await db.order.findUnique({
+          where: { id: delivery.id },
+          select: {
+            id: true, code: true, cargoType: true,
+            pickup: true, dropoff: true,
+            requiredVehicleType: true, requiredVehicleTypes: true,
+            requiredSeats: true,
+          },
+        });
+        if (!order) continue;
+        await fanOutNewOrder({
+          id: order.id,
+          code: order.code,
+          cargoType: order.cargoType,
+          pickup: order.pickup,
+          dropoff: order.dropoff,
+          requiredVehicleType: order.requiredVehicleType ?? null,
+          requiredSeats: order.requiredSeats ?? null,
+          requiredVehicleTypes: order.requiredVehicleTypes ?? [],
+        });
+        emitOrderNewRequest(
+          order,
+          // All four arguments, so the realtime pool matches the push pool
+          // exactly (the multi-select field is part of the filter).
+          await findAvailableDrivers(
+            order.cargoType,
+            order.requiredVehicleType ?? null,
+            order.requiredSeats ?? null,
+            order.requiredVehicleTypes ?? [],
+          ),
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[craft/orders] delivery fan-out failed:', e);
+      }
+    }
+
     return NextResponse.json({ orders: created }, { status: 201 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -275,6 +365,11 @@ export async function POST(req: NextRequest) {
     if (msg === 'couponExpired') return NextResponse.json({ error: 'couponExpired' }, { status: 409 });
     if (msg === 'couponExhausted') return NextResponse.json({ error: 'couponExhausted' }, { status: 409 });
     if (msg === 'couponInvalid') return NextResponse.json({ error: 'couponInvalid' }, { status: 400 });
+    // PHASE 7A sentinels. All abort the WHOLE transaction (checkout included),
+    // so a failed delivery never leaves an orphaned CraftOrder behind.
+    if (msg === 'storeNotFound') return NextResponse.json({ error: 'storeNotFound' }, { status: 409 });
+    if (msg === 'deliveryLinkLost') return NextResponse.json({ error: 'duplicateSubmit' }, { status: 409 });
+    if (msg === 'codeGenFailed') return NextResponse.json({ error: 'serverError' }, { status: 500 });
     return NextResponse.json({ error: 'serverError', detail: msg }, { status: 500 });
   }
 }

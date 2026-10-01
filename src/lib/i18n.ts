@@ -43,6 +43,15 @@ export const translations = {
     items: 'المنتجات',
     orderPlaced: 'تم تقديم الطلب بنجاح',
     orderPlacedMsg: 'سيتواصل معك الحرفي قريباً',
+    // PHASE 7A — marketplace delivery method + destination (craft cart).
+    deliveryMethod: 'طريقة الاستلام',
+    deliveryViaWassilha: 'توصيل عبر وصّلها',
+    deliveryAddress: 'عنوان التوصيل',
+    deliveryAddressPlaceholder: 'الحي، الشارع، معلم قريب…',
+    deliveryAddressRequired: 'أدخل عنوان التوصيل',
+    deliveryFee: 'رسوم التوصيل',
+    deliveryFeePending: 'تُحتسب حسب المسافة',
+    deliveryByWassilha: 'سيتولى سائق من وصّلها توصيل طلبك إلى بابك',
     insufficientStock: 'الكمية غير متوفرة',
     outOfStock: 'نفد المخزون',
     // === HIRFA (P7): delivery & reviews =============================
@@ -813,6 +822,15 @@ export const translations = {
     items: 'Produits',
     orderPlaced: 'Commande passée avec succès',
     orderPlacedMsg: "L'artisan vous contactera bientôt",
+    // PHASE 7A — marketplace delivery method + destination (craft cart).
+    deliveryMethod: 'Mode de retrait',
+    deliveryViaWassilha: 'Livraison via Wassilha',
+    deliveryAddress: 'Adresse de livraison',
+    deliveryAddressPlaceholder: 'Quartier, rue, point de repère…',
+    deliveryAddressRequired: 'Saisissez une adresse de livraison',
+    deliveryFee: 'Frais de livraison',
+    deliveryFeePending: 'Calculés selon la distance',
+    deliveryByWassilha: 'Un chauffeur Wassilha livrera votre commande chez vous',
     insufficientStock: 'Stock insuffisant',
     outOfStock: 'Rupture de stock',
     // === HIRFA artisan application (P4) - French mirrors ============

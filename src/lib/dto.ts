@@ -263,6 +263,11 @@ export const publicCraftOrderSelect = {
   code: true,
   status: true,
   deliveryOption: true,
+  // PHASE 7A: the linked Wassilha transport Order, when delivery was chosen.
+  // Exposed so the customer can follow the delivery; it is the CUSTOMER's own
+  // order id, not seller data, and the address itself lives on the transport
+  // Order under the existing Phase 5 privacy rules.
+  deliveryOrderId: true,
   totalPrice: true,
   notes: true,
   createdAt: true,

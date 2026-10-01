@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth';
-import { publicCraftOrderSelect } from '@/lib/dto';
-import { sendPushNotificationBatch } from '@/lib/firebase-admin';
-import { generateOrderCode } from '@/lib/wassilha-data';
-import { GUERRARA_CENTER } from '@/lib/wassilha-data';
+import { publicCraftOrderSelect, publicOrderSelect } from '@/lib/dto';
+import { emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -132,107 +130,53 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       return NextResponse.json(current);
     }
 
-    // P7: Delivery Integration — when status transitions to 'ready' and
-    // deliveryOption is 'wassilha_delivery', create a delivery Order.
-    if (newStatus === 'ready') {
-      const craftOrder = await db.craftOrder.findUnique({
+    // PHASE 7A — CANCEL PROPAGATION.
+    // Cancelling a marketplace order must also cancel its Wassilha delivery
+    // leg, otherwise the transport Order stays `searching` and keeps
+    // broadcasting to drivers for goods that will never be dispatched. The
+    // conditional update re-asserts "still open" under the row lock, so it can
+    // never clobber a delivery that a driver already picked up or completed.
+    // A `cancelled` delivery is terminal, so the emit is a courtesy refresh.
+    if (newStatus === 'cancelled') {
+      const linked = await db.craftOrder.findUnique({
         where: { id },
-        select: {
-          id: true,
-          code: true,
-          deliveryOption: true,
-          deliveryOrderId: true,
-          customerId: true,
-          artisan: {
-            select: {
-              addressAr: true,
-              latitude: true,
-              longitude: true,
-              area: { select: { nameAr: true } },
-            },
-          },
-        },
+        select: { deliveryOrderId: true },
       });
-
-      if (craftOrder && craftOrder.deliveryOption === 'wassilha_delivery' && !craftOrder.deliveryOrderId) {
-        // Get artisan workshop address as pickup
-        const pickupAddress = craftOrder.artisan.addressAr ||
-          (craftOrder.artisan.area ? `${craftOrder.artisan.area.nameAr} - القرارة` : 'ورشة الحرفي - القرارة');
-
-        // Get dropoff from request body or use Guerrara center as fallback
-        const dropoffAddress = body && typeof body === 'object' && 'dropoffAddress' in body && typeof body.dropoffAddress === 'string'
-          ? body.dropoffAddress
-          : 'عنوان الزبون - القرارة';
-
-        const artisanLat = craftOrder.artisan.latitude ? Number(craftOrder.artisan.latitude) : GUERRARA_CENTER.lat;
-        const artisanLng = craftOrder.artisan.longitude ? Number(craftOrder.artisan.longitude) : GUERRARA_CENTER.lng;
-        const dropoffLat = body && typeof body === 'object' && 'dropoffLat' in body && typeof body.dropoffLat === 'number'
-          ? body.dropoffLat : GUERRARA_CENTER.lat;
-        const dropoffLng = body && typeof body === 'object' && 'dropoffLng' in body && typeof body.dropoffLng === 'number'
-          ? body.dropoffLng : GUERRARA_CENTER.lng;
-
-        // Generate order code
-        let orderCode = generateOrderCode();
-        let attempts = 0;
-        while (await db.order.count({ where: { code: orderCode } }) > 0) {
-          orderCode = generateOrderCode();
-          if (++attempts > 10) break;
-        }
-
-        // Create the delivery Order
-        const deliveryOrder = await db.order.create({
-          data: {
-            code: orderCode,
-            customerId: craftOrder.customerId,
-            cargoType: 'craft', // Distinguish as Hirfa delivery
-            pickup: pickupAddress,
-            dropoff: dropoffAddress,
-            pickupLat: artisanLat,
-            pickupLng: artisanLng,
-            dropoffLat,
-            dropoffLng,
-            weight: 5, // Default weight for craft delivery (kg)
-            price: 300, // Default price for craft delivery
-            status: 'searching',
-            notes: `توصيل منتج حِرفة - طلب ${craftOrder.code}`,
-          },
-        });
-
-        // Link the CraftOrder to the new delivery Order
-        await db.craftOrder.update({
-          where: { id },
-          data: { deliveryOrderId: deliveryOrder.id },
-        });
-
-        // Fan-out: notify available drivers about the new craft delivery
-        void (async () => {
-          try {
-            const availableDrivers = await db.driver.findMany({
-              where: {
-                isOnline: true,
-                isVerified: true,
-                user: { accountStatus: 'active' },
-                // Craft deliveries are goods: cargo drivers only
-                // (BOTH retired, so the wildcard branch is gone).
-                serviceType: 'CARGO',
-              },
-              select: { userId: true },
+      if (linked?.deliveryOrderId) {
+        try {
+          const stop = await db.order.updateMany({
+            where: {
+              id: linked.deliveryOrderId,
+              status: { in: ['searching', 'scheduled', 'accepted'] },
+            },
+            data: { status: 'cancelled', cancelledAt: new Date() },
+          });
+          if (stop.count > 0) {
+            const fresh = await db.order.findUnique({
+              where: { id: linked.deliveryOrderId },
+              select: { ...publicOrderSelect },
             });
-
-            if (availableDrivers.length === 0) return;
-
-            await sendPushNotificationBatch(
-              availableDrivers.map((d) => d.userId),
-              'طلب حِرفة جديد',
-              `لديك طلب توصيل منتج حرفي جديد - ${craftOrder.code}`,
-              { type: 'new_craft_order', orderId: deliveryOrder.id, craftOrderId: id, orderCode: deliveryOrder.code }
-            );
-          } catch (e) {
-            console.warn('[craft/status] driver fan-out failed:', e);
+            if (fresh) emitOrderStatus(fresh);
           }
-        })();
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('[craft/status] delivery cancel failed:', e);
+        }
       }
     }
+
+    // PHASE 7A: the old inline "auto-create a delivery Order when the seller
+    // marks the craft order ready" block was REMOVED, not revived. It was
+    // unreachable (the checkout schema only accepted 'pickup') and unsafe on
+    // every axis: hardcoded price 300 / weight 5, a `cargoType` of 'craft', no
+    // `isVehicleCompatible()` filter (it pinged EVERY cargo driver), no realtime
+    // event, no in-app notification, and a non-transactional
+    // read-then-write that could create duplicate delivery Orders under a race.
+    //
+    // Delivery now happens once, atomically, at checkout via
+    // `createCraftDeliveryOrder()` (src/lib/craft-delivery.ts), and the request
+    // is dispatched by the existing `fanOutNewOrder()` / `emitOrderNewRequest()`
+    // so it inherits all of Phase 1-6. Nothing to do here for 'ready'.
 
     const result = await db.craftOrder.findUnique({
       where: { id },

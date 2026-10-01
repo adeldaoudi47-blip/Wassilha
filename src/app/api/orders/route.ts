@@ -509,10 +509,19 @@ export async function POST(req: NextRequest) {
         // instantly without waiting for their 5s poll fallback.
         emitOrderNewRequest(
           order,
+          // PHASE 7A FIX: the multi-select field is part of the matching
+          // contract, so it MUST be forwarded here exactly as `fanOutNewOrder`
+          // already does for the push pool. Omitting it made this realtime
+          // pool wider than the push pool for a multi-select request (the
+          // plural field would silently fall back to the legacy singular
+          // field, or to no category filter at all). No new matching logic —
+          // this is the same authoritative `findAvailableDrivers()` the push
+          // path and the Phase 7A delivery path already use.
           await findAvailableDrivers(
             order.cargoType,
             order.requiredVehicleType ?? null,
             order.requiredSeats ?? null,
+            order.requiredVehicleTypes ?? [],
           ),
         );
       } catch (e) {

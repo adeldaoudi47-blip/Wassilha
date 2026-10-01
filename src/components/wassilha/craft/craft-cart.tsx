@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useT } from '../use-t';
 import { useCraftCart } from '@/lib/store';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import type { AuthUser, CouponPreview } from '@/lib/types';
 
@@ -135,11 +136,23 @@ export function CraftCart() {
     }
   };
 
+  // PHASE 7A — delivery method. Defaults to pickup, so existing behaviour and
+  // any older client that omits the field are unchanged.
+  const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'wassilha_delivery'>('pickup');
+  const [dropoffAddress, setDropoffAddress] = useState('');
+  const deliveryNeedsAddress = deliveryMode === 'wassilha_delivery';
+
   const handleCheckout = async () => {
     if (items.length === 0) return;
     // Defense in depth: the UI hides the button for guests, but the order
     // API resolves the customer from the session — never trust the button.
     if (!me) return;
+    // Client-side pre-check for the server's `deliveryAddressRequired`. The
+    // server still enforces it authoritatively.
+    if (deliveryNeedsAddress && dropoffAddress.trim().length < 2) {
+      toast.error(t.deliveryAddressRequired);
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.createCraftOrder({
@@ -148,7 +161,8 @@ export function CraftCart() {
           variantId: i.variantId,
           quantity: i.qty,
         })),
-        deliveryOption: 'pickup',
+        deliveryOption: deliveryMode,
+        dropoffAddress: deliveryNeedsAddress ? dropoffAddress.trim() : undefined,
         couponCode: couponCode || null,
       });
       clear();
@@ -301,6 +315,53 @@ export function CraftCart() {
         )}
       </div>
 
+      {/* PHASE 7A — delivery method. Two plain radio-style choices; the second
+          reveals the destination field. Kept deliberately minimal: no new
+          checkout architecture, just the one new choice the API now supports. */}
+      <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-4">
+        <p className="text-xs font-bold text-muted-foreground">{t.deliveryMethod}</p>
+        <div className="space-y-2">
+          {([
+            { value: 'pickup', label: t.pickup },
+            { value: 'wassilha_delivery', label: t.deliveryViaWassilha },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setDeliveryMode(opt.value)}
+              aria-pressed={deliveryMode === opt.value}
+              className={
+                'flex w-full items-center gap-2 rounded-xl border-2 p-3 text-start text-xs font-bold transition-colors ' +
+                (deliveryMode === opt.value
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border bg-background')
+              }
+            >
+              <span
+                className={
+                  'inline-block size-3.5 shrink-0 rounded-full border-2 ' +
+                  (deliveryMode === opt.value ? 'border-primary bg-primary' : 'border-border')
+                }
+              />
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {deliveryNeedsAddress ? (
+          <div className="space-y-2 pt-1">
+            <Input
+              value={dropoffAddress}
+              onChange={(e) => setDropoffAddress(e.target.value)}
+              placeholder={t.deliveryAddressPlaceholder}
+              maxLength={200}
+              aria-label={t.deliveryAddress}
+            />
+            <p className="text-[10px] text-muted-foreground">{t.deliveryByWassilha}</p>
+          </div>
+        ) : null}
+      </div>
+
       {/* Total */}
       <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -313,6 +374,17 @@ export function CraftCart() {
             <span>-{discount} {t.currencyDzd}</span>
           </div>
         )}
+        {/* PHASE 7A — the delivery fee is deliberately NOT added here. It is
+            computed server-side from the real pickup/dropoff distance by
+            `computeOrderPrice`, so the customer cannot influence it and the
+            amount is not known until checkout. Showing a fabricated estimate
+            next to the authoritative total would be worse than saying so. */}
+        {deliveryNeedsAddress ? (
+          <div className="flex items-center justify-between text-xs font-bold text-primary">
+            <span>{t.deliveryFee}</span>
+            <span>{t.deliveryFeePending}</span>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between border-t border-border pt-2">
           <span className="text-sm font-black text-foreground">{t.totalAfterDiscount}</span>
           <span className="text-lg font-black text-primary">
