@@ -99,6 +99,10 @@ export const publicOrderSelect = {
   // (or null). Returned to drivers so they can tell whether their
   // vehicle fits before accepting, and to the customer in track view.
   requiredVehicleType: true,
+  // MULTI-SELECT VEHICLE TYPES: the official categories the customer picked
+  // for this order (empty array = no preference). Returned to drivers so they
+  // can tell whether their vehicle fits before accepting.
+  requiredVehicleTypes: true,
   // SEAT-CAPACITY MATCHING (Phase 1): the minimum passenger seats the
   // customer asked for (TAXI), null when unspecified. Returned to drivers
   // so a vehicle with too few seats never appears in their list.

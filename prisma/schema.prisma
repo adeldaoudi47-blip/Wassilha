@@ -359,6 +359,24 @@ model Order {
   // (the legacy behaviour, and what every pre-existing row has).
   requiredVehicleType String?
 
+  // MULTI-SELECT VEHICLE TYPES (vehicle-classification task): the official
+  // categories the customer selected on the order form, e.g.
+  // ["cargo_tricycle", "cargo_small_truck"] = "any driver whose vehicle is
+  // either an amprita or a small truck can serve this".
+  //
+  // Chosen over a join table / JSON / Prisma enum because it is the smallest
+  // additive change that keeps `isVehicleCompatible` a pure synchronous
+  // function: an array needs no second query on the fan-out path and no
+  // backfill. A Postgres TEXT[] is also a real type (not an untyped string) and
+  // is GIN-indexable should the fleet grow enough to need it.
+  //
+  // DEFAULT '{}' is the BACKWARD-COMPATIBILITY CONTRACT: an empty array means
+  // "no preference", exactly like `requiredVehicleType = NULL`, so every
+  // existing order keeps its previous matching behaviour with no data change.
+  // `requiredVehicleTypes` takes precedence over the singular field whenever
+  // it is non-empty (see requiredVehicleCategories in src/lib/dispatch.ts).
+  requiredVehicleTypes String[] @default([])
+
   // SEAT-CAPACITY MATCHING (Phase 1 - Security & Matching Foundation):
   // the minimum number of passenger seats the customer needs (TAXI mode).
   // Null = no requirement: every pre-existing row, and every CARGO order,

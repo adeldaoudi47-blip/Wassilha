@@ -12,6 +12,14 @@
 // The user is NOT logged in. They will only be granted a session after an
 // admin approves their application AND they pass OTP again.
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  CARGO_VEHICLE_CATEGORIES,
+  OFFICIAL_VEHICLE_CATEGORIES,
+  TAXI_CATEGORY_SEATS,
+  TAXI_VEHICLE_CATEGORIES,
+  normalizeVehicleCategory,
+  vehicleCategorySide,
+} from '@/lib/types';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getVerifiedPhone, clearPhoneVerification, getSession } from '@/lib/auth';
@@ -73,6 +81,12 @@ interface ApplyDriverBody {
   // of being rejected with 400, so a misbehaving client cannot break
   // the registration.
   serviceType?: unknown;
+  // Official vehicle classification (vehicle-classification task): REQUIRED.
+  // The driver picks their vehicle category in the form; the server validates
+  // it against the official vocabulary AND against the declared serviceType,
+  // so a TAXI driver cannot register a motorbike (they would then be filtered
+  // out of every order they could physically serve).
+  vehicleCategory?: unknown;
 }
 
 function badRequest(error: string, issues?: unknown) {
@@ -220,6 +234,28 @@ export async function POST(req: NextRequest) {
     // is persisted in `Driver.serviceType` and used by the order
     // fan-out in `POST /api/orders` to filter who gets the push.
     const serviceType = normalizeServiceType(body.serviceType);
+
+    // OFFICIAL VEHICLE CLASSIFICATION (vehicle-classification task).
+    //
+    // The driver declares their vehicle in the form; this endpoint is where it
+    // becomes trusted data. Validation is deliberately strict (400, not a
+    // silent fallback) because a wrong category is not cosmetic — it decides
+    // which orders this driver is ever shown, so a typo would silently cost
+    // them income. Legacy spellings are accepted and normalised, which keeps
+    // an older cached webview from being locked out of registration.
+    const vehicleCategory = normalizeVehicleCategory(body.vehicleCategory);
+    if (vehicleCategory === null) {
+      return badRequest('invalidVehicleCategory', { allowed: OFFICIAL_VEHICLE_CATEGORIES });
+    }
+    // The category must belong to the service the driver declared. This closes
+    // the contradiction the audit found (a TAXI driver on a motorbike, or a
+    // cargo driver on a passenger car) at the only place it can be introduced.
+    if (vehicleCategorySide(vehicleCategory) !== serviceType) {
+      return badRequest('vehicleCategoryServiceMismatch', {
+        serviceType,
+        allowed: serviceType === 'TAXI' ? TAXI_VEHICLE_CATEGORIES : CARGO_VEHICLE_CATEGORIES,
+      });
+    }
     // Resolve `seats` against the chosen serviceType:
     //   * CARGO -> always null (truck/triporteur doesn't carry passengers)
     //   * TAXI  -> required, must be a positive integer (1..30)
@@ -241,13 +277,28 @@ export async function POST(req: NextRequest) {
       // value so the admin panel can distinguish "ignored" from "missing".
       seatsValue = null;
     } else {
+      // TAXI: the official category now carries the capacity, so the seats are
+      // DERIVED from it instead of trusted from the form. `taxi_up_to_4` and
+      // `taxi_over_5` are exactly "4 or fewer" and "more than 5", and matching
+      // against the real number is what the seat rule compares. A form value
+      // that contradicts the category (e.g. 7 seats on a "4 or fewer" taxi) is
+      // a 400 rather than a silent overwrite — the user should see the mistake.
+      const categorySeats = TAXI_CATEGORY_SEATS[vehicleCategory] ?? null;
       if (seatsFromBody === null || !Number.isFinite(seatsFromBody)) {
+        // No explicit value: fall back to the category's canonical count.
+        if (categorySeats === null) return badRequest('invalidSeats');
+        seatsValue = categorySeats;
+      } else if (seatsFromBody < SEATS_MIN || seatsFromBody > SEATS_MAX) {
         return badRequest('invalidSeats');
+      } else if (categorySeats !== null && seatsFromBody !== categorySeats) {
+        return badRequest('seatsMismatchVehicleCategory', {
+          vehicleCategory,
+          expected: categorySeats,
+          received: seatsFromBody,
+        });
+      } else {
+        seatsValue = seatsFromBody as number;
       }
-      if (seatsFromBody < SEATS_MIN || seatsFromBody > SEATS_MAX) {
-        return badRequest('invalidSeats');
-      }
-      seatsValue = seatsFromBody as number;
     }
     // (Legacy) the driver-facing form used to collect `energie` and validate
     // it against a known short list. The field is no longer on the new
@@ -347,6 +398,10 @@ export async function POST(req: NextRequest) {
               adresse,
               ptac,
               seats: seatsValue,
+              // OFFICIAL VEHICLE CLASSIFICATION: normalised to the official
+              // vocabulary and validated against serviceType above. This single
+              // column is what isVehicleCompatible() reads for every match.
+              vehicleCategory,
             },
           });
           return tx.driver.update({
@@ -406,6 +461,10 @@ export async function POST(req: NextRequest) {
               adresse,
               ptac,
               seats: seatsValue,
+              // OFFICIAL VEHICLE CLASSIFICATION: normalised to the official
+              // vocabulary and validated against serviceType above. This single
+              // column is what isVehicleCompatible() reads for every match.
+              vehicleCategory,
             },
           });
           // 3) Create the Driver row linked to the same userId. If an old
@@ -497,6 +556,10 @@ export async function POST(req: NextRequest) {
           adresse,
           ptac,
           seats: seatsValue,
+          // OFFICIAL VEHICLE CLASSIFICATION: normalised to the official
+          // vocabulary and validated against serviceType above. This single
+          // column is what isVehicleCompatible() reads for every match.
+          vehicleCategory,
         },
       });
       return tx.driver.create({

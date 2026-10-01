@@ -104,6 +104,9 @@ export async function GET(req: NextRequest) {
           // its required category through the scheduled → searching flip
           // so the same matching rule applies as for an immediate order.
           requiredVehicleType: order.requiredVehicleType ?? null,
+          // MULTI-SELECT VEHICLE TYPES: likewise preserved across the
+          // scheduled -> searching flip, for the same reason.
+          requiredVehicleTypes: order.requiredVehicleTypes ?? [],
           // SEAT-CAPACITY MATCHING (Phase 1): the seat requirement must
           // survive the scheduled -> searching flip too, otherwise a future
           // booking could reach a vehicle too small for it.

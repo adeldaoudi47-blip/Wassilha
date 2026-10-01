@@ -27,15 +27,173 @@ export const VEHICLE_CATEGORIES = [
   'truck',
   'taxi_car',
   'taxi_car_7',
+  // OFFICIAL VOCABULARY (vehicle-classification task). These six are the
+  // only values NEW writes accept; the seven above stay in the list because
+  // live VehicleRegistration rows already carry them and must keep working
+  // untouched. They are read through `normalizeVehicleCategory()` below, so
+  // old and new never have to be rewritten to meet.
+  'cargo_moto_2',
+  'cargo_tricycle',
+  'cargo_small_truck',
+  'cargo_large_truck',
+  'taxi_up_to_4',
+  'taxi_over_5',
 ] as const;
 
 export type VehicleCategory = (typeof VEHICLE_CATEGORIES)[number];
 
+// ---------------------------------------------------------------------------
+// OFFICIAL VEHICLE CLASSIFICATION — the six categories the product ships with,
+// grouped by the service they can serve. This is the list every UI renders and
+// every write path validates against; `VEHICLE_CATEGORIES` above is the wider
+// storage vocabulary that also has to accept legacy rows.
+// ---------------------------------------------------------------------------
+export const OFFICIAL_VEHICLE_CATEGORIES = [
+  'cargo_moto_2',
+  'cargo_tricycle',
+  'cargo_small_truck',
+  'cargo_large_truck',
+  'taxi_up_to_4',
+  'taxi_over_5',
+] as const;
+
+export type OfficialVehicleCategory = (typeof OFFICIAL_VEHICLE_CATEGORIES)[number];
+
+/** Which half of the platform a category belongs to (mirrors Driver.serviceType). */
+export type VehicleServiceSide = 'CARGO' | 'TAXI';
+
+export const CARGO_VEHICLE_CATEGORIES = [
+  'cargo_moto_2',
+  'cargo_tricycle',
+  'cargo_small_truck',
+  'cargo_large_truck',
+] as const satisfies readonly OfficialVehicleCategory[];
+
+export const TAXI_VEHICLE_CATEGORIES = [
+  'taxi_up_to_4',
+  'taxi_over_5',
+] as const satisfies readonly OfficialVehicleCategory[];
+
+/**
+ * Canonical seat count per taxi category. A taxi category IS a capacity class,
+ * so this is what a `taxi_up_to_4` (4) and a `taxi_over_5` (7) register with —
+ * the numbers the existing `requiredSeats` rule compares against. Derived rather
+ * than trusted from the form, so a driver cannot claim "4 seats or fewer" and
+ * register 30.
+ */
+export const TAXI_CATEGORY_SEATS: Readonly<Record<'taxi_up_to_4' | 'taxi_over_5', number>> = {
+  taxi_up_to_4: 4,
+  taxi_over_5: 7,
+};
+
 // Type guard used by the API layer to validate a client-supplied category
 // before persisting it. Unknown values are rejected with a 400 rather than
 // silently stored, so the vocabulary stays honest in the DB.
+/**
+ * LEGACY → OFFICIAL mapping.
+ *
+ * This is why no data migration of `VehicleRegistration` is needed: live rows
+ * keep their Phase-1 vocabulary and are *interpreted* into the official one at
+ * read time. A legacy driver and a newly registered driver therefore compare
+ * equal without either row ever being rewritten.
+ *
+ * `truck` → `cargo_small_truck` is a DELIBERATE, DOCUMENTED choice. The four
+ * production drivers in that bucket were classified from a free-text `marque`
+ * ("هاربين", "Fourgo", "Huendai", "Jumpy") with no way to tell a petit camion
+ * from a grand camion. Erring toward the *smaller* truck is the safe direction:
+ * it keeps them eligible for every small-truck order (no lost income) while
+ * never letting a vehicle that may be too small claim a large-truck load.
+ * Splitting them later is a one-off UPDATE once the drivers can be asked.
+ *
+ * `pickup` / `van` / `refrigerated` are DELIBERATELY ABSENT. They carry zero
+ * live rows, and folding them into `cargo_small_truck` would collapse a
+ * distinction Phase 1 asserts: a `truck` must not match an order that requires
+ * a `van`. Unmapped means "matches no categorical request", which is the safe
+ * direction — a driver on an odd category simply is not auto-offered those
+ * orders until an admin classifies them, instead of being offered work the
+ * wrong vehicle would take.
+ */
+export const LEGACY_CATEGORY_EQUIVALENTS: Readonly<Record<string, OfficialVehicleCategory>> = {
+  moto: 'cargo_moto_2',
+  tricycle: 'cargo_tricycle',
+  truck: 'cargo_small_truck',
+  taxi_car: 'taxi_up_to_4',
+  taxi_car_7: 'taxi_over_5',
+};
+
+export function isOfficialVehicleCategory(v: unknown): v is OfficialVehicleCategory {
+  return typeof v === 'string' && (OFFICIAL_VEHICLE_CATEGORIES as readonly string[]).includes(v);
+}
+
+/**
+ * Translate any stored category — official or legacy — into the official
+ * vocabulary. Returns null when the value is unknown or unset ("no category on
+ * file", a legal legacy state that never matches a categorical request).
+ */
+export function normalizeVehicleCategory(v: unknown): OfficialVehicleCategory | null {
+  if (typeof v !== 'string' || v === '') return null;
+  if (isOfficialVehicleCategory(v)) return v;
+  return LEGACY_CATEGORY_EQUIVALENTS[v] ?? null;
+}
+
+/** CARGO or TAXI for any category (official or legacy); null when unknown. */
+export function vehicleCategorySide(v: unknown): VehicleServiceSide | null {
+  const n = normalizeVehicleCategory(v);
+  if (n === null) return null;
+  return (CARGO_VEHICLE_CATEGORIES as readonly string[]).includes(n) ? 'CARGO' : 'TAXI';
+}
+
+/**
+ * Every raw string that may sit in the DB for one official category (the
+ * canonical value plus its legacy spellings). Builds the SQL `in (...)`
+ * pre-filter so the `@@index([vehicleCategory])` scan still applies while legacy
+ * rows stay reachable.
+ */
+export function rawCategoryForms(official: OfficialVehicleCategory): string[] {
+  const legacy = Object.entries(LEGACY_CATEGORY_EQUIVALENTS)
+    .filter(([, v]) => v === official)
+    .map(([k]) => k);
+  return [official, ...legacy];
+}
+
 export function isVehicleCategory(v: unknown): v is VehicleCategory {
   return typeof v === 'string' && (VEHICLE_CATEGORIES as readonly string[]).includes(v);
+}
+
+export type VehicleTypesValidation =
+  | { ok: true; value: OfficialVehicleCategory[] }
+  | { ok: false; reason: 'unknownCategory' | 'mixedServices' | 'tooMany' | 'empty'; value: string };
+
+/**
+ * Normalize + validate a client-supplied list of required vehicle types.
+ * Shared by the order API, the wizard and the driver form so those three can
+ * never disagree about what a legal value is.
+ *
+ * A discriminated result rather than a throw, because every caller turns it
+ * into a 400 carrying a specific message:
+ *  - unknownCategory → outside both vocabularies (never silently stored)
+ *  - mixedServices   → cargo + taxi in one list (structurally impossible)
+ *  - tooMany         → more entries than categories that exist
+ *  - empty           → an explicitly-supplied empty array is a 400; an ABSENT
+ *                      field is the caller's "no preference" case
+ *  - duplicates      → normalised away, not rejected: the client is a
+ *                      multi-select checkbox group and repeats are harmless
+ */
+export function validateRequiredVehicleTypes(input: unknown): VehicleTypesValidation {
+  if (!Array.isArray(input)) return { ok: false, reason: 'unknownCategory', value: String(input) };
+  const normalised: OfficialVehicleCategory[] = [];
+  for (const raw of input) {
+    const n = normalizeVehicleCategory(raw);
+    if (n === null) return { ok: false, reason: 'unknownCategory', value: String(raw) };
+    if (!normalised.includes(n)) normalised.push(n);
+  }
+  if (normalised.length === 0) return { ok: false, reason: 'empty', value: '' };
+  if (normalised.length > OFFICIAL_VEHICLE_CATEGORIES.length) {
+    return { ok: false, reason: 'tooMany', value: String(input.length) };
+  }
+  const sides = new Set(normalised.map((c) => vehicleCategorySide(c)));
+  if (sides.size > 1) return { ok: false, reason: 'mixedServices', value: normalised.join(',') };
+  return { ok: true, value: normalised };
 }
 
 // Maps a category to its i18n key (defined for both `ar` and `fr` in
@@ -51,6 +209,27 @@ export const VEHICLE_CATEGORY_LABELS: Record<VehicleCategory, string> = {
   truck: 'vehicleCategoryTruck',
   taxi_car: 'vehicleCategoryTaxiCar',
   taxi_car_7: 'vehicleCategoryTaxiCar7',
+  // Official six. Labels are grouped by service in the UI (the driver form and
+  // the customer forms render the two sections separately), but every value is
+  // displayable through this one table so a category never shows a raw key.
+  cargo_moto_2: 'cargoMoto2',
+  cargo_tricycle: 'cargoTricycle',
+  cargo_small_truck: 'cargoSmallTruck',
+  cargo_large_truck: 'cargoLargeTruck',
+  taxi_up_to_4: 'taxiUpTo4',
+  taxi_over_5: 'taxiOver5',
+};
+
+/** i18n keys for the two section headings in every vehicle picker. */
+export const VEHICLE_GROUP_LABELS: Record<VehicleServiceSide, string> = {
+  CARGO: 'cargoVehicles',
+  TAXI: 'taxiVehicles',
+};
+
+/** The official categories of one service side, in display order. */
+export const OFFICIAL_CATEGORIES_BY_SIDE: Record<VehicleServiceSide, OfficialVehicleCategory[]> = {
+  CARGO: [...CARGO_VEHICLE_CATEGORIES],
+  TAXI: [...TAXI_VEHICLE_CATEGORIES],
 };
 
 // Returns the localised label for a category, or the "unset" fallback when

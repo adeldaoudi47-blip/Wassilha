@@ -95,16 +95,71 @@ async function main(): Promise<void> {  // The DB half of this gate needs DATABA
     process.exit(fail > 0 ? 1 : 0);
   }
   let columnOk = true;
-  let constrained = -1;
   try {
     // Only compiles/runs when the column exists.
-    constrained = await db.order.count({ where: { requiredSeats: { not: null } } });
+    await db.order.count({ where: { requiredSeats: { not: null } } });
   } catch {
     columnOk = false;
   }
   check('Order.requiredSeats exists in the database', columnOk);
-  check('every pre-existing order has requiredSeats = NULL (no behaviour change)',
-    columnOk && constrained === 0, `non-null=${constrained}`);
+
+  // ---------------------------------------------------------------------
+  // requiredSeats INVARIANT (corrected 2026-09-30).
+  //
+  // The original assertion here was "every pre-existing order has
+  // requiredSeats = NULL", which was true only while every stored order
+  // predated the Phase-3 taxi flow. That is no longer a valid invariant: the
+  // shipped taxi booking path lets a real customer request a seat count, so a
+  // legitimate order now carries requiredSeats = 1..30 (the first live example
+  // is WS-PHE7U46N, a cancelled taxi booking with requiredSeats = 1).
+  //
+  // The invariant is therefore restated against the actual business rules
+  // rather than deleted, and it is STRICTER than the old one - it now also
+  // rejects orders the previous check would have waved through:
+  //   (A) requiredSeats is NULL or a sane seat count (1..30);
+  //   (B) a non-taxi order must NOT carry a seat requirement (a cargo order
+  //       asking for seats is meaningless and would filter the fleet wrongly);
+  //   (C) a taxi order, if it carries one, must be inside the allowed range.
+  //
+  // Deliberately NOT asserted: that legacy orders are all NULL. That would
+  // only be true again by deleting or rewriting production data, which is out
+  // of bounds for a verifier.
+  // ---------------------------------------------------------------------
+  let seatsInvariantOk = columnOk;
+  let seatsDetail = 'requiredSeats column missing';
+  if (columnOk) {
+    const SEATS_MIN = 1;
+    const SEATS_MAX = 30;
+    try {
+      const rows = await db.order.findMany({
+        select: { code: true, cargoType: true, requiredSeats: true },
+      });
+      const violations: string[] = [];
+      for (const o of rows) {
+        const seats = o.requiredSeats;
+        const isTaxi = o.cargoType === 'taxi';
+        if (seats !== null && (!Number.isInteger(seats) || seats < SEATS_MIN || seats > SEATS_MAX)) {
+          violations.push(`${o.code}: out-of-range requiredSeats=${String(seats)}`);
+        }
+        if (!isTaxi && seats !== null) {
+          violations.push(`${o.code}: non-taxi order carries requiredSeats=${String(seats)}`);
+        }
+      }
+      seatsInvariantOk = violations.length === 0;
+      const withSeats = rows.filter((o) => o.requiredSeats !== null).length;
+      seatsDetail = `orders=${rows.length} withSeats=${withSeats} violations=${violations.length}${
+        violations.length ? ` [${violations.slice(0, 3).join('; ')}]` : ''
+      }`;
+    } catch (e) {
+      seatsInvariantOk = false;
+      seatsDetail = `query failed: ${(e as Error).message}`;
+    }
+  }
+  check(
+    'every order has a valid requiredSeats (NULL or 1..30; NULL required on non-taxi)',
+    seatsInvariantOk,
+    seatsDetail,
+  );
 
   const totalOrders = await db.order.count();
   const drivers = await db.driver.count();

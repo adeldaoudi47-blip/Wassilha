@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatDzd } from '@/lib/wassilha-data';
-import type { DriverProfile, VehicleCategory } from '@/lib/types';
+import type { DriverProfile, VehicleCategory, OfficialVehicleCategory } from '@/lib/types';
+import { VehiclePicker } from '../vehicle-picker';
 import { VEHICLE_CATEGORIES, VEHICLE_CATEGORY_LABELS } from '@/lib/types';
 import Link from 'next/link';
 
@@ -303,6 +304,13 @@ function VehicleEditDialog({
       toast.error(t.updateFailed);
       return;
     }
+    // OFFICIAL VEHICLE CLASSIFICATION: the category is mandatory — it decides
+    // which orders this driver is ever shown, so an unset vehicle must not be
+    // savable. The server enforces the same rule on registration.
+    if (vehicleCategory === NO_CATEGORY_VALUE) {
+      toast.error(t.vehicleTypeRequired);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await api.updateVehicleRegistration({
@@ -443,39 +451,33 @@ function VehicleEditDialog({
             </div>
           ) : null}
 
+          {/* OFFICIAL VEHICLE CLASSIFICATION (vehicle-classification task):
+              the driver declares their vehicle here, grouped by the service
+              they serve. Single-select in both cases (a driver owns ONE
+              vehicle), unlike the customer's cargo multi-select. */}
           <div className="space-y-1.5">
-            <Label htmlFor="vehicle-category">{t.vehicleCategory}</Label>
-            <Select value={vehicleCategory} onValueChange={setVehicleCategory}>
-              <SelectTrigger
-                id="vehicle-category"
-                className="w-full"
-                // Keep the trigger LTR so the category names render in a
-                // stable direction regardless of the app language.
-                dir="ltr"
-              >
-                <SelectValue placeholder={t.vehicleCategoryPlaceholder} />
-              </SelectTrigger>
-              <SelectContent>
-                {/* Explicit "no category" option so a driver who picked one
-                    by mistake can clear it again. Radix forbids an
-                    empty-string SelectItem value (it throws "A
-                    <Select.Item /> must have a value prop that is not an
-                    empty string" at render time), so this uses a sentinel
-                    token that is mapped back to null on submit. */}
-                <SelectItem value="__none__">{t.noVehicleCategory}</SelectItem>
-                {VEHICLE_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {t[VEHICLE_CATEGORY_LABELS[cat]] ?? cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {/* Hint: the category is what Phase 2 matches on, so a driver
-                who sets it receives the orders that fit their vehicle. */}
+            <Label>
+              {t.vehicleType} <span className="text-destructive">*</span>
+            </Label>
+            <VehiclePicker
+              side={serviceType}
+              multi={false}
+              value={
+                vehicleCategory === NO_CATEGORY_VALUE
+                  ? []
+                  : [vehicleCategory as OfficialVehicleCategory]
+              }
+              onChange={(next) => setVehicleCategory(next[0] ?? NO_CATEGORY_VALUE)}
+              t={t as unknown as Record<string, string>}
+            />
+            {vehicleCategory === NO_CATEGORY_VALUE ? (
+              <p className="text-[10px] text-destructive">{t.vehicleTypeRequired}</p>
+            ) : null}
             <p className="text-[10px] text-muted-foreground">
-              {isAr
-                ? 'نستخدم هذه الفئة لإرسال لك فقط الطلبات التي تناسب مركبتك'
-                : 'Utilisé pour ne vous envoyer que les commandes compatibles'}
+              {t[isAr ? 'vehicleCategoryHintAr' : 'vehicleCategoryHintFr'] ??
+                (isAr
+                  ? 'نستخدم هذه الفئة لإرسال لك فقط الطلبات التي تناسب مركبتك'
+                  : 'Utilisé pour ne vous envoyer que les commandes compatibles')}
             </p>
           </div>
 

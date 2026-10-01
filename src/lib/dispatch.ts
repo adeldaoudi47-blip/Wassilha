@@ -16,6 +16,12 @@
 import { db } from './db';
 import { sendPushNotificationBatch } from './firebase-admin';
 import { createNotification } from './notifications';
+import type { OfficialVehicleCategory } from './types';
+import {
+  normalizeVehicleCategory,
+  rawCategoryForms,
+  validateRequiredVehicleTypes,
+} from './types';
 
 // Minimal projection of an Order needed to run the fan-out. Matches the
 // fields POST /api/orders returns (`publicOrderSelect`), so callers can pass
@@ -30,6 +36,10 @@ export interface DispatchableOrder {
   // matches this category are notified. `null` / undefined = no preference,
   // which reproduces the pre-Phase-2 behaviour for every existing caller.
   requiredVehicleType?: string | null;
+  // MULTI-SELECT VEHICLE TYPES: the official categories the customer picked.
+  // Non-empty = the driver pool is narrowed to those categories. Empty /
+  // absent = no preference (every pre-existing order's behaviour).
+  requiredVehicleTypes?: readonly string[] | null;
   // SEAT-CAPACITY MATCHING (Phase 1): copied off the order so the fan-out
   // can drop drivers whose registered vehicle has too few seats.
   requiredSeats?: number | null;
@@ -60,8 +70,25 @@ export async function findAvailableDrivers(
   // SEAT-CAPACITY MATCHING (Phase 1): the minimum number of passenger seats
   // the order asks for (TAXI mode). Null = no seat requirement.
   requiredSeats?: number | null,
+  // MULTI-SELECT VEHICLE TYPES: the official categories the customer ticked.
+  requiredVehicleTypes?: readonly string[] | null,
 ): Promise<string[]> {
   const requestedService = serviceCategoryFor(cargoType);
+
+  // Resolve the order's categorical requirement through the SAME precedence
+  // isVehicleCompatible applies (plural wins, legacy only as a fallback), then
+  // expand each official category into the raw DB strings that can hold it.
+  // This keeps the query on `@@index([vehicleCategory])` while legacy rows stay
+  // reachable — a plain equality on the new key would hide all 45 current
+  // drivers, which are still stored in the Phase-1 vocabulary.
+  const validated = validateRequiredVehicleTypes(requiredVehicleTypes);
+  const requested = validated.ok
+    ? validated.value
+    : normalizeVehicleCategory(requiredVehicleType)
+      ? [normalizeVehicleCategory(requiredVehicleType) as OfficialVehicleCategory]
+      : [];
+  const dbCategoryValues = requested.flatMap((c) => rawCategoryForms(c));
+
   const drivers = await db.driver.findMany({
     where: {
       isOnline: true,
@@ -73,12 +100,13 @@ export async function findAvailableDrivers(
       // is decided by `vehicleCategory` in isVehicleCompatible() below, which is
       // the single source of truth for "can this vehicle serve this order".
       serviceType: requestedService,
-      // VEHICLE-TYPE MATCHING (Phase 2): a categorical request narrows the
-      // pool to drivers whose registered vehicle is in that category.
+      // VEHICLE-TYPE MATCHING: a categorical request narrows the pool to
+      // drivers whose registered vehicle is in one of the requested
+      // categories (legacy and official spellings both listed).
       // Vehicles with no category on file never satisfy a categorical
       // request; orders with no preference skip this clause.
-      ...(requiredVehicleType
-        ? { vehicleRegistration: { vehicleCategory: requiredVehicleType } }
+      ...(dbCategoryValues.length > 0
+        ? { vehicleRegistration: { vehicleCategory: { in: dbCategoryValues } } }
         : {}),
     },
     select: {
@@ -88,7 +116,12 @@ export async function findAvailableDrivers(
   });
   const eligible = drivers.filter((d) =>
     isVehicleCompatible(
-      { cargoType, requiredVehicleType, requiredSeats },
+      {
+        cargoType,
+        requiredVehicleType,
+        requiredVehicleTypes,
+        requiredSeats,
+      },
       d.vehicleRegistration,
     ),
   );
@@ -106,6 +139,7 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
     order.cargoType,
     order.requiredVehicleType ?? null,
     order.requiredSeats ?? null,
+    order.requiredVehicleTypes ?? null,
   );
   if (driverUserIds.length === 0) return { notified: 0 };
 
@@ -182,12 +216,22 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
 // on two wheels. A driver with NO category on file (legacy rows) is never
 // penalised, and every other category stays eligible, so no order loses
 // candidates in a small fleet. Widen only with real fleet data.
+//
+// These are OFFICIAL categories, compared against `normalizeVehicleCategory()`
+// output — so a legacy row still spelled 'moto' is excluded exactly as before,
+// and one registered as 'cargo_moto_2' is too. Widening the exclusion to the
+// tricycle was deliberately NOT done: that would change which drivers see
+// oversized orders, i.e. existing Phase-4 behaviour, which is out of scope here.
 export const OVERSIZED_CARGO_TYPES = ['furniture', 'appliance', 'construction'] as const;
-export const UNDER_CAPACITY_VEHICLE_CATEGORIES = ['moto'] as const;
+export const UNDER_CAPACITY_VEHICLE_CATEGORIES = ['cargo_moto_2'] as const satisfies readonly OfficialVehicleCategory[];
 
 /** Vehicle-side constraints carried by an order. */
 export interface OrderVehicleConstraint {
   requiredVehicleType?: string | null;
+  // MULTI-SELECT VEHICLE TYPES (vehicle-classification task): the official
+  // categories the customer ticked on the order form, stored on
+  // `Order.requiredVehicleTypes String[]`. Null / empty = no preference.
+  requiredVehicleTypes?: readonly string[] | null;
   requiredSeats?: number | null;
   cargoType?: string | null;
   // CARGO DEDICATED FLOW (Phase 4): 'small' | 'medium' | 'large'. Null /
@@ -201,27 +245,83 @@ export interface DriverVehicleFacts {
   vehicleCategory?: string | null;
   seats?: number | null;
 }
+
+/**
+ * Normalise the vehicle requirement on an order into one comparable value, or
+ * null when the order expresses no categorical preference at all.
+ *
+ * PRECEDENCE (the rule the whole system now depends on):
+ *   1. `requiredVehicleTypes` — the new multi-select — WINS whenever it holds
+ *      at least one usable entry. It is the field every new order writes.
+ *   2. `requiredVehicleType` — the legacy single value — is consulted ONLY when
+ *      the plural field is absent or empty, so every pre-existing order keeps
+ *      exactly the behaviour it had before this change.
+ *   3. Neither set, or nothing recognisable → null → "no preference".
+ *
+ * The two are never combined: a driver is never required to satisfy the legacy
+ * field AND the plural one, which would make an order unmatchable after a
+ * client sent both.
+ *
+ * Legacy spellings on EITHER side are translated through
+ * `normalizeVehicleCategory()`, which is what lets a Phase-1 driver row
+ * (`vehicleCategory = 'moto'`) match a Phase-6 order
+ * (`requiredVehicleTypes = ['cargo_moto_2']`) with no data migration.
+ */
+function requiredVehicleCategories(
+  order: OrderVehicleConstraint,
+): OfficialVehicleCategory[] {
+  const plural = order.requiredVehicleTypes;
+  if (Array.isArray(plural) && plural.length > 0) {
+    const fromPlural = plural
+      .map((c) => normalizeVehicleCategory(c))
+      .filter((c): c is OfficialVehicleCategory => c !== null);
+    if (fromPlural.length > 0) return dedupe(fromPlural);
+  }
+  const legacy = normalizeVehicleCategory(order.requiredVehicleType);
+  return legacy ? [legacy] : [];
+}
+
+function dedupe<T>(list: T[]): T[] {
+  return list.filter((v, i) => list.indexOf(v) === i);
+}
 /**
  * Does this driver's registered vehicle satisfy the order's requirements?
  * Null / undefined on either side means "not specified" and never blocks a
  * match - that is what keeps every pre-Phase-1 order working unchanged.
  *
  * Rules, in order:
- *   1. a categorical request matches only that exact category;
+ *   1. a categorical request matches only drivers whose normalised category is
+ *      one of the requested ones (legacy spellings resolve to the same value);
  *   2. a seat request needs `seats >= requiredSeats` (a vehicle with no seat
  *      count on file cannot satisfy it);
  *   3. the cargo-capacity policy above.
+ *
+ * Rule 1 is evaluated through `requiredVehicleCategories()`, so the legacy
+ * single-value field and the new multi-select share one code path and can never
+ * drift apart — a driver who satisfies one satisfies the other.
  */
 export function isVehicleCompatible(
   order: OrderVehicleConstraint,
   vehicle: DriverVehicleFacts | null | undefined,
 ): boolean {
-  const category = vehicle?.vehicleCategory ?? null;
+  const rawCategory = vehicle?.vehicleCategory ?? null;
   const seats = typeof vehicle?.seats === 'number' ? vehicle.seats : null;
+  // The OFFICIAL category of this vehicle (null = no category on file). Rules
+  // (1), (3) and (4) all compare against this, never the raw stored string, so a
+  // driver registered as 'moto' and one registered as 'cargo_moto_2' are
+  // treated identically by every rule at once.
+  const category = normalizeVehicleCategory(rawCategory);
 
-  // (1) Vehicle category ("moto", "truck", "taxi_car_7", ...).
-  if (order.requiredVehicleType && category !== order.requiredVehicleType) {
-    return false;
+  // (1) Vehicle category — the official category of this vehicle (null when the
+  // driver has no category on file), compared against the order's request.
+  const required = requiredVehicleCategories(order);
+  if (required.length > 0) {
+    const category = normalizeVehicleCategory(rawCategory);
+    // A categorical request narrows the pool: a driver who opted into no
+    // category cannot claim to match a specific one (unchanged Phase-1 rule).
+    if (category === null || !required.includes(category)) {
+      return false;
+    }
   }
 
   // (2) Seat capacity (TAXI).

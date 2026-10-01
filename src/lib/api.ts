@@ -32,6 +32,7 @@ import type {
   NotificationListResponse,
   OrderOffer,
   VehicleCategory,
+ OfficialVehicleCategory,
 } from './types';
 
 async function req<T>(
@@ -203,6 +204,11 @@ export const api = {
     // the order goes to every eligible driver. The server validates
     // the value against VEHICLE_CATEGORIES before storing it.
     requiredVehicleType?: VehicleCategory | null;
+    // MULTI-SELECT VEHICLE TYPES (vehicle-classification task): the official
+    // categories the customer accepts for this order. Empty / omitted = no
+    // preference (legacy behaviour). Multiple entries are allowed for CARGO
+    // only — the server rejects two taxi categories with a 400.
+    requiredVehicleTypes?: OfficialVehicleCategory[];
     // SEAT-CAPACITY MATCHING (Phase 1): how many passengers the customer is
     // travelling with (TAXI mode). Null / omitted = no seat requirement, so
     // every pre-Phase-1 caller keeps its exact previous behaviour.
@@ -465,6 +471,11 @@ export const api = {
     // a misbehaving client never breaks the registration. "BOTH" was
     // retired on 2026-09-28 and now falls back to "CARGO".
     serviceType?: 'CARGO' | 'TAXI';
+    // OFFICIAL VEHICLE CLASSIFICATION: MANDATORY. The driver's vehicle
+    // category, validated server-side against the official vocabulary AND
+    // against `serviceType` (a cargo category on a TAXI application is a
+    // 400). Seats for TAXI are derived from this value server-side.
+    vehicleCategory: OfficialVehicleCategory;
   }) =>
     req<{ ok: boolean; status: 'pending' }>('/api/auth/apply-driver', {
       method: 'POST',

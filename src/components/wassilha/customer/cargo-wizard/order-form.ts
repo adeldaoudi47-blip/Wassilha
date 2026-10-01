@@ -3,7 +3,7 @@
 // multi-step order wizard (cargo-wizard/). Kept in its own module so each
 // step file imports the contract, not the wizard (no circular imports).
 // ---------------------------------------------------------------------------
-import type { CargoKey, CargoSize, VehicleCategory } from '@/lib/types';
+import type { CargoKey, CargoSize, VehicleCategory, OfficialVehicleCategory } from '@/lib/types';
 import { VEHICLE_CATEGORY_LABELS } from '@/lib/types';
 
 export type { CargoSize };
@@ -20,6 +20,12 @@ export interface OrderFormState {
   // Typed as the shared `VehicleCategory` union so the value flows straight
   // into `api.createOrder({ requiredVehicleType })` without a cast.
   requiredVehicleType: VehicleCategory | null;
+  // MULTI-SELECT VEHICLE TYPES (vehicle-classification task): the official
+  // cargo categories the customer ticked ("any driver with an amprita OR a
+  // small truck can serve this"). Empty array = no preference. This is the
+  // field the wizard submits; `requiredVehicleType` above is kept only as the
+  // legacy single-value mirror the old API/UI still read.
+  requiredVehicleTypes: OfficialVehicleCategory[];
   notes: string;
   // SCHEDULED BOOKINGS (kept feature-parity with the legacy form): raw
   // `datetime-local` value, '' = "as soon as possible". Converted to an ISO
@@ -39,6 +45,7 @@ export const initialOrderForm: OrderFormState = {
   cargoType: 'parcel',
   cargoSize: 'small',
   requiredVehicleType: null,
+  requiredVehicleTypes: [],
   notes: '',
   scheduledAt: '',
   photoUrl: null,

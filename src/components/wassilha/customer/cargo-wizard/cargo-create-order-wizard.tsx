@@ -41,9 +41,10 @@ import {
   CARGO_TYPES, GUERRARA_CENTER, calcPrice, formatDzd, haversineKm,
 } from '@/lib/wassilha-data';
 import {
-  CARGO_SIZES, CARGO_SIZE_LABELS, CARGO_SIZE_WEIGHT,
+  CARGO_SIZES, CARGO_SIZE_LABELS, CARGO_SIZE_WEIGHT, VEHICLE_CATEGORY_LABELS,
 } from '@/lib/types';
 import type { CargoKey, CargoSize, PricingConfig, VehicleCategory } from '@/lib/types';
+import { VehiclePicker } from '../../vehicle-picker';
 import { DeliveryPointPicker } from '../../delivery-point-picker';
 import type {
   DeliveryAreaOption, DeliveryPointOption, DeliveryCoords,
@@ -183,9 +184,21 @@ export function CargoCreateOrderWizard({ onExit }: { onExit: () => void }) {
   const set = (patch: Partial<OrderFormState>) => {
     setForm((prev) => {
       const next = { ...prev, ...patch };
-      if (next.cargoSize === 'large' && next.requiredVehicleType === 'moto') {
-        next.requiredVehicleType = null;
+      // A "large" shipment never travels on two wheels — POST /api/orders
+      // rejects that pair with `vehicleTooSmallForCargo`, so drop the
+      // incompatible categories here instead of letting the customer walk into
+      // a 400 they cannot fix from the current screen.
+      if (next.cargoSize === 'large') {
+        next.requiredVehicleTypes = next.requiredVehicleTypes.filter(
+          (c) => c !== 'cargo_moto_2'
+        );
+        if (next.requiredVehicleType === 'moto') next.requiredVehicleType = null;
       }
+      // Keep the legacy single-value mirror in step with the multi-select, so
+      // any consumer still reading `requiredVehicleType` (old cards, deep
+      // links) sees the first chosen category rather than going stale.
+      next.requiredVehicleType =
+        (next.requiredVehicleTypes[0] as VehicleCategory | undefined) ?? null;
       return next;
     });
     // Editing a field invalidates the "missing address" hints.
@@ -310,6 +323,9 @@ export function CargoCreateOrderWizard({ onExit }: { onExit: () => void }) {
           : {}),
         notes: form.notes.trim() || undefined,
         requiredVehicleType: form.requiredVehicleType,
+        // MULTI-SELECT: the official categories the customer ticked. The
+        // server validates the vocabulary and the cargo/taxi split.
+        requiredVehicleTypes: form.requiredVehicleTypes,
         cargoSize: form.cargoSize,
         cargoImageUrl: form.photoUrl,
       });
@@ -437,39 +453,17 @@ export function CargoCreateOrderWizard({ onExit }: { onExit: () => void }) {
       {step === 'vehicle' && (
         <Card className="space-y-3 p-4">
           <p className="text-[11px] leading-relaxed text-muted-foreground">{t.cargoVehicleHint}</p>
-          <div className="grid grid-cols-2 gap-2">
-            <TileButton
-              active={form.requiredVehicleType === null}
-              onClick={() => set({ requiredVehicleType: null })}
-            >
-              <MapPin size={22} />
-              <span className="mt-1 block text-[11px] font-bold leading-tight">{t.cargoAnyVehicle}</span>
-            </TileButton>
-            {WIZARD_VEHICLE_OPTIONS.map((opt) => {
-              const Icon = VEHICLE_ICON[opt.icon];
-              // Large cargo never travels on two wheels — the tile stays
-              // visible but disabled so the rule is explained, not hidden.
-              const disabled = opt.value === 'moto' && form.cargoSize === 'large';
-              return (
-                <TileButton
-                  key={opt.value}
-                  active={form.requiredVehicleType === opt.value}
-                  disabled={disabled}
-                  onClick={() =>
-                    set({
-                      requiredVehicleType:
-                        form.requiredVehicleType === opt.value ? null : opt.value,
-                    })
-                  }
-                >
-                  <Icon size={22} />
-                  <span className="mt-1 block text-[11px] font-bold leading-tight">
-                    {tt(opt.labelKey)}
-                  </span>
-                </TileButton>
-              );
-            })}
-          </div>
+          {/* MULTI-SELECT (vehicle-classification task): the customer may accept
+              any one OR several cargo vehicles for the same shipment. The shared
+              picker keeps this identical to the driver form. */}
+          <VehiclePicker
+            side="CARGO"
+            multi
+            value={form.requiredVehicleTypes}
+            onChange={(next) => set({ requiredVehicleTypes: next })}
+            t={t as unknown as Record<string, string>}
+            isDisabled={(c) => c === 'cargo_moto_2' && form.cargoSize === 'large'}
+          />
           {form.cargoSize === 'large' ? (
             <p className="rounded-xl bg-amber-500/10 p-2.5 text-[11px] font-bold text-amber-600 dark:text-amber-400">
               {t.cargoLargeNotForMoto}
@@ -545,11 +539,10 @@ export function CargoCreateOrderWizard({ onExit }: { onExit: () => void }) {
           <SummaryRow
             label={t.cargoStepVehicle}
             value={
-              form.requiredVehicleType
-                ? tt(
-                    WIZARD_VEHICLE_OPTIONS.find((o) => o.value === form.requiredVehicleType)
-                      ?.labelKey ?? form.requiredVehicleType,
-                  )
+              form.requiredVehicleTypes.length > 0
+                ? form.requiredVehicleTypes
+                    .map((c) => tt(VEHICLE_CATEGORY_LABELS[c]))
+                    .join(' · ')
                 : t.cargoAnyVehicle
             }
           />

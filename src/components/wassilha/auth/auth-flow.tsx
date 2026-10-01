@@ -30,6 +30,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
+import type { OfficialVehicleCategory } from '@/lib/types';
+import { normalizeVehicleCategory, vehicleCategorySide } from '@/lib/types';
+import { VehiclePicker } from '../vehicle-picker';
 import { normalizeAlgerianPhone } from '@/lib/phone';
 
 type Step = 'onboarding' | 'phone' | 'otp' | 'signup' | 'login' | 'forgot-phone' | 'forgot-otp' | 'forgot-reset' | 'driver-form' | 'driver-pending' | 'driver-rejected';
@@ -123,6 +126,11 @@ export function AuthFlow() {
     // backward compat with the pre-taxi fleet: every existing driver
     // continues to receive cargo orders exactly as before.
     serviceType: 'CARGO' as 'CARGO' | 'TAXI',
+    // OFFICIAL VEHICLE CLASSIFICATION (vehicle-classification task): the
+    // driver declares their vehicle here. Mandatory, and validated server-side
+    // against `serviceType` — a TAXI driver cannot pick a motorbike. Empty
+    // string = "not chosen yet", which the submit handler blocks.
+    vehicleCategory: '',
   });
   const updateVehicleRegistration = (
     field: keyof typeof vehicleRegistration,
@@ -484,6 +492,22 @@ export function AuthFlow() {
         return;
       }
     }
+    // OFFICIAL VEHICLE CLASSIFICATION: the vehicle type is mandatory and must
+    // belong to the chosen service. The server enforces both (400), this is the
+    // friendly pre-check so the applicant is not bounced by an error toast.
+    const chosenCategory = normalizeVehicleCategory(vr.vehicleCategory);
+    if (chosenCategory === null) {
+      toast.error(isAr ? 'اختر نوع المركبة' : 'Choisissez le type de vehicule');
+      return;
+    }
+    if (vehicleCategorySide(chosenCategory) !== vr.serviceType) {
+      toast.error(
+        isAr
+          ? 'نوع المركبة لا يتوافق مع الخدمة المختارة'
+          : 'Le type de vehicule ne correspond pas au service choisi'
+      );
+      return;
+    }
     setLoading(true);
     try {
       // DIAG: log the exact payload we're about to POST so we can confirm
@@ -516,6 +540,10 @@ export function AuthFlow() {
         // server if the client omits it). The server validates the
         // value against an allow-list and rejects anything else.
         serviceType: vr.serviceType,
+        // OFFICIAL VEHICLE CLASSIFICATION: normalised to the official
+        // vocabulary (never the raw legacy string) so the stored category is
+        // immediately comparable with an order's requirement.
+        vehicleCategory: chosenCategory,
       };
       console.log('[Driver Flow] Submitting driver application:', submitPayload);
       const result = await api.applyDriver(submitPayload);
@@ -1561,6 +1589,31 @@ export function AuthFlow() {
                       <SelectItem value="TAXI">{t.taxiService}</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* OFFICIAL VEHICLE CLASSIFICATION: mandatory vehicle type,
+                    grouped by the service chosen above. */}
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">
+                    {t.selectYourVehicleType}
+                    <span className="text-destructive"> *</span>
+                  </label>
+                  <VehiclePicker
+                    side={vehicleRegistration.serviceType}
+                    multi={false}
+                    value={
+                      vehicleRegistration.vehicleCategory
+                        ? [vehicleRegistration.vehicleCategory as OfficialVehicleCategory]
+                        : []
+                    }
+                    onChange={(next) =>
+                      updateVehicleRegistration(
+                        'vehicleCategory',
+                        (next[0] ?? '') as (typeof vehicleRegistration)['vehicleCategory'],
+                      )
+                    }
+                    t={t as unknown as Record<string, string>}
+                  />
                 </div>
 
                 {vehicleRegistration.serviceType !== "TAXI" ? (

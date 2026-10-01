@@ -92,6 +92,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         driverId: true,
         cargoType: true,
         requiredVehicleType: true,
+        requiredVehicleTypes: true,
         requiredSeats: true,
         cargoSize: true,
         isNegotiable: true,

@@ -84,6 +84,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         driverId: true,
         cargoType: true,
         requiredVehicleType: true,
+        requiredVehicleTypes: true,
         requiredSeats: true,
       },
     });
@@ -105,6 +106,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
           driverId: session.id,
           cargoType: order.cargoType,
           requiredVehicleType: order.requiredVehicleType,
+          requiredVehicleTypes: order.requiredVehicleTypes,
           requiredSeats: order.requiredSeats,
         }),
       );

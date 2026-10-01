@@ -21,6 +21,10 @@ export interface OfferOrderFacts {
   cargoType: string;
   isNegotiable?: boolean;
   requiredVehicleType?: string | null;
+  // MULTI-SELECT VEHICLE TYPES: the official categories the customer picked.
+  // Read by isVehicleCompatible through the shared precedence rules, so this
+  // gate and the flat-accept path can never disagree on who may serve an order.
+  requiredVehicleTypes?: readonly string[] | null;
   requiredSeats?: number | null;
   cargoSize?: string | null;
 }

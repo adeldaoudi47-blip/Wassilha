@@ -60,6 +60,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
             // to re-verify the offering driver before claiming (below).
             cargoType: true,
             requiredVehicleType: true,
+            requiredVehicleTypes: true,
             requiredSeats: true,
             cargoSize: true,
           },
@@ -117,6 +118,7 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
         {
           cargoType: offer.order.cargoType,
           requiredVehicleType: offer.order.requiredVehicleType,
+          requiredVehicleTypes: offer.order.requiredVehicleTypes,
           requiredSeats: offer.order.requiredSeats,
           cargoSize: offer.order.cargoSize,
         },

@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useT } from '../use-t';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import type { OfficialVehicleCategory } from '@/lib/types';
+import { vehicleCategorySide } from '@/lib/types';
+import { VehiclePicker } from '../vehicle-picker';
 
 interface UpgradeDriverDialogProps {
   isAr: boolean;
@@ -49,6 +52,9 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
   // service category (cargo / taxi). Defaults to "CARGO" so
   // existing flows keep working without forcing the user to pick.
   const [serviceType, setServiceType] = useState<'CARGO' | 'TAXI'>('CARGO');
+  // OFFICIAL VEHICLE CLASSIFICATION: the driver's vehicle, mandatory and
+  // validated server-side against the service type above.
+  const [vehicleCategory, setVehicleCategory] = useState<OfficialVehicleCategory[]>([]);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -94,6 +100,21 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
         return;
       }
     }
+    // OFFICIAL VEHICLE CLASSIFICATION: mandatory, and must belong to the chosen
+    // service. The server enforces both with a 400; this is the friendly
+    // pre-check so the applicant never sees a raw error toast.
+    if (vehicleCategory.length === 0) {
+      toast.error(isAr ? 'اختر نوع المركبة' : 'Choisissez le type de vehicule');
+      return;
+    }
+    if (vehicleCategorySide(vehicleCategory[0]) !== serviceType) {
+      toast.error(
+        isAr
+          ? 'نوع المركبة لا يتوافق مع الخدمة المختارة'
+          : 'Le type de vehicule ne correspond pas au service choisi'
+      );
+      return;
+    }
     setLoading(true);
     try {
       await api.applyDriver({
@@ -116,6 +137,9 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
         // Persisted in Driver.serviceType and used by the order fan-out
         // in POST /api/orders to filter which drivers get the push.
         serviceType,
+        // OFFICIAL VEHICLE CLASSIFICATION: single-select (a driver owns one
+        // vehicle), so the first entry is the chosen category.
+        vehicleCategory: vehicleCategory[0],
       });
       toast.success(
         isAr
@@ -268,6 +292,21 @@ export function UpgradeDriverDialog({ isAr, onClose, onSuccess }: UpgradeDriverD
               />
             </Field>
           ) : null}
+          {/* OFFICIAL VEHICLE CLASSIFICATION: mandatory vehicle type, grouped by the
+              service selected above. */}
+          <div className="space-y-1.5">
+            <span className="block text-xs font-semibold text-muted-foreground">
+              {t.selectYourVehicleType}
+              <span className="text-destructive"> *</span>
+            </span>
+            <VehiclePicker
+              side={serviceType}
+              multi={false}
+              value={vehicleCategory}
+              onChange={setVehicleCategory}
+              t={t as unknown as Record<string, string>}
+            />
+          </div>
           {serviceType !== 'CARGO' ? (
             <Field label={t.seatsNumber} required>
               <Input

@@ -26,8 +26,8 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import {
-  VEHICLE_CATEGORIES,
-  isVehicleCategory,
+  OFFICIAL_VEHICLE_CATEGORIES,
+  normalizeVehicleCategory,
 } from '@/lib/types';
 import type { VehicleCategory } from '@/lib/types';
 
@@ -153,13 +153,17 @@ export async function PATCH(req: NextRequest) {
     // bogus category that would then never match a customer's requirement.
     // `null` (clear the category) and `undefined` (don't touch it) are both
     // fine here.
-    if (
-      v.vehicleCategory !== undefined &&
-      v.vehicleCategory !== null &&
-      !isVehicleCategory(v.vehicleCategory)
-    ) {
+    // OFFICIAL VEHICLE CLASSIFICATION: the category is normalised to the
+    // official vocabulary on the way in, so a legacy client that still posts
+    // "moto" / "taxi_car_7" updates the row to its canonical value instead of
+    // re-writing an old spelling. An unknown value is still a 400.
+    const normalizedCategory =
+      v.vehicleCategory === undefined || v.vehicleCategory === null
+        ? null
+        : normalizeVehicleCategory(v.vehicleCategory);
+    if (normalizedCategory === null && v.vehicleCategory) {
       return badRequest('invalidVehicleCategory', {
-        allowed: VEHICLE_CATEGORIES,
+        allowed: OFFICIAL_VEHICLE_CATEGORIES,
       });
     }
 
@@ -227,13 +231,14 @@ export async function PATCH(req: NextRequest) {
         // Forward seats directly (already a number|undefined|null after
         // Zod validation). For CARGO drivers the column stays null.
         seats: v.seats ?? null,
-        // VEHICLE CLASSIFICATION (Phase 1): only persisted when the client
-        // explicitly sent the key (undefined => keep the previous value so
-        // older clients don't wipe a driver's category on their next save).
-        // A non-null value is checked against VEHICLE_CATEGORIES above.
+        // VEHICLE CLASSIFICATION: only persisted when the client explicitly
+        // sent the key (undefined => keep the previous value so older clients
+        // don't wipe a driver's category on their next save). The value stored
+        // is the NORMALISED official category, so a client still posting a
+        // legacy spelling upgrades the row instead of re-saving the old one.
         ...(v.vehicleCategory === undefined
           ? {}
-          : { vehicleCategory: v.vehicleCategory ?? null }),
+          : { vehicleCategory: normalizedCategory }),
       },
     });
 

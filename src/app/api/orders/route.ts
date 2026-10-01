@@ -7,9 +7,18 @@ import { computeOrderPrice } from '@/lib/pricing';
 import { publicUserSelect, publicOrderSelect } from '@/lib/dto';
 import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
 import { emitOrderNewRequest } from '@/lib/pusher-server';
-import type { CargoKey, OrderStatus } from '@/lib/types';
-import { VEHICLE_CATEGORIES, isVehicleCategory, CARGO_SIZE_WEIGHT } from '@/lib/types';
+import type { CargoKey, OrderStatus, OfficialVehicleCategory } from '@/lib/types';
+import {
+  VEHICLE_CATEGORIES,
+  OFFICIAL_VEHICLE_CATEGORIES,
+  isVehicleCategory,
+  normalizeVehicleCategory,
+  validateRequiredVehicleTypes,
+  vehicleCategorySide,
+  CARGO_SIZE_WEIGHT,
+} from '@/lib/types';
 import { isAllowedCargoImageUrl } from '@/lib/offer-policy';
+import { serviceCategoryFor } from '@/lib/dispatch';
 
 /**
  * C7 — retry a Prisma write that can fail with `P2002` (unique-constraint
@@ -133,6 +142,16 @@ const createOrderSchema = z.object({
     .optional()
     .nullable()
     .transform((v) => (v ? v : null)),
+  // MULTI-SELECT VEHICLE TYPES: the official categories the customer ticked.
+  // Shape-validated here (array of bounded strings); the vocabulary, the
+  // cargo/taxi split and de-duplication are enforced server-side further down
+  // through the shared validateRequiredVehicleTypes() helper.
+  requiredVehicleTypes: z
+    .array(z.string().trim().max(32))
+    .max(8)
+    .optional()
+    .nullable()
+    .transform((v) => (Array.isArray(v) ? v : [])),
   // SEAT-CAPACITY MATCHING (Phase 1): passengers the customer travels with
   // (TAXI mode). Same 1..30 window as the carte-grise seats column, so the
   // two sides can never disagree. Null / omitted = no seat requirement.
@@ -273,12 +292,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // MULTI-SELECT VEHICLE TYPES: validate the official vocabulary, the
+    // cargo/taxi split and the array bounds server-side. An ABSENT field is
+    // "no preference" and is stored as an empty array; a field the client
+    // explicitly sent but that is invalid is a 400, so a bad value can never
+    // reach the DB and silently starve an order of drivers.
+    let requiredVehicleTypes: OfficialVehicleCategory[] = [];
+    if (data.requiredVehicleTypes !== undefined && data.requiredVehicleTypes !== null) {
+      const result = validateRequiredVehicleTypes(data.requiredVehicleTypes);
+      if (!result.ok) {
+        return NextResponse.json(
+          {
+            error:
+              result.reason === 'unknownCategory'
+                ? 'invalidRequiredVehicleType'
+                : `invalidVehicleTypes:${result.reason}`,
+            issues: { allowed: OFFICIAL_VEHICLE_CATEGORIES },
+          },
+          { status: 400 }
+        );
+      }
+      requiredVehicleTypes = result.value;
+    }
+
+    const requestedService = serviceCategoryFor(cargoType);
+    // A TAXI booking is a single vehicle: the customer picks "4 seats or fewer"
+    // OR "more than 5 seats", never both, so a two-element list is a request we
+    // refuse rather than silently collapse (it would show one driver a
+    // requirement the other does not have).
+    if (requestedService === 'TAXI' && requiredVehicleTypes.length > 1) {
+      return NextResponse.json({ error: 'taxiSingleVehicleTypeOnly' }, { status: 400 });
+    }
+    // A cargo order may not demand a passenger vehicle, and vice-versa.
+    for (const category of requiredVehicleTypes) {
+      if (vehicleCategorySide(category) !== requestedService) {
+        return NextResponse.json({ error: 'vehicleCategoryServiceMismatch' }, { status: 400 });
+      }
+    }
+
     // CARGO DEDICATED FLOW (Phase 4) — cargo wizard fields.
     // (a) A "large" shipment and a required motorbike contradict each
     // other; block the impossible request with a structured 400 instead of
     // letting the order starve in `searching` with zero eligible drivers.
     const cargoSize = data.cargoSize ?? null;
-    if (cargoSize === 'large' && data.requiredVehicleType === 'moto') {
+    // The impossible combination is now expressed in official terms: a
+    // "large" shipment that demands a two-wheeler. Compared through the
+    // normalised value so a legacy `moto` request is caught as well.
+    const demandsMotorbike =
+      requiredVehicleTypes.includes('cargo_moto_2') ||
+      (data.requiredVehicleType !== null &&
+        data.requiredVehicleType !== undefined &&
+        normalizeVehicleCategory(data.requiredVehicleType) === 'cargo_moto_2');
+    if (cargoSize === 'large' && demandsMotorbike) {
       return NextResponse.json({ error: 'vehicleTooSmallForCargo' }, { status: 400 });
     }
     // (b) The goods photo must be one of OUR uploads (Vercel Blob host
@@ -379,6 +444,10 @@ export async function POST(req: NextRequest) {
             // and the driver request cards can filter on it. Null = the
             // customer did not require a specific vehicle.
             requiredVehicleType: data.requiredVehicleType ?? null,
+            // MULTI-SELECT VEHICLE TYPES: the validated official categories.
+            // Stored as an array; an empty array means "no preference" and keeps
+            // every legacy read path behaving exactly as before.
+            requiredVehicleTypes,
             // SEAT-CAPACITY MATCHING (Phase 1): persisted verbatim (already
             // validated above) so dispatch + the driver feed can filter on it.
             requiredSeats: data.requiredSeats ?? null,
@@ -429,6 +498,9 @@ export async function POST(req: NextRequest) {
           // (no preference) reproduces the original whole-pool behaviour.
           requiredVehicleType: order.requiredVehicleType ?? null,
           requiredSeats: order.requiredSeats ?? null,
+          // MULTI-SELECT VEHICLE TYPES: forwarded so the fan-out only pings
+          // drivers whose vehicle is one of the requested categories.
+          requiredVehicleTypes: order.requiredVehicleTypes ?? [],
         });
         // C4 — realtime new-order event. customer-home used to emit
         // `order:created` from the client; with Pusher the client cannot

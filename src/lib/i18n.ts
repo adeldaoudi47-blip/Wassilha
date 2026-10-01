@@ -528,6 +528,32 @@ export const translations = {
     vehicleCategoryTruck: 'شاحنة',
     vehicleCategoryTaxiCar: 'سيارة تكسي',
     vehicleCategoryTaxiCar7: 'سيارة كبيرة (7+ مقاعد)',
+    // OFFICIAL VEHICLE CLASSIFICATION (vehicle-classification task): the six
+    // categories the product ships with, grouped by service. Kept separate from
+    // the legacy labels above so existing drivers keep their current wording.
+    // (`vehicleType` already exists further up this table and is reused.)
+    cargoVehicles: 'نقل البضائع',
+    taxiVehicles: 'نقل الأشخاص — طاكسي',
+    cargoMoto2: 'دراجة نارية بعجلتين — موطو',
+    cargoTricycle: 'دراجة نارية بثلاث عجلات — أمبريطا',
+    cargoSmallTruck: 'شاحنة صغيرة — هاربين أو ما شابه',
+    cargoLargeTruck: 'شاحنة كبيرة',
+    taxiUpTo4: 'طاكسي — 4 مقاعد أو أقل',
+    taxiOver5: 'طاكسي — أكثر من 5 مقاعد',
+    // Customer cargo picker (multi-select).
+    selectVehicleTypes: 'ما نوع المركبة التي تناسب بضاعتك؟',
+    selectVehicleTypesHelp: 'يمكنك اختيار نوع واحد أو أكثر.',
+    multipleVehicleTypesAllowed: 'يمكن اختيار عدة أنواع',
+    // Customer taxi picker (single-select).
+    selectVehicleType: 'اختر نوع المركبة',
+    // Driver application / profile form.
+    vehicleTypeRequired: 'نوع المركبة مطلوب',
+    selectYourVehicleType: 'ما نوع مركبتك؟',
+    // Validation messages raised by the server.
+    invalidVehicleCategory: 'فئة المركبة غير صالحة',
+    vehicleCategoryServiceMismatch: 'فئة المركبة لا تتوافق مع الخدمة المختارة',
+    taxiSingleVehicleTypeOnly: 'اختر نوع مركبة واحداً فقط لطلبات الطاكسي',
+    seatsMismatchVehicleCategory: 'عدد المقاعد لا يتوافق مع نوع المركبة',
     passengerCount: 'عدد الركاب',
     passengerCountAny: 'بدون تحديد',
     passengerCountHelp: 'إن حدّدت العدد لن تصلك عروض إلا من سيارات تتّسع له.',
@@ -1247,6 +1273,32 @@ export const translations = {
     vehicleCategoryTruck: 'Camion',
     vehicleCategoryTaxiCar: 'Voiture taxi',
     vehicleCategoryTaxiCar7: 'Grande voiture (7+ places)',
+    // OFFICIAL VEHICLE CLASSIFICATION (vehicle-classification task) : les six
+    // catégories officielles, regroupées par service. Séparées des libellés
+    // historiques ci-dessus pour que les chauffeurs existants gardent leur
+    // formulation actuelle. (`vehicleType` existe déjà plus haut : réutilisé.)
+    cargoVehicles: 'Transport de marchandises',
+    taxiVehicles: 'Transport de personnes — Taxi',
+    cargoMoto2: 'Moto — 2 roues',
+    cargoTricycle: 'Tricycle — Amprita',
+    cargoSmallTruck: 'Petit camion',
+    cargoLargeTruck: 'Grand camion',
+    taxiUpTo4: 'Taxi — 4 places ou moins',
+    taxiOver5: 'Taxi — plus de 5 places',
+    // Sélecteur client marchandises (multi-sélection).
+    selectVehicleTypes: 'Quel type de véhicule convient à votre marchandise ?',
+    selectVehicleTypesHelp: 'Vous pouvez choisir un ou plusieurs types.',
+    multipleVehicleTypesAllowed: 'Plusieurs types peuvent être sélectionnés',
+    // Sélecteur client taxi (choix unique).
+    selectVehicleType: 'Choisissez le type de véhicule',
+    // Formulaire de candidature chauffeur / profil.
+    vehicleTypeRequired: 'Le type de véhicule est requis',
+    selectYourVehicleType: 'Quel type de véhicule conduisez-vous ?',
+    // Messages de validation renvoyés par le serveur.
+    invalidVehicleCategory: 'Catégorie de véhicule invalide',
+    vehicleCategoryServiceMismatch: "La catégorie de véhicule ne correspond pas au service choisi",
+    taxiSingleVehicleTypeOnly: 'Choisissez un seul type de véhicule pour une course en taxi',
+    seatsMismatchVehicleCategory: 'Le nombre de places ne correspond pas au type de véhicule',
     passengerCount: 'Nombre de passagers',
     passengerCountAny: 'Sans préférence',
     passengerCountHelp: 'Si vous précisez le nombre, seules les voitures assez grandes recevront la demande.',

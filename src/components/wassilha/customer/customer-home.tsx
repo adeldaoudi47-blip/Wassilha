@@ -55,7 +55,9 @@ import type {
   PricingConfig,
   VehicleCategory,
 } from '@/lib/types';
-import { VEHICLE_CATEGORY_OPTIONS } from '@/lib/types';
+import { normalizeVehicleCategory } from '@/lib/types';
+import type { OfficialVehicleCategory } from '@/lib/types';
+import { VehiclePicker } from '../vehicle-picker';
 import { DeliveryPointPicker } from '../delivery-point-picker';
 import { deliveryAreas, deliveryPoints } from '@/lib/delivery-data';
 // C1: verified OSM coordinates. Both maps ship EMPTY until
@@ -131,8 +133,9 @@ export function CustomerHome() {
   // render time if a SelectItem's value is an empty string. The sentinel is
   // mapped back to null on submit so it never reaches the API.
   const ANY_VEHICLE_VALUE = '__any__';
-  const [requiredVehicleType, setRequiredVehicleType] =
-    useState<string>(ANY_VEHICLE_VALUE);
+  // OFFICIAL VEHICLE CLASSIFICATION: the selected categories. An empty array
+  // is "any available vehicle" (the legacy behaviour) and is submitted as such.
+  const [selectedVehicleCategories, setSelectedVehicleCategories] = useState<OfficialVehicleCategory[]>([]);
   // SEAT-CAPACITY MATCHING (Phase 1): how many passengers the customer is
   // travelling with (TAXI mode only). Same string-sentinel pattern as the
   // vehicle picker above, so Radix never sees an empty SelectItem value;
@@ -259,9 +262,13 @@ export function CustomerHome() {
         // the API validates the vocabulary and stores null otherwise, which
         // reproduces the pre-Phase-2 "any vehicle" behaviour.
         requiredVehicleType:
-          requiredVehicleType && requiredVehicleType !== ANY_VEHICLE_VALUE
-            ? (requiredVehicleType as VehicleCategory)
+          selectedVehicleCategories.length > 0
+            ? (selectedVehicleCategories[0] as VehicleCategory)
             : null,
+        // MULTI-SELECT: the full official list. Cargo may carry several
+        // ("an amprita OR a small truck"); the server rejects more than one
+        // taxi category, so the picker stays single-select in that mode.
+        requiredVehicleTypes: selectedVehicleCategories,
         // SEAT-CAPACITY MATCHING (Phase 1): taxi-only, and only forwarded
         // when the customer actually picked a passenger count. The sentinel
         // maps back to null so 'no preference' never reaches the API.
@@ -749,38 +756,24 @@ export function CustomerHome() {
         </div>
       )}
 
-      {/* VEHICLE-TYPE MATCHING (Phase 2): an optional "which vehicle do you
-          need?" picker. Empty = any available vehicle (the legacy
-          behaviour). We deliberately show it for BOTH cargo and taxi modes:
-          a customer asking for a taxi still benefits from e.g. filtering to
-          "taxi car" vs "moto". */}
+      {/* OFFICIAL VEHICLE CLASSIFICATION: the taxi booking picks ONE vehicle
+          class from the official two (≤4 seats / >5 seats). `requiredSeats`
+          below is deliberately untouched — it stays the numeric capacity
+          requirement Phase 3 relies on, and the server derives the driver's
+          seat count from their category so both agree. */}
       <div className="space-y-1.5">
         <label className="block text-[11px] font-semibold text-muted-foreground">
-          {t.requiredVehicleType}
+          {t.selectVehicleType}
         </label>
-        <Select
-          value={requiredVehicleType}
-          onValueChange={setRequiredVehicleType}
-        >
-          <SelectTrigger className="h-10 w-full" dir={isRtl ? 'rtl' : 'ltr'}>
-            <SelectValue placeholder={t.requiredVehicleTypePlaceholder} />
-          </SelectTrigger>
-          <SelectContent>
-            {/* Radix forbids an empty-string SelectItem value (it throws
-                "A <Select.Item /> must have a value prop that is not an
-                empty string" at render time), so the "any vehicle" choice
-                uses a sentinel token instead. It is mapped back to null at
-                submit below and never leaves the client. */}
-            <SelectItem value="__any__">{t.requiredVehicleTypeAny}</SelectItem>
-            {VEHICLE_CATEGORY_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {t[opt.labelKey] ?? opt.value}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <VehiclePicker
+          side={serviceMode === 'taxi' ? 'TAXI' : 'CARGO'}
+          multi={serviceMode !== 'taxi'}
+          value={selectedVehicleCategories}
+          onChange={setSelectedVehicleCategories}
+          t={t as unknown as Record<string, string>}
+        />
         <p className="text-[10px] text-muted-foreground">
-          {t.requiredVehicleTypeHelp}
+          {serviceMode === 'taxi' ? t.requiredVehicleTypeHelp : t.selectVehicleTypesHelp}
         </p>
       </div>
 
