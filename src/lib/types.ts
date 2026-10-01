@@ -75,16 +75,63 @@ export const TAXI_VEHICLE_CATEGORIES = [
 ] as const satisfies readonly OfficialVehicleCategory[];
 
 /**
- * Canonical seat count per taxi category. A taxi category IS a capacity class,
- * so this is what a `taxi_up_to_4` (4) and a `taxi_over_5` (7) register with —
- * the numbers the existing `requiredSeats` rule compares against. Derived rather
- * than trusted from the form, so a driver cannot claim "4 seats or fewer" and
- * register 30.
+ * TAXI SEAT RANGES (a taxi category is a CAPACITY CLASS, not a fixed count).
+ *
+ * The category says which band the vehicle falls in; the seat count the driver
+ * types is the real capacity and is stored verbatim, because that is what the
+ * customer's `requiredSeats` is compared against in isVehicleCompatible().
+ *
+ *   taxi_up_to_4 → 1..4   ("4 seats or fewer")
+ *   taxi_over_5  → 6..30  ("more than 5 seats" — a 6-seater is as valid as a
+ *                          9-seater minibus)
+ *
+ * A previous revision pinned `taxi_over_5` to exactly 7 and compared with
+ * `===`, which rejected perfectly valid vehicles (a 9-seat minibus returned
+ * seatsMismatchVehicleCategory). The range model fixes that while still
+ * refusing the genuinely contradictory pair (9 seats declared as "4 or fewer").
  */
-export const TAXI_CATEGORY_SEATS: Readonly<Record<'taxi_up_to_4' | 'taxi_over_5', number>> = {
-  taxi_up_to_4: 4,
-  taxi_over_5: 7,
+export const TAXI_SEATS_MAX = 30;
+
+export interface TaxiSeatRange {
+  min: number;
+  max: number;
+}
+
+export const TAXI_CATEGORY_SEAT_RANGE: Readonly<
+  Record<'taxi_up_to_4' | 'taxi_over_5', TaxiSeatRange>
+> = {
+  taxi_up_to_4: { min: 1, max: 4 },
+  taxi_over_5: { min: 6, max: TAXI_SEATS_MAX },
 };
+
+/** The seat band for a category, accepting any stored spelling (legacy or official). */
+export function taxiSeatRange(category: unknown): TaxiSeatRange | null {
+  const normalized = normalizeVehicleCategory(category);
+  if (normalized === 'taxi_up_to_4' || normalized === 'taxi_over_5') {
+    return TAXI_CATEGORY_SEAT_RANGE[normalized];
+  }
+  return null;
+}
+
+/**
+ * Is `seats` a legal capacity for this taxi category?
+ * Non-taxi (or unknown) categories have no seat rule and always pass, so this
+ * is only consulted on the TAXI branch of the registration endpoint.
+ */
+export function isSeatsValidForTaxiCategory(category: unknown, seats: number): boolean {
+  const range = taxiSeatRange(category);
+  if (range === null) return true;
+  return Number.isInteger(seats) && seats >= range.min && seats <= range.max;
+}
+
+/**
+ * The smallest legal capacity for a category, used only when the driver
+ * submitted no seat count at all. Kept at the conservative end of the band so
+ * an unstated vehicle is never credited with more seats than it may have.
+ */
+export function defaultSeatsForTaxiCategory(category: unknown): number | null {
+  return taxiSeatRange(category)?.min ?? null;
+}
 
 // Type guard used by the API layer to validate a client-supplied category
 // before persisting it. Unknown values are rejected with a 400 rather than

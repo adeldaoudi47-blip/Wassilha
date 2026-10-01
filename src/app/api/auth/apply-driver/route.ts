@@ -15,9 +15,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   CARGO_VEHICLE_CATEGORIES,
   OFFICIAL_VEHICLE_CATEGORIES,
-  TAXI_CATEGORY_SEATS,
+  TAXI_CATEGORY_SEAT_RANGE,
+  TAXI_SEATS_MAX,
   TAXI_VEHICLE_CATEGORIES,
+  defaultSeatsForTaxiCategory,
+  isSeatsValidForTaxiCategory,
   normalizeVehicleCategory,
+  taxiSeatRange,
   vehicleCategorySide,
 } from '@/lib/types';
 import { z } from 'zod';
@@ -262,7 +266,9 @@ export async function POST(req: NextRequest) {
     // Strings/NaN/negatives are rejected with 400 so the admin dashboard
     // can trust the value is either a sane seat count or null.
     const SEATS_MIN = 1;
-    const SEATS_MAX = 30;
+    // Single source of truth for the absolute ceiling: shared with the seat
+    // band table so the two can never drift apart.
+    const SEATS_MAX = TAXI_SEATS_MAX;
     const seatsFromBody = (() => {
       const raw = body.seats;
       if (raw === undefined || raw === null || raw === '') return null;
@@ -277,27 +283,33 @@ export async function POST(req: NextRequest) {
       // value so the admin panel can distinguish "ignored" from "missing".
       seatsValue = null;
     } else {
-      // TAXI: the official category now carries the capacity, so the seats are
-      // DERIVED from it instead of trusted from the form. `taxi_up_to_4` and
-      // `taxi_over_5` are exactly "4 or fewer" and "more than 5", and matching
-      // against the real number is what the seat rule compares. A form value
-      // that contradicts the category (e.g. 7 seats on a "4 or fewer" taxi) is
-      // a 400 rather than a silent overwrite — the user should see the mistake.
-      const categorySeats = TAXI_CATEGORY_SEATS[vehicleCategory] ?? null;
+      // TAXI: the category is a CAPACITY BAND, not a fixed seat count. The
+      // driver's real count is validated against that band and stored verbatim,
+      // because that number is what the customer's `requiredSeats` is compared
+      // against in isVehicleCompatible(). So a 6, 7, 8 or 9-seat vehicle are
+      // all valid for `taxi_over_5`, while "4 seats or fewer" still refuses a
+      // 9-seat claim. (An earlier revision pinned `taxi_over_5` to exactly 7
+      // and compared with `===`, which wrongly rejected valid minibuses.)
       if (seatsFromBody === null || !Number.isFinite(seatsFromBody)) {
-        // No explicit value: fall back to the category's canonical count.
-        if (categorySeats === null) return badRequest('invalidSeats');
-        seatsValue = categorySeats;
+        // No explicit value: fall back to the band minimum, which is the
+        // conservative end (an unstated vehicle is never credited with more
+        // seats than it may actually have).
+        const fallback = defaultSeatsForTaxiCategory(vehicleCategory);
+        if (fallback === null) return badRequest('invalidSeats');
+        seatsValue = fallback;
       } else if (seatsFromBody < SEATS_MIN || seatsFromBody > SEATS_MAX) {
         return badRequest('invalidSeats');
-      } else if (categorySeats !== null && seatsFromBody !== categorySeats) {
+      } else if (!isSeatsValidForTaxiCategory(vehicleCategory, seatsFromBody)) {
+        // The count is sane in absolute terms but contradicts the declared
+        // capacity class (e.g. 9 seats on a "4 or fewer" taxi, or 4 seats on a
+        // "more than 5" minibus). The band is echoed so a client can show it.
         return badRequest('seatsMismatchVehicleCategory', {
           vehicleCategory,
-          expected: categorySeats,
+          range: taxiSeatRange(vehicleCategory),
           received: seatsFromBody,
         });
       } else {
-        seatsValue = seatsFromBody as number;
+        seatsValue = seatsFromBody;
       }
     }
     // (Legacy) the driver-facing form used to collect `energie` and validate

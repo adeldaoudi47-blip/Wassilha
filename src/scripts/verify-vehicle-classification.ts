@@ -27,7 +27,11 @@ import {
   OFFICIAL_CATEGORIES_BY_SIDE,
   CARGO_VEHICLE_CATEGORIES,
   TAXI_VEHICLE_CATEGORIES,
-  TAXI_CATEGORY_SEATS,
+  TAXI_SEATS_MAX,
+  TAXI_CATEGORY_SEAT_RANGE,
+  defaultSeatsForTaxiCategory,
+  isSeatsValidForTaxiCategory,
+  taxiSeatRange,
   normalizeVehicleCategory,
   rawCategoryForms,
   retainCategoriesForService,
@@ -78,9 +82,62 @@ check(
   OFFICIAL_VEHICLE_CATEGORIES.every((c) => vehicleCategorySide(c) !== null)
 );
 check(
-  'taxi categories carry a canonical seat count',
-  TAXI_VEHICLE_CATEGORIES.every((c) => Number.isInteger(TAXI_CATEGORY_SEATS[c])),
-  `up_to_4=${TAXI_CATEGORY_SEATS.taxi_up_to_4} over_5=${TAXI_CATEGORY_SEATS.taxi_over_5}`
+  'every taxi category carries a SEAT RANGE (not a fixed count)',
+  TAXI_VEHICLE_CATEGORIES.every((c) => {
+    const r = taxiSeatRange(c);
+    return r !== null && r.min <= r.max;
+  }),
+  `up_to_4=${TAXI_CATEGORY_SEAT_RANGE.taxi_up_to_4.min}-${TAXI_CATEGORY_SEAT_RANGE.taxi_up_to_4.max} ` +
+    `over_5=${TAXI_CATEGORY_SEAT_RANGE.taxi_over_5.min}-${TAXI_CATEGORY_SEAT_RANGE.taxi_over_5.max}`,
+);
+check(
+  'the taxi_up_to_4 band is exactly 1..4 and the over_5 band starts at 6',
+  TAXI_CATEGORY_SEAT_RANGE.taxi_up_to_4.min === 1 &&
+    TAXI_CATEGORY_SEAT_RANGE.taxi_up_to_4.max === 4 &&
+    TAXI_CATEGORY_SEAT_RANGE.taxi_over_5.min === 6,
+);
+check(
+  'the over_5 band reaches the system-wide seat ceiling',
+  TAXI_CATEGORY_SEAT_RANGE.taxi_over_5.max === TAXI_SEATS_MAX && TAXI_SEATS_MAX === 30,
+);
+
+// TAXI SEAT BANDS (regression: a 9-seat minibus was rejected as
+// seatsMismatchVehicleCategory because `taxi_over_5` was pinned to exactly 7).
+const seatOk = (category: string, seats: number) => isSeatsValidForTaxiCategory(category, seats);
+check('T-S1 taxi_up_to_4 + seats=4 => PASS', seatOk('taxi_up_to_4', 4));
+check('T-S2 taxi_up_to_4 + seats=5 => FAIL', !seatOk('taxi_up_to_4', 5));
+check('T-S3 taxi_over_5 + seats=6 => PASS', seatOk('taxi_over_5', 6));
+check('T-S4 taxi_over_5 + seats=7 => PASS', seatOk('taxi_over_5', 7));
+check('T-S5 taxi_over_5 + seats=8 => PASS', seatOk('taxi_over_5', 8));
+check('T-S6 taxi_over_5 + seats=9 => PASS', seatOk('taxi_over_5', 9), 'the reported bug');
+check('T-S7 taxi_over_5 + seats=5 => FAIL', !seatOk('taxi_over_5', 5));
+check('T-S8 taxi_over_5 + seats=30 => PASS (system ceiling)', seatOk('taxi_over_5', 30));
+check('T-S9 taxi_over_5 + seats=31 => FAIL (above ceiling)', !seatOk('taxi_over_5', 31));
+check('T-S10 taxi_over_5 + seats=0 => FAIL', !seatOk('taxi_over_5', 0));
+check('T-S11 taxi_over_5 + seats=4.5 => FAIL (non-integer)', !seatOk('taxi_over_5', 4.5));
+// Legacy spellings must resolve to the same band.
+check(
+  'legacy taxi_car uses the up_to_4 band, taxi_car_7 the over_5 band',
+  seatOk('taxi_car', 4) &&
+    !seatOk('taxi_car', 5) &&
+    seatOk('taxi_car_7', 9) &&
+    !seatOk('taxi_car_7', 5),
+);
+// Cargo is untouched: no seat rule applies at all.
+check(
+  'CARGO categories impose NO seat rule (cargo unaffected)',
+  CARGO_VEHICLE_CATEGORIES.every(
+    (c) => seatOk(c, 1) && seatOk(c, 9) && seatOk(c, 99),
+  ),
+);
+check(
+  'the default seat count sits at the conservative end of its band',
+  defaultSeatsForTaxiCategory('taxi_up_to_4') === 1 &&
+    defaultSeatsForTaxiCategory('taxi_over_5') === 6,
+);
+check(
+  'a non-taxi category has no band and no default',
+  taxiSeatRange('cargo_moto_2') === null && defaultSeatsForTaxiCategory('cargo_tricycle') === null,
 );
 
 // ---------------------------------------------------------------------------
@@ -253,7 +310,18 @@ check('POST /api/orders forwards it to the fan-out', ordersRoute.includes('order
 const applyDriver = src('src/app/api/auth/apply-driver/route.ts');
 check('apply-driver requires a vehicle category', applyDriver.includes("return badRequest('invalidVehicleCategory'"));
 check('apply-driver binds the category to the service type', applyDriver.includes("return badRequest('vehicleCategoryServiceMismatch'"));
-check('apply-driver derives taxi seats from the category', applyDriver.includes('TAXI_CATEGORY_SEATS'));
+check(
+  'apply-driver validates taxi seats against a BAND, not an exact count',
+  applyDriver.includes('isSeatsValidForTaxiCategory') &&
+    applyDriver.includes('taxiSeatRange') &&
+    // The exact-equality guard that caused the bug must be gone.
+    !/seatsFromBody\s*!==\s*categorySeats/.test(applyDriver) &&
+    !applyDriver.includes('TAXI_CATEGORY_SEATS'),
+);
+check(
+  'the absolute seat ceiling comes from the shared constant',
+  applyDriver.includes('const SEATS_MAX = TAXI_SEATS_MAX'),
+);
 check('apply-driver persists it on every write path', (applyDriver.match(/^\s*vehicleCategory,$/gm) ?? []).length >= 3);
 
 for (const [label, file, needs] of [
@@ -375,6 +443,62 @@ check(
   'server still rejects category/service mismatch (cannot be bypassed by UI)',
   applyDrv.includes("return badRequest('vehicleCategoryServiceMismatch'") &&
     applyDrv.includes('vehicleCategorySide(vehicleCategory) !== serviceType')
+);
+
+// ---------------------------------------------------------------------------
+section('5c. PATCH /api/driver/vehicle — SEAT BAND (profile-edit path)');
+// ---------------------------------------------------------------------------
+// The profile-edit endpoint bounded `seats` to 1..30 in absolute terms but never
+// cross-checked it against the capacity class, so a driver could turn a
+// "taxi_up_to_4" into a 9-seat vehicle after registration. It must reuse the
+// SAME shared helper as apply-driver, never a second rule.
+// (`vehicleRoute` was already loaded in section 5.)
+check(
+  'PATCH /api/driver/vehicle reuses the central band helper',
+  vehicleRoute.includes('isSeatsValidForTaxiCategory(effectiveCategory, effectiveSeats)') &&
+    vehicleRoute.includes('taxiSeatRange(effectiveCategory)'),
+);
+check(
+  'PATCH rejects an incompatible pair with the shared error contract',
+  vehicleRoute.includes("badRequest('seatsMismatchVehicleCategory'"),
+);
+check(
+  'PATCH validates the EFFECTIVE pair (a partial edit cannot half-apply)',
+  vehicleRoute.includes('effectiveCategory') &&
+    vehicleRoute.includes('driver.vehicleRegistration.vehicleCategory') &&
+    vehicleRoute.includes('const effectiveSeats = v.seats ?? null'),
+);
+check(
+  'PATCH does not re-implement the band locally',
+  !/seats\s*>\s*4\b/.test(vehicleRoute) && !/seats\s*<\s*6\b/.test(vehicleRoute),
+);
+
+// The band is the shared helper's behaviour, so these are the per-endpoint
+// expectations required for this path.
+const patchSeat = (category: string, seats: number) =>
+  isSeatsValidForTaxiCategory(category, seats);
+check('V1 PATCH taxi_up_to_4 + seats=4 => PASS', patchSeat('taxi_up_to_4', 4));
+check('V2 PATCH taxi_up_to_4 + seats=9 => FAIL', !patchSeat('taxi_up_to_4', 9));
+check('V3 PATCH taxi_over_5 + seats=6 => PASS', patchSeat('taxi_over_5', 6));
+check('V4 PATCH taxi_over_5 + seats=9 => PASS', patchSeat('taxi_over_5', 9));
+check('V5 PATCH taxi_over_5 + seats=30 => PASS', patchSeat('taxi_over_5', 30));
+check('V6 PATCH taxi_over_5 + seats=5 => FAIL', !patchSeat('taxi_over_5', 5));
+check(
+  'V7 PATCH cargo seats are unrestricted (1 / 9 / 30 all PASS)',
+  CARGO_VEHICLE_CATEGORIES.every((c) => patchSeat(c, 1) && patchSeat(c, 9) && patchSeat(c, 30)),
+);
+check(
+  'V8 PATCH keeps legacy spellings working (taxi_car / taxi_car_7)',
+  patchSeat('taxi_car', 4) && !patchSeat('taxi_car', 9) && patchSeat('taxi_car_7', 9),
+);
+
+// Both write paths must call the same helper - one definition, no drift.
+check(
+  'every seats write path routes through the central validation',
+  [
+    'src/app/api/auth/apply-driver/route.ts',
+    'src/app/api/driver/vehicle/route.ts',
+  ].every((f) => src(f).includes('isSeatsValidForTaxiCategory')),
 );
 
 // ---------------------------------------------------------------------------

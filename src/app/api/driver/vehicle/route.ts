@@ -27,7 +27,9 @@ import { getSession } from '@/lib/auth';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import {
   OFFICIAL_VEHICLE_CATEGORIES,
+  isSeatsValidForTaxiCategory,
   normalizeVehicleCategory,
+  taxiSeatRange,
 } from '@/lib/types';
 import type { VehicleCategory } from '@/lib/types';
 
@@ -196,6 +198,40 @@ export async function PATCH(req: NextRequest) {
         { error: 'noVehicleRegistration' },
         { status: 404 }
       );
+    }
+
+    // OFFICIAL VEHICLE CLASSIFICATION - TAXI SEAT BAND.
+    //
+    // Zod above only bounds `seats` to 1..30 in absolute terms; it cannot know
+    // which capacity CLASS the vehicle belongs to. That cross-check was missing
+    // here, so a driver could edit a "taxi_up_to_4" to 9 seats after
+    // registration and end up with a vehicle the category does not describe.
+    //
+    // The rule itself is NOT re-implemented: `isSeatsValidForTaxiCategory()` is
+    // the same shared helper POST /api/auth/apply-driver uses, so "what counts as
+    // a legal taxi_up_to_4 / taxi_over_5" has exactly one definition
+    // (taxi_up_to_4 -> 1..4, taxi_over_5 -> 6..30, legacy taxi_car / taxi_car_7
+    // included). Cargo categories have no band and are therefore never
+    // restricted.
+    //
+    // This PATCH is partial, so the EFFECTIVE post-update pair is validated: the
+    // category is the submitted one when present, otherwise the stored one, and
+    // likewise for the seat count. Validating only the submitted fields would let
+    // a request change one half of the pair and leave it contradicting the other.
+    const effectiveCategory =
+      v.vehicleCategory === undefined
+        ? normalizeVehicleCategory(driver.vehicleRegistration.vehicleCategory)
+        : normalizedCategory;
+    // `seats` is written as `v.seats ?? null`, so mirror that exactly: an
+    // omitted/cleared seat count means "no capacity recorded", which no band
+    // can contradict.
+    const effectiveSeats = v.seats ?? null;
+    if (effectiveSeats !== null && !isSeatsValidForTaxiCategory(effectiveCategory, effectiveSeats)) {
+      return badRequest('seatsMismatchVehicleCategory', {
+        vehicleCategory: effectiveCategory,
+        range: taxiSeatRange(effectiveCategory),
+        received: effectiveSeats,
+      });
     }
 
     // If the plate number is changing, check it isn't already used by
