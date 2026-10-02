@@ -47,6 +47,45 @@ export function CustomerCraftOrders() {
     return labels[s] || s;
   };
 
+  // -------------------------------------------------------------------------
+  // PHASE 7B — delivery tracking.
+  //
+  // Derived from the nested `delivery` block the API now returns. Labels reuse
+  // the EXISTING transport keys (orderStatusSearching / orderStatusAccepted /
+  // orderStatusPicked / delivered) so a marketplace card and a transport card
+  // can never disagree about what a status means. No new subscription is
+  // added: the card refreshes on this page's existing fetch cycle.
+  // -------------------------------------------------------------------------
+  const DELIVERY_STEP_ORDER = ['searching', 'accepted', 'picked', 'delivered'] as const;
+
+  const deliveryStatusLabel = (s: string) => {
+    const labels: Record<string, string> = {
+      searching: t.orderStatusSearching,
+      scheduled: t.orderStatusSearching,
+      accepted: t.orderStatusAccepted,
+      picked: t.orderStatusPicked,
+      delivered: t.delivered,
+      cancelled: isAr ? 'ملغى' : 'Annulé',
+    };
+    return labels[s] ?? s;
+  };
+
+  const deliveryStepReached = (
+    delivery: CraftOrderPublic['delivery'],
+    step: (typeof DELIVERY_STEP_ORDER)[number],
+  ) => {
+    // Nullable by contract: a pickup order has no delivery. Guarding here keeps
+    // the call site free of non-null assertions, which narrowing cannot prove
+    // inside the `.map()` closure anyway.
+    if (!delivery || delivery.status === 'cancelled') return false;
+    const current = DELIVERY_STEP_ORDER.indexOf(
+      delivery.status as (typeof DELIVERY_STEP_ORDER)[number],
+    );
+    const target = DELIVERY_STEP_ORDER.indexOf(step);
+    if (current === -1 || target === -1) return false;
+    return target <= current;
+  };
+
   // HIRFA Phase 3: cast a "helpful" vote on one of the customer's own past
   // reviews (idempotent toggle). The API resolves the voter from the session,
   // so a customer can only vote once per review.
@@ -85,7 +124,74 @@ export function CustomerCraftOrders() {
           <Card key={order.id} className="space-y-3 p-4">
             <div className="flex items-center justify-between"><div><span className="font-mono text-xs font-bold text-primary">{order.code}</span></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${statusColor(order.status)}`}>{statusLabel(order.status)}</span></div>
             <div className="rounded-xl bg-muted/50 p-3"><p className="text-xs font-bold text-foreground">{t.craftedBy} {order.artisan.displayName}</p></div>
-            {order.deliveryOption === 'wassilha_delivery' && (<div className="flex items-center gap-2 rounded-lg bg-blue-50 p-2 dark:bg-blue-950/20"><Truck size={14} className="text-blue-600" /><span className="text-xs font-semibold text-blue-700">{t.wassilhaDelivery}</span></div>)}
+            {/* PHASE 7B — live delivery tracking. The static "delivered by
+                Wassilha" badge is replaced by the real state of the linked
+                transport Order. A pickup order has `delivery === null`, so
+                this block simply does not render and that flow is unchanged. */}
+            {order.deliveryOption === 'wassilha_delivery' && order.delivery && (
+              <div className="space-y-2 rounded-lg bg-blue-50 p-3 dark:bg-blue-950/20">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-300">
+                    <Truck size={14} />
+                    {t.deliveryTracking}
+                  </span>
+                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                    {deliveryStatusLabel(order.delivery.status)}
+                  </span>
+                </div>
+
+                {/* Driver name only — the API never sends a phone number here. */}
+                <p className="text-[11px] font-medium text-blue-800 dark:text-blue-200">
+                  {t.deliveryDriver}:{' '}
+                  {order.delivery.driver?.name
+                    ? order.delivery.driver.name
+                    : t.deliveryDriverSearching}
+                </p>
+
+                {/* Four-step timeline derived from the status; no new events. */}
+                <ol className="space-y-1 pt-1">
+                  {(
+                    [
+                      ['searching', t.deliveryStepCreated],
+                      ['accepted', t.deliveryStepAccepted],
+                      ['picked', t.deliveryStepPicked],
+                      ['delivered', t.deliveryStepDelivered],
+                    ] as const
+                  ).map(([step, label]) => {
+                    const done = deliveryStepReached(order.delivery, step);
+                    return (
+                      <li key={step} className="flex items-center gap-2 text-[11px]">
+                        <span
+                          className={cn(
+                            'inline-block size-3.5 shrink-0 rounded-full border-2',
+                            done
+                              ? 'border-blue-600 bg-blue-600'
+                              : 'border-blue-300 dark:border-blue-800',
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            'font-medium',
+                            done
+                              ? 'text-blue-800 dark:text-blue-200'
+                              : 'text-blue-400 dark:text-blue-800',
+                          )}
+                        >
+                          {label}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+
+                {/* DELIVERY money only. The product subtotal stays on the order
+                    total above; the two are never merged. */}
+                <p className="border-t border-blue-200 pt-2 text-[11px] font-bold text-blue-800 dark:border-blue-900 dark:text-blue-200">
+                  {t.deliveryFeeLabel}:{' '}
+                  {order.delivery.finalPrice ?? order.delivery.price} {t.currencyDzd}
+                </p>
+              </div>
+            )}
             {/* HIRFA Phase 3: item lines with the chosen variant. The server
                 snapshots the variant on the order line (onDelete: SetNull),
                 so a variant removed later still shows what was bought. */}

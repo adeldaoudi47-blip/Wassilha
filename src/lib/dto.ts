@@ -258,6 +258,59 @@ export const publicCraftOrderItemSelect = {
   },
 } as const;
 
+// ---------------------------------------------------------------------------
+// PHASE 7B — marketplace delivery tracking projection.
+//
+// Deliberately NARROW: the delivery's own state plus the driver's display name.
+//
+// Never included: `driver.phone`, `driver.email`, any coordinate column, or any
+// other internal column. The customer could already read the assigned driver's
+// name and avatar from the transport order, so nothing here widens exposure.
+// A driver with no assignment yields `driver: null`, which the UI renders as
+// "looking for a driver".
+//
+// Declared BEFORE `publicCraftOrderSelect` because that projection embeds it
+// and `const` bindings are not hoisted.
+// ---------------------------------------------------------------------------
+export const craftDeliverySelect = {
+  id: true,
+  status: true,
+  // DELIVERY money only. `CraftOrder.totalPrice` (the product subtotal) stays a
+  // separate field on the parent row and is deliberately never merged here:
+  // driver earnings are `finalPrice ?? price`, i.e. the delivery fee alone.
+  price: true,
+  finalPrice: true,
+  pickup: true,
+  dropoff: true,
+  // Display name ONLY — deliberately not publicUserSelect, which carries `phone`
+  // and `role`.
+  driver: { select: { name: true } },
+  acceptedAt: true,
+  pickedAt: true,
+  deliveredAt: true,
+} as const;
+
+/**
+ * The same projection WITHOUT the two addresses, for the SELLER view.
+ *
+ * Phase 7A deliberately keeps the customer's dropoff off `CraftOrder` so a seller
+ * can never read their buyer's home address. Nesting the full block into the
+ * shared projection would hand that address to every shop the customer has
+ * ordered from — so the artisan branch of GET /api/craft/orders swaps in this
+ * redacted shape instead. The seller still sees that a delivery exists, how far
+ * along it is, and who is carrying it.
+ */
+export const craftDeliverySelectNoAddress = {
+  id: true,
+  status: true,
+  price: true,
+  finalPrice: true,
+  driver: { select: { name: true } },
+  acceptedAt: true,
+  pickedAt: true,
+  deliveredAt: true,
+} as const;
+
 export const publicCraftOrderSelect = {
   id: true,
   code: true,
@@ -294,7 +347,41 @@ export const publicCraftOrderSelect = {
       from: { select: { id: true, name: true, avatar: true } },
     },
   },
+  // PHASE 7B: the linked Wassilha transport Order, so a marketplace order can
+  // show its real delivery state. `null` for `deliveryOption = 'pickup'`, which
+  // leaves that flow byte-identical. Resolved as ONE extra join on the query
+  // that already exists — no second request, no N+1.
+  //
+  // `deliveryOrder` is Prisma's relation name on CraftOrder; `aliasDelivery()`
+  // below renames the key to `delivery` in the JSON the client receives.
+  deliveryOrder: { select: craftDeliverySelect },
 } as const;
+
+/**
+ * Rename Prisma's `deliveryOrder` relation key to the public `delivery` key, so
+ * the wire format reads `order.delivery.status` while the query stays valid
+ * Prisma. Pure and non-destructive: every other field passes through untouched,
+ * and a pickup order simply yields `delivery: null`.
+ *
+ * Applied at every response site returning `publicCraftOrderSelect` rows, so
+ * checkout, status transitions and the list endpoint all agree.
+ */
+export function aliasDelivery<T extends { deliveryOrder?: unknown }>(
+  row: T,
+): Omit<T, 'deliveryOrder'> & { delivery: unknown } {
+  const { deliveryOrder, ...rest } = row;
+  return { ...rest, delivery: deliveryOrder ?? null } as Omit<T, 'deliveryOrder'> & {
+    delivery: unknown;
+  };
+}
+
+/** Map a list of rows through `aliasDelivery`. */
+export function aliasDeliveries<T extends { deliveryOrder?: unknown }>(
+  rows: T[],
+): (Omit<T, 'deliveryOrder'> & { delivery: unknown })[] {
+  return rows.map(aliasDelivery);
+}
+
 
 // ---------------------------------------------------------------------------
 // HIRFA (P3): public projection for craft products. The artisan contact

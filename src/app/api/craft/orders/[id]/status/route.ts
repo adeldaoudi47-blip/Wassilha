@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth';
-import { publicCraftOrderSelect, publicOrderSelect } from '@/lib/dto';
+import { publicCraftOrderSelect, publicOrderSelect, aliasDelivery } from '@/lib/dto';
 import { emitOrderStatus } from '@/lib/pusher-server';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -127,7 +127,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         where: { id },
         select: publicCraftOrderSelect,
       });
-      return NextResponse.json(current);
+      return NextResponse.json(current ? aliasDelivery(current) : current);
     }
 
     // PHASE 7A — CANCEL PROPAGATION.
@@ -183,7 +183,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       select: publicCraftOrderSelect,
     });
 
-    return NextResponse.json(result);
+    // PHASE 7B: same `deliveryOrder` -> `delivery` alias as the list/checkout
+    // responses, so every craft-order payload has the same shape.
+    return NextResponse.json(result ? aliasDelivery(result) : result);
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
   }

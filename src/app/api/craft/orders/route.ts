@@ -3,7 +3,12 @@ import { db } from '@/lib/db';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { getSession } from '@/lib/auth';
-import { publicCraftOrderSelect } from '@/lib/dto';
+import {
+  publicCraftOrderSelect,
+  craftDeliverySelectNoAddress,
+  aliasDelivery,
+  aliasDeliveries,
+} from '@/lib/dto';
 import { createNotification } from '@/lib/notifications';
 // HIRFA Phase 3: server-authoritative pricing (variants / tiers / coupons).
 import { couponDiscount, pickTier, unitPriceFor } from '@/lib/craft-pricing';
@@ -256,7 +261,28 @@ export async function POST(req: NextRequest) {
             dropoffLat: parsed.data.dropoffLat ?? null,
             dropoffLng: parsed.data.dropoffLng ?? null,
           });
-          if (delivery) deliveries.push(delivery);
+          if (delivery) {
+            deliveries.push(delivery);
+
+            // PHASE 7B-01: re-read so the RESPONSE reflects the link written
+            // above. The row returned by `craftOrder.create()` was selected
+            // BEFORE `createCraftDeliveryOrder()` linked the transport Order,
+            // so it still carried `deliveryOrderId: null`. The database was
+            // always correct — only the checkout payload was stale. Re-reading
+            // inside the same transaction keeps the response consistent with
+            // what was committed.
+            //
+            // Only done when a delivery was actually created, so a plain
+            // pickup order returns exactly the same object as before.
+            const linked = await tx.craftOrder.findUnique({
+              where: { id: order.id },
+              select: publicCraftOrderSelect,
+            });
+            if (linked) {
+              const idx = orders.findIndex((o) => o.id === order.id);
+              if (idx !== -1) orders[idx] = linked;
+            }
+          }
         }
 
         // HIRFA Phase 3: burn the coupon slot atomically. The conditional
@@ -352,7 +378,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ orders: created }, { status: 201 });
+    return NextResponse.json({ orders: aliasDeliveries(created) }, { status: 201 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === 'productNotFound') return NextResponse.json({ error: 'productNotFound' }, { status: 400 });
@@ -377,23 +403,40 @@ export async function POST(req: NextRequest) {
 // GET /api/craft/orders
 // Customer: returns their own orders.
 // Artisan: returns orders for their shop.
+//
+// PHASE 7B: each row now carries a nested `delivery` block (the linked
+// Wassilha transport Order) so the customer can follow the delivery without a
+// second request. It is ONE extra join on the query that was already running —
+// no N+1, no new endpoint.
+//
+// AUTHORIZATION (unchanged): the rows are still scoped by the session —
+// `customerId = session.id`, or the artisan's own shop. A customer therefore
+// only ever receives deliveries attached to their OWN CraftOrders; there is no
+// path by which one customer reads another's delivery.
+//
+// PRIVACY: the seller branch swaps in `craftDeliverySelectNoAddress`, so a shop
+// sees that a delivery exists and how far along it is, but never the buyer's
+// pickup/dropoff address. See dto.ts for why.
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   try {
-    const where =
-      session.role === 'artisan'
-        ? { artisan: { userId: session.id } }
-        : { customerId: session.id };
+    const isArtisan = session.role === 'artisan';
+    const where = isArtisan
+      ? { artisan: { userId: session.id } }
+      : { customerId: session.id };
 
     const orders = await db.craftOrder.findMany({
       where,
-      select: publicCraftOrderSelect,
+      select: isArtisan
+        ? { ...publicCraftOrderSelect, deliveryOrder: { select: craftDeliverySelectNoAddress } }
+        : publicCraftOrderSelect,
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ orders, total: orders.length });
+    // `deliveryOrder` (Prisma relation) -> `delivery` (public wire key).
+    return NextResponse.json({ orders: aliasDeliveries(orders), total: orders.length });
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
   }

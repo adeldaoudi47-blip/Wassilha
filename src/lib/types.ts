@@ -794,6 +794,27 @@ export interface CraftOrderItemPublic {
   };
 }
 
+/**
+ * PHASE 7B — the delivery leg of a marketplace order, as shown to the customer.
+ *
+ * Mirrors `craftDeliverySelect` in src/lib/dto.ts. `price` / `finalPrice` are
+ * DELIVERY money only and are never merged with `CraftOrder.totalPrice`, which
+ * stays the product subtotal on the parent row.
+ */
+export interface CraftDeliveryPublic {
+  id: string;
+  status: string;
+  price: number;
+  finalPrice: number | null;
+  pickup?: string;
+  dropoff?: string;
+  /** Display name only — never a phone number, email or coordinate. */
+  driver: { name: string } | null;
+  acceptedAt: string | null;
+  pickedAt: string | null;
+  deliveredAt: string | null;
+}
+
 export interface CraftOrderPublic {
   id: string;
   code: string;
@@ -809,6 +830,10 @@ export interface CraftOrderPublic {
   customer: { id: string; name: string; phone: string };
   artisan: { id: string; displayName: string; avatarUrl: string | null };
   items: CraftOrderItemPublic[];
+  // PHASE 7B: the linked Wassilha transport Order, or null for a pickup order.
+  // Deliberately narrow — the driver's NAME only. No phone, no email and no
+  // coordinates ever reach the client through this block.
+  delivery?: CraftDeliveryPublic | null;
   review?: {
     id: string;
     score: number;

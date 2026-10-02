@@ -302,6 +302,50 @@ check(
     !dispatchSrc.includes('requiredVehicleTypes?: readonly string[] | null;\n  driver:'),
 );
 
+// ---------------------------------------------------------------------------
+section('PHASE 7B-01  checkout response carries the linked delivery');
+// ---------------------------------------------------------------------------
+// `craftOrder.create()` is selected BEFORE createCraftDeliveryOrder() writes
+// deliveryOrderId, so the returned payload used to report null even though the
+// row was correctly linked. The database was always right; only the response
+// was stale. The fix re-reads the row inside the same transaction, and ONLY
+// when a delivery was actually created.
+check(
+  'B-1 the response is refreshed after the delivery link is written',
+  /if \(delivery\) \{[\s\S]{0,400}deliveries\.push\(delivery\)/.test(checkout) &&
+    /const linked = await tx\.craftOrder\.findUnique\(\{/.test(checkout),
+);
+check(
+  'B-2 the refreshed row replaces the stale one in the response array',
+  /orders\[idx\] = linked/.test(checkout) && /findIndex\(\(o\) => o\.id === order\.id\)/.test(checkout),
+);
+check(
+  'B-3 the re-read uses the same public projection (no field drift)',
+  /const linked = await tx\.craftOrder\.findUnique\(\{\s*\n\s*where: \{ id: order\.id \},\s*\n\s*select: publicCraftOrderSelect,/.test(checkout),
+);
+check(
+  'B-4 pickup orders are untouched - no re-read when no delivery was created',
+  /if \(wantsDelivery\) \{/.test(checkout) &&
+    // the re-read lives inside `if (delivery)`, so `pickup` (delivery === null)
+    // returns the original object byte-for-byte.
+    /if \(wantsDelivery\) \{[\s\S]{0,400}const delivery = await createCraftDeliveryOrder/.test(checkout),
+);
+check(
+  'B-5 the response still returns the same orders array shape',
+  /return \{ orders, deliveries \};/.test(checkout) &&
+    /NextResponse\.json\(\{ orders: aliasDeliveries\(created\) \}, \{ status: 201 \}\)/.test(checkout),
+);
+check(
+  'B-7 the checkout response is aliased so deliveryOrderId + delivery agree',
+  checkout.includes('aliasDeliveries(created)'),
+);
+check(
+  'B-6 deliveryOrderId remains part of the public projection',
+  /publicCraftOrderSelect = \{[\s\S]{0,600}deliveryOrderId: true/.test(
+    src('src/lib/dto.ts'),
+  ),
+);
+
 console.log(`\n${'='.repeat(58)}`);
 console.log(`RESULT: ${pass}/${pass + fail}`);
 console.log(`${'='.repeat(58)}`);
