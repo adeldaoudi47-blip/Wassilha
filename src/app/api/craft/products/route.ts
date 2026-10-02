@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireActiveArtisan } from '@/lib/auth';
 import { publicCraftProductSelect } from '@/lib/dto';
 import { allocateProductSlug } from '@/lib/slug-allocate';
+import { rateLimit } from '@/lib/rate-limit';
 
 // GET /api/craft/products
 // Public browse endpoint for the HIRFA marketplace.
@@ -132,6 +133,22 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const gate = await requireActiveArtisan();
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status });
+    // PHASE 8: per-user cap on this mutation. Placed AFTER the artisan gate on
+    // purpose so an unauthenticated caller is rejected first, and the bucket is
+    // keyed on the session id returned by the gate, which is server-derived and
+    // cannot be spoofed by the client.
+    const rl = await rateLimit(
+      `craftproduct:${gate.session.id}`,
+      60,
+      60 * 60 * 1000
+    );
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'tooManyRequests', retryAfterSec: rl.retryAfterSec },
+        { status: 429 }
+      );
+    }
+
   try {
     const body = await req.json().catch(() => null);
     const parsed = createSchema.safeParse(body);

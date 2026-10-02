@@ -15,6 +15,7 @@ import { couponDiscount, pickTier, unitPriceFor } from '@/lib/craft-pricing';
 import { createCraftDeliveryOrder } from '@/lib/craft-delivery';
 import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
 import { emitOrderNewRequest } from '@/lib/pusher-server';
+import { rateLimit } from '@/lib/rate-limit';
 
 // POST /api/craft/orders
 // Customer-only. Creates a craft order from the client-side cart.
@@ -62,6 +63,18 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    // PHASE 8: per-user cap on this mutation. Placed AFTER the auth + role gate
+    // on purpose so an unauthenticated caller is rejected with 401 first, and
+    // the bucket is keyed on the session id, which is server-derived and cannot
+    // be spoofed by the client.
+    const rl = await rateLimit(`craftorder:${session.id}`, 15, 60 * 60 * 1000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'tooManyRequests', retryAfterSec: rl.retryAfterSec },
+        { status: 429 }
+      );
+    }
+
 
   try {
     const body = await req.json().catch(() => null);

@@ -19,6 +19,7 @@ import {
 } from '@/lib/types';
 import { isAllowedCargoImageUrl } from '@/lib/offer-policy';
 import { serviceCategoryFor } from '@/lib/dispatch';
+import { rateLimit } from '@/lib/rate-limit';
 
 /**
  * C7 — retry a Prisma write that can fail with `P2002` (unique-constraint
@@ -251,6 +252,18 @@ export async function POST(req: NextRequest) {
     if (session.role !== 'customer' && session.role !== 'admin') {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
+    // PHASE 8: per-user cap on this mutation. Placed AFTER the auth + role gate
+    // on purpose so an unauthenticated caller is rejected with 401 first, and
+    // the bucket is keyed on the session id, which is server-derived and cannot
+    // be spoofed by the client.
+    const rl = await rateLimit(`ordercreate:${session.id}`, 20, 60 * 60 * 1000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'tooManyRequests', retryAfterSec: rl.retryAfterSec },
+        { status: 429 }
+      );
+    }
+
 
     const body = await req.json();
     const parsed = createOrderSchema.safeParse(body);

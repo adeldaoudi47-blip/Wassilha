@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
+import { deliverOtp, isOtpDemoMode } from '@/lib/otp';
 
 const RESEND_COOLDOWN_MS = 30 * 1000;
 
@@ -21,9 +22,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalidPhone' }, { status: 400 });
     }
 
-    // SECURITY: demo mode force-disabled in production.
-  // DEMO MODE (2026-09-28): a random 6-digit code is always generated;
-  // OTP_DEMO_MODE / DEMO_OTP are intentionally not read.
+    // PHASE 8 (OTP delivery): the code is delivered by the configured provider
+    // through deliverOtp() below. OTP_DEMO_MODE is read ONLY via isOtpDemoMode(),
+    // which additionally requires a non-production build, so a production caller
+    // never receives the code and an unconfigured provider is a delivery failure
+    // rather than a fallback echo.
     // SECURITY: per-phone resend cooldown.
     const latestCode = await db.otpCode.findFirst({
       where: { phone },
@@ -82,24 +85,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // No provider dispatch: the code is returned in the response (demo flow).
-    // SECURITY (V10 - account enumeration): the public response shape is
-    // identical whether or not the account exists. `devOtp` is only echoed
-    // for a real, active account so the demo flow stays usable without
-    // leaking that a phone number is registered.
-    if (user && user.accountStatus === 'active') {
-      return NextResponse.json({ ok: true, demo: true, devOtp: code });
-    }
+    // PHASE 8: deliver through the provider instead of returning the code.
+    // The ghost OTP created above for a non-existent account is NEVER delivered,
+    // and the response below is identical either way, so account existence
+    // stays unobservable.
+    await deliverOtp(phone, code);
 
-    // Account does not exist (or is not active). We already created the
-    // OTP above to flatten timing, but we never send the SMS and we
-    // return the same response shape as the success path.
-    return NextResponse.json({ ok: true });
+    // SECURITY (V10 - account enumeration): the public response shape is
+    // identical whether or not the account exists. `devOtp` is echoed only in
+    // the explicitly-enabled, non-production dev mode (see lib/otp.ts); on any
+    // production build this response is `{ ok: true }` and nothing more.
+    const body: Record<string, unknown> = { ok: true };
+    if (isOtpDemoMode()) {
+      body.demo = true;
+      body.devOtp = code;
+    }
+    return NextResponse.json(body);
   } catch (e) {
     console.error('[WASSILHA FORGOT-PW] Server error:', e);
-    return NextResponse.json(
-      { error: 'serverError', detail: String(e) },
-      { status: 500 }
-    );
+    // SECURITY: do not echo the exception detail to the client.
+    return NextResponse.json({ error: 'serverError' }, { status: 500 });
   }
 }

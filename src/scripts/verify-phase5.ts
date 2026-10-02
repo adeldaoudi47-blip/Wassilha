@@ -203,29 +203,29 @@ check('location: driver self-read and admin bypass still work',
 
 // ---------------------------------------------------------------------------
 // 7. UPLOAD (/uploads/order-image) - MIME + size + name defence in depth.
+//
+// PHASE 8: the allow-lists moved from this route into src/lib/image-upload.ts
+// (shared with /api/craft/upload so the two cannot drift). The properties the
+// route itself must still hold are: it delegates to the shared validator, it
+// rejects before any Blob write, and it does not resurrect a local allow-list.
+// The shared module's contents (raster-only MIME, 5MB cap, ext sanitisation,
+// filename never reaching the key) are verified by verify-phase8.ts, which
+// EXECUTES the real helper.
 // ---------------------------------------------------------------------------
 const upload = src(UPLOAD);
-check('upload: raster MIME allow-list exists (jpeg/png/webp)',
-  has(upload, "const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);"));
-check('upload: SVG / animated content is on no allow-list',
-  has(upload, "const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp']);") &&
-  has(upload, "const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);") &&
-  // Single quotes only: the doc comment above the allow-list mentions
-  // `image/svg+xml` in backticks, and naming what is refused is documentation.
-  !has(upload, "'image/svg+xml'") && !has(upload, "'image/gif'"));
-check('upload: the browser-reported MIME type is checked',
-  has(upload, 'if (!ALLOWED_MIME.has(file.type)) {'));
-check('upload: the extension allow-list is still enforced',
-  has(upload, 'if (!ALLOWED_EXT.has(ext)) {'));
-check('upload: the extension is sanitised before it reaches the blob key',
-  has(upload, "replace(/[^a-z0-9]/g, '')"));
-check('upload: an empty payload is rejected (no zero-byte blobs)',
-  has(upload, 'if (file.size === 0) {') && has(upload, "error: 'emptyFile'"));
-check('upload: the 5MB cap is enforced',
-  has(upload, 'if (file.size > MAX_BYTES) {') &&
-  has(upload, 'const MAX_BYTES = 5 * 1024 * 1024;'));
-check('upload: every check runs BEFORE the blob is written',
-  before(upload, 'ALLOWED_MIME.has', 'put(') && before(upload, 'file.size > MAX_BYTES', 'put('));
+check('upload: validation is delegated to the shared image-upload validator',
+  has(upload, "validateImageUpload(file)") &&
+  has(upload, "buildImageKey('orders', session.id, result.ext)"));
+check('upload: no local allow-list was resurrected in the route',
+  !has(upload, 'ALLOWED_MIME') && !has(upload, 'ALLOWED_EXT') &&
+  !has(upload, 'ALLOWED_IMAGE_MIME') && !has(upload, 'ALLOWED_IMAGE_EXT'));
+check('upload: the blob is written only AFTER validation accepts the file',
+  before(upload, 'validateImageUpload(file)', 'put(') &&
+  has(upload, 'if (!result.ok) {') &&
+  has(upload, "status: 400 }") &&
+  upload.indexOf('put(') > upload.indexOf("status: 400 }"));
+check('upload: error responses never echo the exception detail',
+  !has(upload, 'detail: String(e)') && !has(upload, 'detail: e'));
 
 // ---------------------------------------------------------------------------
 // 8. PRICE INTEGRITY - `finalPrice ?? price` on EVERY money surface.

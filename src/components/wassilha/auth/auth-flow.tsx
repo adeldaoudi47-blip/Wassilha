@@ -194,11 +194,10 @@ export function AuthFlow() {
       setStep('otp');
       setResendTimer(30);
 
-      // DEMO MODE (2026-09-28): no SMS/WhatsApp provider is configured in this
-      // deployment, so the server returns the randomly generated code as
-      // `devOtp` and the user must be shown it — otherwise nobody can sign in.
-      // When a provider is configured again, `devOtp` is simply absent and the
-      // original "we sent the code" message is used.
+      // PHASE 8: the server delivers the code through the configured SMS/WhatsApp
+      // provider and never returns it. `devOtp` is present ONLY when an operator
+      // has explicitly enabled OTP_DEMO_MODE on a non-production build, so the
+      // generic "code sent" toast below is what a production user sees.
       if (result.devOtp) {
         toast.success(
           isAr
@@ -602,8 +601,8 @@ export function AuthFlow() {
       setOtp('');
       setStep('forgot-otp');
       setResendTimer(30);
-      // DEMO MODE (2026-09-28): same as the login OTP — show the code when the
-      // server returns it, otherwise the user cannot complete the reset.
+      // PHASE 8: same contract as the login OTP - the reset code is delivered by
+      // the provider and echoed only in the explicit non-production demo mode.
       if (result.devOtp) {
         toast.success(
           isAr

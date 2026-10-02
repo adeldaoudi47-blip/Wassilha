@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { getSession } from '@/lib/auth';
-
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB
-const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp']);
-// PHASE 5: the extension check keeps the blob KEY tidy, but it is not a
-// content check — `payload.svg` renamed to `payload.jpg` would sail through
-// and then be served from the public CDN host, which is a stored-XSS vector.
-// Requiring the browser-reported MIME type to be one of the three raster
-// formats closes it; `image/svg+xml` is deliberately absent from the list.
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+import {
+  buildImageKey,
+  validateImageUpload,
+} from '@/lib/image-upload';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 // POST /api/uploads/order-image
 // CARGO DEDICATED FLOW (Phase 4): any logged-in user may attach ONE photo
@@ -19,40 +15,42 @@ const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 // under the caller's user id so blobs are attributable, images only, size
 // capped, and the URL returned here is only ever accepted back by
 // POST /api/orders through the host allow-list in lib/offer-policy.ts.
+//
+// PHASE 8: validation moved into the shared lib/image-upload.ts so this route
+// and /api/craft/upload enforce identical rules and cannot drift apart again.
+// Phase 5 added the MIME allow-list here only; the craft uploader kept
+// extension-only checking until this phase.
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // PHASE 8: cap upload volume per IP — every call writes to Blob storage.
+  const ipCheck = await rateLimit(`orderimage:${clientIp(req)}`, 30, 60 * 60 * 1000);
+  if (!ipCheck.ok) {
+    return NextResponse.json(
+      { error: 'tooManyRequests', retryAfterSec: ipCheck.retryAfterSec },
+      { status: 429 }
+    );
+  }
+
   try {
     const form = await req.formData();
     const file = form.get('file');
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'missingFile' }, { status: 400 });
+    const result = validateImageUpload(file);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
-    if (file.size === 0) {
-      // PHASE 5: an empty part is a broken client, not a photo. Reject it
-      // before it becomes a zero-byte blob that no card can render.
-      return NextResponse.json({ error: 'emptyFile' }, { status: 400 });
-    }
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: 'fileTooLarge' }, { status: 400 });
-    }
-    // PHASE 5: MIME type AND extension must both agree on a supported raster
-    // image. Either check alone is defeatable (rename / hand-built request).
-    if (!ALLOWED_MIME.has(file.type)) {
-      return NextResponse.json({ error: 'unsupportedType' }, { status: 400 });
-    }
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!ALLOWED_EXT.has(ext)) {
-      return NextResponse.json({ error: 'unsupportedType' }, { status: 400 });
-    }
-    const key = `orders/${session.id}/${crypto.randomUUID()}.${ext}`;
-    const blob = await put(key, file, { access: 'public', addRandomSuffix: false });
+    const key = buildImageKey('orders', session.id, result.ext);
+    const blob = await put(key, file as File, {
+      access: 'public',
+      addRandomSuffix: false,
+    });
     return NextResponse.json({ url: blob.url });
   } catch (e) {
-    // Log the error for debugging purposes
     console.error('[UPLOAD order-image] Error:', e);
-    return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
+    // SECURITY: do not echo the exception detail to the client.
+    return NextResponse.json({ error: 'serverError' }, { status: 500 });
   }
 }

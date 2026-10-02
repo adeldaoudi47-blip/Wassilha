@@ -10,6 +10,7 @@ import {
 import { createNotification } from '@/lib/notifications';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import { emitOfferUpdateToDriver, emitOrderStatus } from '@/lib/pusher-server';
+import { rateLimit } from '@/lib/rate-limit';
 
 type Ctx = { params: Promise<{ id: string; offerId: string }> };
 
@@ -47,6 +48,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     if (session.role !== 'customer') {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+
+    // PHASE 8: per-user cap on this mutation. Placed AFTER the auth + role
+    // gate on purpose, so an unauthenticated caller is rejected with 401 first
+    // and the bucket is keyed on the session id, which is server-derived and
+    // cannot be spoofed by the client.
+    const rl = await rateLimit(`offercounter:${session.id}`, 60, 60 * 60 * 1000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'tooManyRequests', retryAfterSec: rl.retryAfterSec },
+        { status: 429 }
+      );
     }
 
     const body = await req.json().catch(() => ({}));
