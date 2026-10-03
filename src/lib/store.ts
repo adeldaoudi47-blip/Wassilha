@@ -42,7 +42,9 @@ export const useAppStore = create<AppState>()(
 type CustomerScreen = 'home' | 'hirfa' | 'cart' | 'track' | 'history' | 'profile' | 'offers' | 'wallet';
 type DriverScreen = 'requests' | 'trips' | 'earnings' | 'profile' | 'offers';
 type ArtisanScreen = 'dashboard' | 'products' | 'orders' | 'profile';
-type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet' | 'craft';
+// PHASE 9: 'marketplace' hosts the product/store/order/report oversight in ONE
+// screen with internal tabs, instead of four more top-level nav entries.
+type AdminScreen = 'dashboard' | 'drivers' | 'orders' | 'pricing' | 'applications' | 'fleet' | 'craft' | 'marketplace';
 
 interface NavState {
   customerTab: CustomerScreen;

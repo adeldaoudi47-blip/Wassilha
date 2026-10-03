@@ -14,6 +14,7 @@
 import type { MetadataRoute } from 'next';
 import { db } from '@/lib/db';
 import { absoluteUrl } from '@/lib/site';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 
 export const revalidate = 300; // 5 minutes
 
@@ -24,7 +25,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       select: { slug: true, createdAt: true, updatedAt: true },
     }),
     db.craftProduct.findMany({
-      where: { isActive: true, slug: { not: null }, artisan: { status: 'active' } },
+      where: { isActive: true, ...publicProductGate, slug: { not: null }, artisan: { status: 'active' } },
       select: { slug: true, createdAt: true, updatedAt: true, artisan: { select: { slug: true } } },
     }),
   ]);

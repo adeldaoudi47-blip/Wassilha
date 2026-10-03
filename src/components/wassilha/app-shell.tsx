@@ -47,6 +47,9 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'applications', label: 'driverApplications', icon: ShieldCheck },
   // HIRFA (P4): artisan store applications review tab.
   { key: 'craft', label: 'craftApplications', icon: Scissors },
+  // PHASE 9: marketplace oversight (products / orders / reports / stores) in
+  // one screen with internal tabs, rather than four more top-level nav items.
+  { key: 'marketplace', label: 'marketplaceAdmin', icon: Store },
   { key: 'drivers', label: 'drivers', icon: Users },
   { key: 'orders', label: 'orders', icon: ClipboardList },
   { key: 'pricing', label: 'pricing', icon: Tags },

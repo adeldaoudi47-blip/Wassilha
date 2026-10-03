@@ -7,6 +7,7 @@ import { getLocale } from '@/lib/locale';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { getStoreUrl } from '@/lib/craft-urls';
 import { db } from '@/lib/db';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { marketplaceProductSelect, craftCategorySelect } from '@/lib/dto';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -60,13 +61,13 @@ async function loadMarketplace() {
       orderBy: { sortOrder: 'asc' },
     }),
     db.craftProduct.findMany({
-      where: { isActive: true, isFeatured: true, artisan: { status: 'active' } },
+      where: { isActive: true, isFeatured: true, ...publicProductGate, artisan: { status: 'active' } },
       select: marketplaceProductSelect,
       orderBy: { createdAt: 'desc' },
       take: 8,
     }),
     db.craftProduct.findMany({
-      where: { isActive: true, artisan: { status: 'active' } },
+      where: { isActive: true, ...publicProductGate, artisan: { status: 'active' } },
       select: marketplaceProductSelect,
       orderBy: { createdAt: 'desc' },
       take: 8,
@@ -81,7 +82,7 @@ async function loadMarketplace() {
         rating: true,
         totalSales: true,
         area: { select: { nameAr: true, nameFr: true } },
-        _count: { select: { products: { where: { isActive: true } } } },
+        _count: { select: { products: { where: { isActive: true, ...publicProductGate } } } },
       },
       orderBy: { createdAt: 'desc' },
       take: 12,

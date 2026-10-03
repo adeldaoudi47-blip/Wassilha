@@ -8,6 +8,7 @@
 import { getLocale } from '@/lib/locale';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { db } from '@/lib/db';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { marketplaceProductSelect, craftCategorySelect } from '@/lib/dto';
 import {
   parseCraftSearchFilters,
@@ -103,7 +104,7 @@ export default async function CraftSearchPage({
             slug: true,
             displayName: true,
             avatarUrl: true,
-            _count: { select: { products: { where: { isActive: true } } } },
+            _count: { select: { products: { where: { isActive: true, ...publicProductGate } } } },
           },
           take: 6,
         }) as unknown as StoreHit[])

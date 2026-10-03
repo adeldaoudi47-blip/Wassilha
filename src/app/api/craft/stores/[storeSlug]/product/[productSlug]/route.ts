@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { marketplaceProductSelect } from '@/lib/dto';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 
 export async function GET(
   _req: NextRequest,
@@ -30,6 +31,9 @@ export async function GET(
       where: {
         artisanId: artisan.id,
         isActive: true,
+        // PHASE 9: a pending/rejected/suspended product must not be reachable
+        // through its public product URL.
+        ...publicProductGate,
         OR: [
           { slug: productSlug },
           { id: { startsWith: productSlug.replace(/^product-/, '') } },

@@ -4,17 +4,23 @@
 // SSR search page so a URL and its API call ALWAYS agree on the result set.
 import type { Prisma } from '@prisma/client';
 import type { CraftSearchFilters } from './craft-search';
+import { publicProductGate } from './marketplace-moderation';
 
 /**
  * WHERE clause for public product search.
- * Security invariants (same as Phase 1):
+ * Security invariants (same as Phase 1, plus the Phase 9 moderation gate):
  *   - isActive === true
- *   - artisan.status === 'active'  (pending/rejected stores are invisible)
+ *   - moderationStatus === 'approved'  (PHASE 9: pending/rejected/suspended
+ *     products are never publicly searchable, even inside an active store)
+ *   - artisan.status === 'active'      (pending/rejected/suspended stores hide)
  */
 export function buildCraftProductWhere(f: CraftSearchFilters): Prisma.CraftProductWhereInput {
   const q = f.q.trim();
   return {
     isActive: true,
+    // PHASE 9: admin moderation state. Spread from the shared gate so this is
+    // literally the same predicate every other public query uses.
+    ...publicProductGate,
     artisan: {
       status: 'active',
       // Area filter is a store property (workshop neighbourhood).

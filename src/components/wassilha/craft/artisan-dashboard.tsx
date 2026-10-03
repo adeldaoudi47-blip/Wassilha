@@ -17,7 +17,12 @@ import { ArtisanProfileCard } from './artisan-profile-card';
 import { ShareButton } from './share-button';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { getStoreAbsoluteUrl } from '@/lib/craft-urls';
-import type { CraftProductPublic } from '@/lib/types';
+import { cn } from '@/lib/utils';
+// PHASE 9: /products/mine returns the SELLER-OWN projection, so the seller sees
+  // moderationStatus / moderationReason on their own listings. `SellerProduct`
+  // is a superset of `CraftProductPublic`, so the existing product card keeps
+  // working unchanged.
+  import type { SellerProduct } from '@/lib/types';
 import type { MyStoreInfo, CraftStoreStats } from '@/lib/types';
 
 // HIRFA (P5+P6): artisan dashboard. Lists the artisan's own products with
@@ -28,11 +33,11 @@ export function ArtisanDashboard() {
   const artisanTab = useNavStore((s) => s.artisanTab);
   const setArtisanTab = useNavStore((s) => s.setArtisanTab);
   const setViewMode = useAppStore((s) => s.setViewMode);
-  const [products, setProducts] = useState<CraftProductPublic[]>([]);
+  const [products, setProducts] = useState<SellerProduct[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<CraftProductPublic | null>(null);
+  const [editing, setEditing] = useState<SellerProduct | null>(null);
   const [adding, setAdding] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<CraftProductPublic | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SellerProduct | null>(null);
 
   // Artisan sub-tabs: products | orders | coupons
   const [subTab, setSubTab] = useState<'products' | 'orders' | 'coupons'>('products');
@@ -62,7 +67,7 @@ export function ArtisanDashboard() {
     api.getMyStoreStats().then(setStats).catch(() => setStats(null));
   }, []);
 
-  const handleDelete = async (p: CraftProductPublic) => {
+  const handleDelete = async (p: SellerProduct) => {
     setConfirmDelete(null);
     try {
       await api.deleteCraftProduct(p.id);
@@ -215,11 +220,11 @@ function ProductsView({
   onDelete,
   onReload,
 }: {
-  products: CraftProductPublic[];
+  products: SellerProduct[];
   loading: boolean;
   onAdd: () => void;
-  onEdit: (p: CraftProductPublic) => void;
-  onDelete: (p: CraftProductPublic) => void;
+  onEdit: (p: SellerProduct) => void;
+  onDelete: (p: SellerProduct) => void;
   onReload: () => void;
 }) {
   const { t, isAr } = useT();
@@ -264,6 +269,41 @@ function ProductsView({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-foreground">{name}</p>
                   <p className="text-xs font-extrabold text-primary">{p.price} {t.currencyDzd}</p>
+                  {/* PHASE 9: the seller must be able to see WHY a listing is
+                      not in the marketplace. Without this badge a "pending"
+                      product simply looks broken, and a rejected one looks
+                      deleted — the seller has no way to learn it can be fixed
+                      and resubmitted. */}
+                  <p className="mt-1 flex flex-wrap items-center gap-1">
+                    <span
+                      className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[10px] font-black',
+                        p.moderationStatus === 'approved'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                          : p.moderationStatus === 'pending'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                            : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                      )}
+                    >
+                      {p.moderationStatus === 'approved'
+                        ? t.mpStatusApproved
+                        : p.moderationStatus === 'pending'
+                          ? t.mpStatusPending
+                          : p.moderationStatus === 'rejected'
+                            ? t.mpStatusRejected
+                            : t.mpStatusSuspended}
+                    </span>
+                    {p.moderationReason ? (
+                      <span className="truncate text-[10px] text-muted-foreground">
+                        {t.mpModerationReason}: {p.moderationReason}
+                      </span>
+                    ) : null}
+                  </p>
+                  {p.moderationStatus === 'rejected' ? (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {t.moderationNoticeRejected}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex gap-1.5">
                   <Button onClick={() => onEdit(p)} variant="outline" className="h-9 w-9 !p-0 rounded-lg text-sky-600" title={t.editProduct}><Pencil size={15} /></Button>

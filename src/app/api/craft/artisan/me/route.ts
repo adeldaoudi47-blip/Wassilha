@@ -1,25 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { db } from '@/lib/db';
-import { requireActiveArtisan } from '@/lib/auth';
+import { requireActiveArtisan, requireArtisan } from '@/lib/auth';
 import type { MyStoreInfo } from '@/lib/types';
 
 // GET /api/craft/artisan/me
 // Artisan-only: the caller's own public store info (slug + displayName) so
 // the dashboard can show the stable public store URL for sharing.
 // Returns only public-safe fields (no phone / coords / userId).
+//
+// PHASE 9: READ gate (requireArtisan), and the response now carries the live
+// store status + the suspension record. A suspended seller MUST be able to load
+// this route: it is how the dashboard learns that it was suspended and why.
+// The PATCH below still requires an ACTIVE store.
 export async function GET() {
-  const gate = await requireActiveArtisan();
+  const gate = await requireArtisan();
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status });
   try {
     const store = await db.artisanProfile.findUnique({
       where: { id: gate.artisanId },
-      select: { id: true, slug: true, displayName: true, status: true, avatarUrl: true },
+      select: {
+        id: true,
+        slug: true,
+        displayName: true,
+        status: true,
+        avatarUrl: true,
+        // PHASE 9: the seller-facing suspension explanation.
+        suspendedAt: true,
+        suspensionReason: true,
+      },
     });
     if (!store) return NextResponse.json({ error: 'notFound' }, { status: 404 });
     return NextResponse.json(store);
   } catch (e) {
-    return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
+    console.error('[api/craft/artisan/me GET]', e);
+    return NextResponse.json({ error: 'serverError' }, { status: 500 });
   }
 }
 
@@ -94,15 +109,25 @@ export async function PATCH(req: NextRequest) {
     const updated = await db.artisanProfile.update({
       where: { id: gate.artisanId },
       data,
-      select: { id: true, slug: true, displayName: true, status: true, avatarUrl: true },
+      select: {
+        id: true,
+        slug: true,
+        displayName: true,
+        status: true,
+        avatarUrl: true,
+        suspendedAt: true,
+        suspensionReason: true,
+      },
     });
 
     const store: MyStoreInfo = {
       id: updated.id,
       slug: updated.slug,
       displayName: updated.displayName,
-      status: updated.status,
+      status: updated.status as MyStoreInfo['status'],
       avatarUrl: updated.avatarUrl,
+      suspendedAt: updated.suspendedAt ? updated.suspendedAt.toISOString() : null,
+      suspensionReason: updated.suspensionReason,
     };
 
     return NextResponse.json(store);

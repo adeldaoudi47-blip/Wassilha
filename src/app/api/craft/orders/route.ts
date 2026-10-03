@@ -13,6 +13,7 @@ import { createNotification } from '@/lib/notifications';
 // HIRFA Phase 3: server-authoritative pricing (variants / tiers / coupons).
 import { couponDiscount, pickTier, unitPriceFor } from '@/lib/craft-pricing';
 import { createCraftDeliveryOrder } from '@/lib/craft-delivery';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { fanOutNewOrder, findAvailableDrivers } from '@/lib/dispatch';
 import { emitOrderNewRequest } from '@/lib/pusher-server';
 import { rateLimit } from '@/lib/rate-limit';
@@ -122,7 +123,12 @@ export async function POST(req: NextRequest) {
     // apply to the store it belongs to.
     const { orders: created, deliveries } = await db.$transaction(async (tx) => {
       const products = await tx.craftProduct.findMany({
-        where: { id: { in: productIds }, isActive: true, artisan: { status: 'active' } },
+        // PHASE 9: an unapproved/suspended product can no longer be CHECKED OUT
+        // either. Hiding it from the storefront is not enough — a stale client
+        // cart still holds the id — so the gate is re-asserted here, inside the
+        // transaction. Any miss throws productNotFound below, which aborts the
+        // ENTIRE checkout rather than creating a partial order.
+        where: { id: { in: productIds }, isActive: true, ...publicProductGate, artisan: { status: 'active' } },
         select: {
           id: true,
           price: true,

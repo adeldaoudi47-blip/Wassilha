@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { z } from 'zod';
 import { requireActiveArtisan } from '@/lib/auth';
 import { publicCraftProductSelect } from '@/lib/dto';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { allocateProductSlug } from '@/lib/slug-allocate';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -39,6 +40,8 @@ export async function GET(req: NextRequest) {
 
     const where = {
       isActive: true,
+      // PHASE 9: only admin-APPROVED products are publicly browsable.
+      ...publicProductGate,
       // Moderation + PII gate: only admin-approved artisan shops.
       artisan: {
         status: 'active',
@@ -189,6 +192,17 @@ export async function POST(req: NextRequest) {
         stock: parsed.data.stock,
         isFeatured: parsed.data.isFeatured,
         isMadeToOrder: parsed.data.isMadeToOrder,
+        // PHASE 9 (moderation lifecycle start): a NEW product is NOT public.
+        // It enters the admin queue as "pending" and only an admin decision
+        // publishes it. Setting the state here — rather than relying on the
+        // column default — keeps the two independent gates (the seller's own
+        // isActive toggle vs the admin's moderationStatus) both visible at the
+        // one place a product is born, so neither can be forgotten later.
+        //
+        // NOTE: `moderationStatus` is NOT accepted from the request body. The
+        // zod schema does not list it, so a client-supplied value is stripped.
+        isActive: true,
+        moderationStatus: 'pending',
       },
     });
     // HIRFA Phase 3: write the variant / tier rows in a single round trip.

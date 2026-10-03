@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, ImagePlus, X, Loader2, Plus, Trash2, Video } fro
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type {
-  CraftCategoryPublic, CraftProductPublic, ProductTierPublic, ProductVariantPublic,
+  CraftCategoryPublic, ProductTierPublic, ProductVariantPublic, SellerProduct,
 } from '@/lib/types';
 import { useT } from '../use-t';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,12 @@ export function ArtisanProductForm({
   onDone,
   onCancel,
 }: {
-  product: CraftProductPublic | null;
+  // PHASE 9: this form edits the SELLER's own row, which comes from
+  // /api/craft/products/mine -> the seller projection (SellerProduct). It is
+  // used instead of CraftProductPublic because `category` is legitimately
+  // nullable here: a seller product may have no category, whereas the public
+  // routes already filter those out and type category as non-null.
+  product: SellerProduct | null;
   onDone: () => void;
   onCancel: () => void;
   categories?: CraftCategoryPublic[];

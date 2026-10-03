@@ -3,6 +3,7 @@
 import { getLocale } from '@/lib/locale';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { db } from '@/lib/db';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { marketplaceProductSelect, publicArtisanStoreSelect } from '@/lib/dto';
 import { getStoreAbsoluteUrl, getProductUrl } from '@/lib/craft-urls';
 import { absoluteUrl } from '@/lib/site';
@@ -70,12 +71,12 @@ async function loadStore(storeSlug: string): Promise<StoreFront | null> {
       ...publicArtisanStoreSelect,
       status: true,
       products: {
-        where: { isActive: true },
+        where: { isActive: true, ...publicProductGate },
         select: marketplaceProductSelect,
         orderBy: { createdAt: 'desc' },
         take: 24,
       },
-      _count: { select: { products: { where: { isActive: true } } } },
+      _count: { select: { products: { where: { isActive: true, ...publicProductGate } } } },
     },
   });
   if (!row || row.status !== 'active') return null;

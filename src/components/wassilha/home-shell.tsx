@@ -38,6 +38,8 @@ import { AdminOrders } from '@/components/wassilha/admin/admin-orders';
 import { AdminPricing } from '@/components/wassilha/admin/admin-pricing';
 import { AdminDriverApplications } from '@/components/wassilha/admin/admin-driver-applications';
 import { AdminArtisanApplications } from '@/components/wassilha/admin/admin-artisan-applications';
+// PHASE 9: marketplace oversight (products / orders / reports / stores).
+import { AdminMarketplace } from '@/components/wassilha/admin/admin-marketplace';
 import { AdminFleetMap } from '@/components/wassilha/admin/admin-fleet-map';
 import { ArtisanDashboard } from '@/components/wassilha/craft/artisan-dashboard';
 import { CraftCart } from '@/components/wassilha/craft/craft-cart';
@@ -117,6 +119,7 @@ export function HomeShell() {
       else if (adminTab === 'fleet') { title = t.fleetMap; subtitle = t.location; content = <AdminFleetMap />; }
       else if (adminTab === 'applications') { title = t.driverApplications; content = <AdminDriverApplications />; }
       else if (adminTab === 'craft') { title = t.craftApplications; content = <AdminArtisanApplications />; }
+else if (adminTab === 'marketplace') { title = t.marketplaceAdmin; content = <AdminMarketplace />; }
       else if (adminTab === 'drivers') { title = t.drivers; content = <AdminDrivers />; }
       else if (adminTab === 'orders') { title = t.orders; content = <AdminOrders />; }
       else if (adminTab === 'pricing') { title = t.pricing; content = <AdminPricing />; }

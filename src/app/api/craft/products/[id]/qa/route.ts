@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -32,8 +33,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     // The product must be live (active product in an active store) — a question
     // on a hidden product is pointless and would leak its existence.
+    // The product must be live (active product in an active store) — a question
+    // on a hidden product is pointless and would leak its existence.
+    // PHASE 9: "live" now includes the admin moderation gate.
     const product = await db.craftProduct.findFirst({
-      where: { id, isActive: true, artisan: { status: 'active' } },
+      where: { id, isActive: true, ...publicProductGate, artisan: { status: 'active' } },
       select: { id: true, artisanId: true },
     });
     if (!product) return NextResponse.json({ error: 'notFound' }, { status: 404 });

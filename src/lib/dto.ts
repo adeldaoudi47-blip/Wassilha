@@ -494,3 +494,112 @@ export const notificationSelect = {
   isRead: true,
   createdAt: true,
 } as const;
+
+// ---------------------------------------------------------------------------
+// PHASE 9 — marketplace moderation + administration projections.
+//
+// PRIVACY POSTURE (unchanged from the pre-Phase-9 files):
+//   * Public selectors (publicCraftProductSelect / marketplaceProductSelect)
+//     stay EXACTLY as they were: a buyer must never learn that a listing is
+//     "pending" or "suspended" — for them it simply is not there.
+//   * The moderation columns are exposed ONLY on the seller-own and admin-own
+//     projections below.
+//   * Admin identity fields use the SAME publicUserSelect the transport admin
+//     queues already return (id/phone/name/role/avatar) — never a raw User row,
+//     so passwordHash / email / phoneVerified / accountStatus can never leak.
+// ---------------------------------------------------------------------------
+
+/**
+ * The SELLER's own view of their product (seller dashboard) and the ADMIN
+ * moderation queue.
+ *
+ * = publicCraftProductSelect + the moderation state + the seller's own isActive
+ * flag + the ids/keys the dashboard and admin table need to link back to the
+ * store and category. Deliberately NOT folded into publicCraftProductSelect.
+ */
+export const sellerCraftProductSelect = {
+  ...publicCraftProductSelect,
+  slug: true,
+  artisanId: true,
+  categoryId: true,
+  isActive: true,
+  // PHASE 9 moderation state (admin-owned).
+  moderationStatus: true,
+  moderationReason: true,
+  moderatedAt: true,
+} as const;
+
+/**
+ * ADMIN view of a store/seller row: everything the existing artisan-application
+ * queue already showed, plus the live store status and the suspension record so
+ * an admin can see WHY a store is dark before reinstating it.
+ */
+export const adminArtisanRowSelect = {
+  id: true,
+  userId: true,
+  displayName: true,
+  slug: true,
+  status: true,
+  phone: true,
+  rating: true,
+  totalSales: true,
+  appliedAt: true,
+  reviewedAt: true,
+  suspendedAt: true,
+  suspensionReason: true,
+  createdAt: true,
+  area: { select: { nameAr: true, nameFr: true } },
+  user: { select: publicUserSelect },
+} as const;
+
+/**
+ * ADMIN view of a marketplace report. `reporter` is included so an admin can
+ * weigh a serial reporter — this projection is served ONLY by the privileged
+ * admin queue and is never reachable from a public route.
+ */
+export const adminMarketplaceReportSelect = {
+  id: true,
+  targetType: true,
+  reason: true,
+  description: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  resolvedAt: true,
+  reporter: { select: publicUserSelect },
+  resolvedBy: { select: { id: true, name: true } },
+  product: {
+    select: {
+      id: true,
+      nameAr: true,
+      nameFr: true,
+      slug: true,
+      moderationStatus: true,
+      artisan: { select: { id: true, displayName: true, slug: true, status: true } },
+    },
+  },
+  artisan: { select: { id: true, displayName: true, slug: true, status: true } },
+} as const;
+
+/**
+ * ADMIN marketplace-order oversight.
+ *
+ * PRICE SEPARATION IS THE POINT OF THIS COMMENT:
+ *   `totalPrice`                      = the PRODUCT subtotal after coupon
+ *                                       (marketplace money, owed to the seller)
+ *   `deliveryOrder.price|finalPrice`  = the WASSILHA DELIVERY FEE
+ *                                       (transport money, owed to the driver)
+ *
+ * The two are separate columns on separate rows and are NEVER summed anywhere in
+ * this codebase. The admin UI renders them as two labelled figures so a
+ * delivery fee can never be mistaken for product revenue.
+ *
+ * Built ON TOP of publicCraftOrderSelect (which already carries items, the
+ * customer's own identity, and the delivery leg), with the artisan projection
+ * broadened to include the store STATUS — an admin needs to see a suspended
+ * seller's orders in context.
+ */
+export const adminCraftOrderSelect = {
+  ...publicCraftOrderSelect,
+  artisan: { select: { id: true, displayName: true, slug: true, status: true } },
+} as const;

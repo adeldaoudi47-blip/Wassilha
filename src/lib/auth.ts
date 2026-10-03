@@ -40,6 +40,37 @@ export async function requireActiveArtisan(): Promise<
   return { ok: true, session, artisanId: profile.id };
 }
 
+/**
+ * PHASE 9 — READ-ONLY artisan gate.
+ *
+ * `requireActiveArtisan` answers "may this seller ACT?" and is the right gate
+ * for every write. It is the WRONG gate for the seller's own dashboard, because
+ * a suspended seller must still be able to see:
+ *   * their products (including the pending/rejected/suspended ones), and
+ *   * WHY the store was suspended (the reason the admin recorded),
+ * which is impossible if the read routes 403 the moment status != "active".
+ *
+ * This gate therefore proves IDENTITY + OWNERSHIP only (session is an artisan
+ * with a profile) and returns the live status so the caller can render it. It
+ * must NEVER be used to authorise a mutation — a suspension would become a
+ * one-line bypass.
+ */
+export async function requireArtisan(): Promise<
+  | { ok: true; session: AuthUser; artisanId: string; status: string }
+  | { ok: false; status: 401; body: { error: 'unauthorized' } }
+  | { ok: false; status: 403; body: { error: 'forbidden' | 'notAnArtisan' } }
+> {
+  const session = await getSession();
+  if (!session) return { ok: false, status: 401, body: { error: 'unauthorized' } };
+  if (session.role !== 'artisan') return { ok: false, status: 403, body: { error: 'forbidden' } };
+  const profile = await db.artisanProfile.findUnique({
+    where: { userId: session.id },
+    select: { id: true, status: true },
+  });
+  if (!profile) return { ok: false, status: 403, body: { error: 'notAnArtisan' } };
+  return { ok: true, session, artisanId: profile.id, status: profile.status };
+}
+
 // Sessions are stored as SHA-256 hashes server-side; the raw 256-bit random
 // token exists only inside the user's httpOnly cookie and is never persisted.
 function hashToken(token: string): string {

@@ -4,6 +4,7 @@
 import { getLocale } from '@/lib/locale';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import { db } from '@/lib/db';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { getProductAbsoluteUrl, getStoreUrl } from '@/lib/craft-urls';
 import { SITE_URL, absoluteUrl } from '@/lib/site';
 import Link from 'next/link';
@@ -46,6 +47,7 @@ async function loadProduct(storeSlug: string, productSlug: string): Promise<Load
     where: {
       artisanId: artisan.id,
       isActive: true,
+      ...publicProductGate,
       OR: [{ slug: productSlug }, { id: { startsWith: productSlug.replace(/^product-/, '') } }],
     },
     select: {

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { publicArtisanStoreSelect, marketplaceProductSelect } from '@/lib/dto';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 
 export async function GET(
   _req: NextRequest,
@@ -18,12 +19,13 @@ export async function GET(
         ...publicArtisanStoreSelect,
         status: true,
         products: {
-          where: { isActive: true },
+          // PHASE 9: only admin-approved products appear on the store page.
+          where: { isActive: true, ...publicProductGate },
           select: marketplaceProductSelect,
           orderBy: { createdAt: 'desc' },
           take: 24,
         },
-        _count: { select: { products: { where: { isActive: true } } } },
+        _count: { select: { products: { where: { isActive: true, ...publicProductGate } } } },
       },
     });
 

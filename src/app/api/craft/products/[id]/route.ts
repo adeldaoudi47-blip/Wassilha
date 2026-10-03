@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { z } from 'zod';
 import { requireActiveArtisan } from '@/lib/auth';
 import { publicCraftProductSelect } from '@/lib/dto';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 // HIRFA Phase 3: shared pricing helpers (base-price recomputation).
 import { computeBasePrice } from '@/lib/craft-pricing';
 
@@ -11,7 +12,13 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function GET(_req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    const product = await db.craftProduct.findFirst({ where: { id, isActive: true, artisan: { status: 'active' } }, select: publicCraftProductSelect });
+    const product = await db.craftProduct.findFirst({
+      // PHASE 9: the moderation gate applies to the direct-by-id read too — a
+      // list-level filter would still let anyone fetch a pending/rejected/
+      // suspended product by id.
+      where: { id, isActive: true, ...publicProductGate, artisan: { status: 'active' } },
+      select: publicCraftProductSelect,
+    });
     if (!product) return NextResponse.json({ error: 'notFound' }, { status: 404 });
     return NextResponse.json(product);
   } catch (e) {
@@ -60,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status });
   try {
     const { id } = await params;
-    const existing = await db.craftProduct.findUnique({ where: { id }, select: { artisanId: true, price: true } });
+    const existing = await db.craftProduct.findUnique({ where: { id }, select: { artisanId: true, price: true, moderationStatus: true } });
     if (!existing) return NextResponse.json({ error: 'notFound' }, { status: 404 });
     if (existing.artisanId !== gate.artisanId) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     const body = await req.json().catch(() => null);
@@ -116,7 +123,25 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         ? computeBasePrice(priceForBase, data.variants ?? [], sortedTiers ?? [])
         : undefined;
 
-    const updated = await db.craftProduct.update({ where: { id }, data: { ...(data.nameAr ? { nameAr: data.nameAr } : {}), ...(data.nameFr !== undefined ? { nameFr: data.nameFr } : {}), ...(data.descriptionAr !== undefined ? { descriptionAr: data.descriptionAr } : {}), ...(data.descriptionFr !== undefined ? { descriptionFr: data.descriptionFr } : {}), ...(data.price !== undefined ? { price: data.price } : {}), ...(data.categoryId ? { categoryId: data.categoryId } : {}), ...(data.images !== undefined ? { images: data.images } : {}), ...(data.stock !== undefined ? { stock: data.stock } : {}), ...(data.isFeatured !== undefined ? { isFeatured: data.isFeatured } : {}), ...(data.isMadeToOrder !== undefined ? { isMadeToOrder: data.isMadeToOrder } : {}), ...(data.videoUrl !== undefined ? { videoUrl: data.videoUrl ?? null } : {}), ...(basePrice !== undefined ? { basePrice } : {}) } });
+    // PHASE 9 — "correct and RESUBMIT". Editing a REJECTED product is the
+    // seller's appeal, so the row re-enters the moderation queue as "pending"
+    // and the old rejection reason is cleared (it describes a version of the
+    // product that no longer exists).
+    //
+    // WHY NOT EVERY EDIT: an already-approved product keeps its approval when
+    // the seller fixes a typo. Re-queueing on every save would pull live
+    // listings off the storefront and bury the admin in churn, and the task's
+    // contract is that existing approved products must not disappear.
+    //
+    // The status is NEVER taken from the request body — only from the stored
+    // row — so a seller cannot approve their own product by sending
+    // `moderationStatus: "approved"`.
+    const resubmit =
+      existing.moderationStatus === 'rejected'
+        ? { moderationStatus: 'pending', moderationReason: null }
+        : {};
+
+    const updated = await db.craftProduct.update({ where: { id }, data: { ...(data.nameAr ? { nameAr: data.nameAr } : {}), ...(data.nameFr !== undefined ? { nameFr: data.nameFr } : {}), ...(data.descriptionAr !== undefined ? { descriptionAr: data.descriptionAr } : {}), ...(data.descriptionFr !== undefined ? { descriptionFr: data.descriptionFr } : {}), ...(data.price !== undefined ? { price: data.price } : {}), ...(data.categoryId ? { categoryId: data.categoryId } : {}), ...(data.images !== undefined ? { images: data.images } : {}), ...(data.stock !== undefined ? { stock: data.stock } : {}), ...(data.isFeatured !== undefined ? { isFeatured: data.isFeatured } : {}), ...(data.isMadeToOrder !== undefined ? { isMadeToOrder: data.isMadeToOrder } : {}), ...(data.videoUrl !== undefined ? { videoUrl: data.videoUrl ?? null } : {}), ...(basePrice !== undefined ? { basePrice } : {}), ...resubmit } });
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });

@@ -17,6 +17,7 @@ import {
 } from '@google/generative-ai';
 import { db } from '@/lib/db';
 import { normalizeAlgerianPhone } from '@/lib/phone';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 
 // Model selection: use a SPECIFIC stable model, not an alias. Verified
 // against https://ai.google.dev/gemini-api/docs/models: the 1.5 family is
@@ -176,7 +177,9 @@ async function toolGetOrderStatus(args: {
 
 async function toolGetCraftProducts(): Promise<Record<string, unknown>> {
   const products = await db.craftProduct.findMany({
-    where: { isActive: true },
+    // PHASE 9: the assistant answers from PUBLIC catalogue data, so it must not
+    // surface an unapproved or suspended listing either.
+    where: { isActive: true, ...publicProductGate },
     orderBy: { createdAt: 'desc' },
     take: 5,
     select: {

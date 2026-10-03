@@ -989,8 +989,14 @@ export interface MyStoreInfo {
   id: string;
   slug: string | null;
   displayName: string;
-  status: string;
+  // PHASE 9: pending | active | rejected | suspended. Widened from plain
+  // `string` to the real union so the dashboard must handle the new state.
+  status: StoreStatus;
   avatarUrl: string | null;
+  // PHASE 9: present when an admin suspended the store, so the seller sees WHY
+  // and WHEN rather than an unexplained dead dashboard.
+  suspendedAt: string | null;
+  suspensionReason: string | null;
 }
 
 // HIRFA Phase 2A: REAL aggregate counts for the seller's own store, straight
@@ -1024,6 +1030,12 @@ export type NotificationType =
   | 'craft_order'
   | 'driver_application'
   | 'artisan_application'
+  // PHASE 9: marketplace moderation outcomes. ONE type per surface mirrors the
+  // existing 'artisan_application' convention (which already covers both the
+  // approved and the rejected store outcome) — the concrete result travels in
+  // `data.i18n` keys, so no migration is needed to add a new outcome later.
+  | 'product_moderation'
+  | 'store_moderation'
   | 'system';
 
 // Optional deep-link payload stored alongside a notification. `i18n` holds the
@@ -1099,4 +1111,162 @@ export interface NotificationListResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+// ===========================================================================
+// PHASE 9 — marketplace moderation & administration (client-facing shapes).
+//
+// These mirror the Prisma `select`s in src/lib/dto.ts one-to-one. They exist so
+// the admin/seller UI is typed against the SAME contract the server enforces,
+// and so a change to a projection breaks compilation here instead of silently
+// shipping an undefined field to the screen.
+// ===========================================================================
+
+/**
+ * The moderation vocabulary is NOT declared here: it lives in
+ * `./marketplace-moderation`, next to the `as const` arrays it is derived from
+ * and the transition rules the API enforces.
+ *
+ * Re-exporting (instead of hand-copying the unions) is what stops the two from
+ * drifting — adding a status to `PRODUCT_MODERATION_STATUSES` automatically
+ * updates the type every component sees, and a forgotten union can no longer
+ * silently disagree with the server's transition table.
+ */
+import type {
+  ProductModerationStatus,
+  ModerationAction,
+  ArtisanStatus as StoreStatus,
+  ReportTargetType,
+  ReportReason,
+  ReportStatus,
+  ReportResolutionStatus,
+} from './marketplace-moderation';
+
+export type {
+  ProductModerationStatus,
+  ModerationAction,
+  StoreStatus,
+  ReportTargetType,
+  ReportReason,
+  ReportStatus,
+  ReportResolutionStatus,
+};
+
+/** A seller-owned product row, as the seller dashboard and admin queue see it. */
+export interface SellerProduct {
+  id: string;
+  slug: string | null;
+  artisanId: string;
+  categoryId: string;
+  nameAr: string;
+  nameFr: string | null;
+  descriptionAr: string | null;
+  descriptionFr: string | null;
+  price: number;
+  basePrice: number;
+  videoUrl: string | null;
+  images: string[];
+  stock: number;
+  isFeatured: boolean;
+  isMadeToOrder: boolean;
+  /** The seller's own visibility toggle (distinct from moderation state). */
+  isActive: boolean;
+  /** ADMIN-owned review state. */
+  moderationStatus: ProductModerationStatus;
+  /** Why the admin rejected/suspended it (null when never acted on). */
+  moderationReason: string | null;
+  moderatedAt: string | null;
+  createdAt: string;
+  category: { id: string; nameAr: string; nameFr: string | null; slug: string | null } | null;
+  artisan: { id: string; displayName: string; slug: string | null; avatarUrl: string | null; rating: number; totalSales: number };
+  // The seller projection spreads `publicCraftProductSelect`, so it DOES carry
+  // the purchasable SKUs and the price ladder. Declared here because the seller
+  // edit form needs them and the type would otherwise be missing two fields
+  // that the API actually returns.
+  variants: ProductVariantPublic[];
+  tiers: ProductTierPublic[];
+}
+
+/** One store/seller row in the admin marketplace → Stores screen. */
+export interface AdminMarketplaceStore {
+  id: string;
+  userId: string;
+  displayName: string;
+  slug: string | null;
+  status: StoreStatus;
+  phone: string | null;
+  rating: number;
+  totalSales: number;
+  appliedAt: string | null;
+  reviewedAt: string | null;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
+  createdAt: string;
+  area: { nameAr: string; nameFr: string | null } | null;
+  user: { id: string; phone: string; name: string; role: string; avatar: string | null };
+}
+
+/** One report in the admin queue. */
+export interface AdminMarketplaceReport {
+  id: string;
+  targetType: 'product' | 'store';
+  reason: ReportReason;
+  description: string | null;
+  status: ReportStatus;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  reporter: { id: string; phone: string; name: string; role: string; avatar: string | null };
+  resolvedBy: { id: string; name: string } | null;
+  product: {
+    id: string;
+    nameAr: string;
+    nameFr: string | null;
+    slug: string | null;
+    moderationStatus: ProductModerationStatus;
+    artisan: { id: string; displayName: string; slug: string | null; status: StoreStatus };
+  } | null;
+  artisan: { id: string; displayName: string; slug: string | null; status: StoreStatus } | null;
+}
+
+/**
+ * An admin view of a CraftOrder.
+ *
+ * PRICE SEPARATION (must survive every refactor): `totalPrice` is the PRODUCT
+ * subtotal after coupon; the delivery fee is `delivery.price|finalPrice`. They
+ * are never summed — the UI shows two labelled figures.
+ */
+export interface AdminMarketplaceOrder {
+  id: string;
+  code: string;
+  status: CraftOrderStatus;
+  deliveryOption: 'pickup' | 'wassilha_delivery';
+  totalPrice: number;
+  notes: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+  customer: { id: string; name: string; phone: string };
+  artisan: { id: string; displayName: string; slug: string | null; status: StoreStatus };
+  items: {
+    id: string;
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    variantId: string | null;
+    product: { id: string; nameAr: string; nameFr: string | null; images: string[] };
+  }[];
+  deliveryOrder: {
+    id: string;
+    status: string;
+    price: number;
+    finalPrice: number | null;
+    pickup: string;
+    dropoff: string;
+    driver: { name: string } | null;
+    acceptedAt: string | null;
+    pickedAt: string | null;
+    deliveredAt: string | null;
+  } | null;
 }

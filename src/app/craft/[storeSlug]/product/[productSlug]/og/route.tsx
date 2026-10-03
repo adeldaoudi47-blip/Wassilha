@@ -6,6 +6,7 @@
 // Falls back to the raw product photo (then the site logo) on render failure.
 import { ImageResponse } from 'next/og';
 import { db } from '@/lib/db';
+import { publicProductGate } from '@/lib/marketplace-moderation';
 import { CraftOgCard, OG_WIDTH, OG_HEIGHT } from '@/lib/og-card';
 import { loadCairoFonts } from '@/lib/og-font';
 import { SITE_URL } from '@/lib/site';
@@ -21,6 +22,7 @@ export async function GET(
     const product = await db.craftProduct.findFirst({
       where: {
         isActive: true,
+        ...publicProductGate,
         slug: productSlug,
         artisan: { slug: storeSlug, status: 'active' },
       },

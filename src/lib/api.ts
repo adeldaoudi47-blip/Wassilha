@@ -33,7 +33,22 @@ import type {
   OrderOffer,
   VehicleCategory,
  OfficialVehicleCategory,
+// PHASE 9 marketplace administration & moderation.
+  SellerProduct,
+  AdminMarketplaceStore,
+  AdminMarketplaceReport,
+  AdminMarketplaceOrder,
+  ProductModerationStatus,
+  StoreStatus,
+  ReportStatus,
+  ReportReason,
+  ReportTargetType,
+  ReportResolutionStatus,
 } from './types';
+// `ModerationAction` is needed here to type the action argument; the transition
+// RULES themselves stay in the UI component (imported from this same module) so
+// the buttons rendered are exactly the actions the server will accept.
+import type { ModerationAction } from './marketplace-moderation';
 
 async function req<T>(
   url: string,
@@ -567,6 +582,82 @@ export const api = {
       { method: "PATCH" }
     ),
 
+  // =====================================================================
+  // PHASE 9 — marketplace administration & moderation.
+  //
+  // Every method below is just a transport wrapper. The authorization lives in
+  // the route handlers (requirePrivilegedAdmin / requireArtisan / session):
+  // hiding these buttons in the UI is a convenience, never the security.
+  // =====================================================================
+
+  // ---- Admin: product moderation -------------------------------------
+  getAdminCraftProducts: (status?: ProductModerationStatus) =>
+    req<{ products: SellerProduct[]; statuses: ProductModerationStatus[] }>(
+      `/api/admin/craft/products${status ? `?status=${status}` : ""}`
+    ),
+  /** `reason` is required by the server for reject/suspend. */
+  moderateCraftProduct: (
+    id: string,
+    action: ModerationAction,
+    reason?: string
+  ) =>
+    req<{ ok: boolean; id: string; from: string; status: string }>(
+      `/api/admin/craft/products/${id}/moderate`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ action, reason: reason ?? null }),
+      }
+    ),
+
+  // ---- Admin: store suspension ---------------------------------------
+  suspendCraftStore: (id: string, reason: string) =>
+    req<{ ok: boolean; id: string; status: string }>(
+      `/api/admin/craft/artisans/${id}/suspend`,
+      { method: "PATCH", body: JSON.stringify({ reason }) }
+    ),
+  reinstateCraftStore: (id: string) =>
+    req<{ ok: boolean; id: string; status: string }>(
+      `/api/admin/craft/artisans/${id}/reinstate`,
+      { method: "PATCH" }
+    ),
+  getAdminCraftStores: () =>
+    req<{ stores: AdminMarketplaceStore[]; statuses: StoreStatus[] }>(
+      "/api/admin/craft/stores"
+    ),
+
+  // ---- Admin: marketplace order oversight ----------------------------
+  getAdminCraftOrders: () =>
+    req<{ orders: AdminMarketplaceOrder[] }>("/api/admin/craft/orders"),
+
+  // ---- Admin: report queue -------------------------------------------
+  getAdminCraftReports: (status?: ReportStatus) =>
+    req<{
+      reports: AdminMarketplaceReport[];
+      statuses: ReportStatus[];
+      reasons: ReportReason[];
+    }>(`/api/admin/craft/reports${status ? `?status=${status}` : ""}`),
+  /**
+   * Closes/advances a report. NOTE: this does NOT suspend anything — the
+   * product/store moderation endpoints are a separate, explicit decision.
+   */
+  resolveCraftReport: (id: string, status: ReportResolutionStatus) =>
+    req<{ ok: boolean; id: string; from: string; status: string }>(
+      `/api/admin/craft/reports/${id}`,
+      { method: "PATCH", body: JSON.stringify({ status }) }
+    ),
+
+  // ---- Customer: file a report ---------------------------------------
+  createMarketplaceReport: (data: {
+    targetType: ReportTargetType;
+    targetId: string;
+    reason: ReportReason;
+    description?: string;
+  }) =>
+    req<{ ok: boolean; id: string; status: ReportStatus }>("/api/craft/reports", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   // HIRFA (P5): artisan product management + image upload
   createCraftProduct: (data: {
     nameAr: string;
@@ -590,7 +681,10 @@ export const api = {
     }>;
     tiers?: Array<{ minQuantity: number; unitPrice: number }>;
   }) => req<CraftProductPublic>("/api/craft/products", { method: "POST", body: JSON.stringify(data) }),
-  getMyCraftProducts: () => req<CraftProductPublic[]>("/api/craft/products/mine"),
+  // PHASE 9: /products/mine returns the SELLER-OWN projection (moderationStatus
+  // / moderationReason / isActive), not the public one — the seller must see the
+  // admin's verdict on their own listing.
+  getMyCraftProducts: () => req<SellerProduct[]>("/api/craft/products/mine"),
   updateCraftProduct: (id: string, data: Partial<{
     nameAr: string;
     nameFr?: string | null;

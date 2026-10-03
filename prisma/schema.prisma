@@ -56,6 +56,14 @@ model User {
   craftQuestions   ProductQA[]
   // HIRFA Phase 3: "helpful" votes this user cast on craft reviews.
   craftReviewLikes ReviewLike[] @relation("CraftReviewLikers")
+  // PHASE 9 (marketplace moderation): the products this ADMIN last moderated
+  // (approve / reject / suspend). A relation — not a bare id — so an auditor
+  // can still name the person who made a decision. onDelete: SetNull keeps the
+  // product (the moderated thing) alive if the admin account is ever removed.
+  craftModerations   CraftProduct[]      @relation("CraftProductModerator")
+  // PHASE 9: reports this user filed, and the ones they resolved as admin.
+  marketplaceReports MarketplaceReport[] @relation("MarketplaceReportReporter")
+  resolvedReports    MarketplaceReport[] @relation("MarketplaceReportResolver")
   // In-app notification center: every notification targets exactly one user
   // (customer, driver, artisan or admin). Cascade-deleted with its owner so a
   // closed account leaves no orphan rows. See the Notification model below.
@@ -797,6 +805,19 @@ model ArtisanProfile {
   totalSales  Int           @default(0)
   appliedAt   DateTime?
   reviewedAt  DateTime?
+  // -------------------------------------------------------------------------
+  // PHASE 9 (store suspension). `status` values are now:
+  //   pending | active | rejected | suspended
+  // "suspended" is a NEW value on the existing free-String column — no schema
+  // change was needed for the state itself, only for the audit detail below.
+  //
+  // CHOICE OF STATE, NOT A FLAG: every existing gate already tests
+  // `status === 'active'` — requireActiveArtisan() blocks every seller WRITE
+  // (create/edit/delete/upload) and the public queries hide the store — so
+  // suspension is enforced by construction instead of by a second check that
+  // someone could forget. Reinstate restores the previous "active" status.
+  suspendedAt      DateTime?
+  suspensionReason String?       @db.Text
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -810,6 +831,8 @@ model ArtisanProfile {
   // HIRFA Phase 3: discount codes this artisan created (optional scope —
   // a null artisanId would be a platform-wide coupon, none exist today).
   coupons     Coupon[]
+  // PHASE 9: reports/flags filed against this store (see MarketplaceReport).
+  reports     MarketplaceReport[]
 
   @@index([status])
 }
@@ -851,8 +874,32 @@ model CraftProduct {
   // and never regenerated from name changes, so product URLs stay stable.
   // Unique within the artisan's shop; NULL is allowed during backfill window.
   slug          String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  // ---------------------------------------------------------------------------
+  // PHASE 9 (product moderation). Before this, a seller-created product was
+  // PUBLIC the moment it was inserted: there was no review state at all, only
+  // the seller-owned `isActive` toggle. `moderationStatus` is the admin-owned
+  // state and is the ONLY thing the public storefront trusts:
+  //
+  //   "pending"   — awaiting admin review (every NEW product starts here)
+  //   "approved"  — publicly visible (the DB default, see the migration note)
+  //   "rejected"  — admin declined it; the seller may edit + resubmit
+  //   "suspended" — admin pulled a live product; hidden, seller may not publish
+  //
+  // Free String, no enum — mirrors Order.status / CraftOrder.status /
+  // ArtisanProfile.status. The TS union in src/lib/marketplace-moderation.ts is
+  // the single source of truth.
+  //
+  // MIGRATION SAFETY: the default is "approved" ON PURPOSE. The column is added
+  // non-destructively, so every EXISTING product keeps its current visibility
+  // (they were all live) and no production data is rewritten. Only an explicit
+  // admin decision, or the create path setting "pending", moves a row off it.
+  moderationStatus String         @default("approved")
+  moderationReason String?        @db.Text
+  moderatedAt      DateTime?
+  moderatedById    String?
+  moderatedBy      User?          @relation("CraftProductModerator", fields: [moderatedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   items         CraftOrderItem[]
   // HIRFA Phase 2A: anonymous product-view / share events for this product.
@@ -868,11 +915,15 @@ model CraftProduct {
   tiers         ProductTier[]
   // Q&A = public questions other shoppers can read, answered by the artisan.
   qa            ProductQA[]
+  // PHASE 9: reports/flags filed against this product (see MarketplaceReport).
+  reports       MarketplaceReport[]
 
     @@index([artisanId])
   @@index([artisanId, slug])
   @@index([categoryId, isActive])
   @@index([isActive])
+  // PHASE 9: the admin moderation queue is ordered by this column.
+  @@index([moderationStatus, createdAt])
 }
 
 /// HIRFA Phase 2A — anonymous, PII-free marketplace analytics.
@@ -1047,4 +1098,60 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+}
+
+/// PHASE 9 — Marketplace REPORT / FLAG.
+///
+/// A customer-facing flag on a product or a store. It is deliberately FACTUAL
+/// and inert: filing one never changes any moderation state by itself (no
+/// automatic punishment), it only puts a row in the admin queue. The admin then
+/// reads it in context and either dismisses it, resolves it, or acts on the
+/// target through the separate moderation endpoints — which is what keeps the
+/// "who decided what" trail separable from "who complained".
+///
+/// `status` is a free String (mirrors every other state column here); the union
+/// lives in src/lib/marketplace-moderation.ts:
+///   "open" | "reviewed" | "resolved" | "dismissed"
+///
+/// TARGETING: `targetType` is "product" | "store" and exactly one of
+/// productId/artisanId is set to match it — enforced server-side, never taken
+/// on trust. Both links are onDelete: SetNull, so deleting a product or a store
+/// NEVER erases the report: the complaint survives as a factual record, which is
+/// the whole point of keeping it.
+///
+/// PRIVACY: `reporter` is exposed to the ADMIN queue only (an admin must be able
+/// to weigh a serial reporter); it is never returned by any public route.
+model MarketplaceReport {
+  id          String  @id @default(cuid())
+  reporterId  String
+  // Cascade on the reporter, matching every other User relation in this schema
+  // (CraftReview.from, ReviewLike.user, OfferEvent.actor): an account deletion
+  // removes what that account produced.
+  reporter    User    @relation("MarketplaceReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType  String  // "product" | "store"
+  // Set for a product report (targetType === "product").
+  productId   String?
+  product     CraftProduct?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // Set for a store report (targetType === "store").
+  artisanId   String?
+  artisan     ArtisanProfile? @relation(fields: [artisanId], references: [id], onDelete: SetNull)
+  // A key from REPORT_REASONS (inappropriate | misleading | prohibited |
+  // counterfeit | spam | other) — validated server-side against that list.
+  reason      String
+  // Optional free-text detail from the reporter.
+  description String? @db.Text
+  status      String  @default("open")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  // Set when an admin moves the report to resolved/dismissed.
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?    @relation("MarketplaceReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  // Admin queue: filter by status, newest first.
+  @@index([status, createdAt])
+  @@index([targetType])
+  @@index([productId])
+  @@index([artisanId])
+  @@index([reporterId])
 }
