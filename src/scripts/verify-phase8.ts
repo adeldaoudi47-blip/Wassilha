@@ -72,8 +72,8 @@ async function sectionOtpLeak() {
   for (const [label, file] of routes) {
     const body = await src(file);
     check(
-      `${label}: devOtp assigned only inside an isOtpDemoMode() guard`,
-      /if \(isOtpDemoMode\(\)\) \{[\s\S]{0,200}body\.devOtp\s*=/.test(body)
+      `${label}: devOtp assigned only inside a demo-mode guard`,
+      /if \(isOtpDemoMode\(\)( \|\| isOtpPreviewDemo\(\))?\) \{[\s\S]{0,200}body\.devOtp\s*=/.test(body)
     );
     // Strip comments first: a comment may NAME devOtp without ever assigning it.
     const codeOnly = body
@@ -81,7 +81,7 @@ async function sectionOtpLeak() {
       .replace(/\/\/[^\n]*/g, "");
     // Then remove the demo-mode guard block (up to its first closing brace).
     const withoutGuard = codeOnly.replace(
-      /if \(isOtpDemoMode\(\)\) \{[\s\S]{0,300}?\}/,
+      /if \(isOtpDemoMode\(\)( \|\| isOtpPreviewDemo\(\))?\) \{[\s\S]{0,300}?\}/,
       ""
     );
     check(
@@ -107,6 +107,14 @@ async function sectionOtpLeak() {
   check(
     'otp.ts: a missing provider alone cannot enable demo mode',
     !/!\s*process\.env\.(BREVO_API_KEY|TEXTBEE_API_KEY|SMS_PROVIDER)/.test(otpLib)
+  );
+  check(
+    'otp.ts: preview demo requires VERCEL_ENV === "preview"',
+    /function isOtpPreviewDemo\(\)[\s\S]{0,200}VERCEL_ENV === 'preview'/.test(otpLib)
+  );
+  check(
+    'otp.ts: preview demo is never enabled by an absent flag',
+    !/VERCEL_ENV\s*!==/.test(otpLib)
   );
   check('otp.ts: deliverOtp never returns a code field', !/return \{[^}]*\bcode\b/.test(otpLib));
   check(

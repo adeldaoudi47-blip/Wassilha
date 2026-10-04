@@ -66,16 +66,20 @@ export function SuperAppHome({ onSelectService }: SuperAppHomeProps) {
     }
   };
 
+  // Guard on the session: /api/orders is session-gated, so calling it before the
+  // store has hydrated the user fired a request that could only ever 401. That
+  // left orderError set on a fresh page load and skipped the real fetch once the
+  // session arrived. Re-run whenever the user changes so a late login still loads.
   useEffect(() => {
+    if (!user) return;
     fetchActiveOrder();
-    // Load real craft stores for the teaser section
     api.listMarketplaceStores()
       .then((res) => {
         setStores(res.slice(0, 4));
       })
       .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
-  }, []);
+  }, [user]);
 
   const ChevronIcon = isRtl ? ChevronLeft : ChevronRight;
   const ArrowIcon = isRtl ? ArrowLeft : ArrowRight;

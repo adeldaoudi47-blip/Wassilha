@@ -35,6 +35,22 @@ export function isOtpDemoMode(): boolean {
 }
 
 /**
+ * Closed-testing affordance for PREVIEW deployments only.
+ *
+ * VERCEL_ENV is set by Vercel itself: 'production' on production deploys,
+ * 'preview' on every preview build, and undefined on local `next dev`. The
+ * explicit `=== 'preview'` means this can never be satisfied by an unset or
+ * unexpected value, and a production deployment is structurally excluded.
+ *
+ * SECURITY: preview builds share the production DATABASE_URL, so this is only
+ * as safe as the preview URL being inaccessible to the public. Pair it with
+ * Vercel Deployment Protection (or keep preview traffic to trusted testers).
+ */
+export function isOtpPreviewDemo(): boolean {
+  return process.env.VERCEL_ENV === 'preview';
+}
+
+/**
  * The operator-facing SMS body. Kept in one place so the two OTP entry points
  * cannot drift, and so the code text exists in exactly one string.
  */

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
-import { deliverOtp, isOtpDemoMode } from '@/lib/otp';
+import { deliverOtp, isOtpDemoMode, isOtpPreviewDemo } from '@/lib/otp';
 
 // Matches the 30s resend timer already enforced by the frontend UI.
 const RESEND_COOLDOWN_MS = 30 * 1000;
@@ -82,11 +82,12 @@ export async function POST(req: NextRequest) {
     console.log('[SEND-OTP] Saved OTP for phone:', phone);
 
     // SECURITY (Phase 8): the response shape is identical for every caller and
-    // never reveals the code. The code is echoed ONLY when an operator has
-    // explicitly enabled OTP_DEMO_MODE on a non-production build, a path that
-    // cannot activate in production (see lib/otp.ts).
+    // never reveals the code. The code is echoed ONLY behind an explicit
+    // non-production gate: OTP_DEMO_MODE on a dev build, or a Vercel PREVIEW
+    // deployment. On a production build both are false, so the response is
+    // `{ ok: true }` and the code never leaves the server.
     const body: Record<string, unknown> = { ok: true };
-    if (isOtpDemoMode()) {
+    if (isOtpDemoMode() || isOtpPreviewDemo()) {
       body.demo = true;
       body.devOtp = code;
     }

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { normalizeAlgerianPhone } from '@/lib/phone';
-import { deliverOtp, isOtpDemoMode } from '@/lib/otp';
+import { deliverOtp, isOtpDemoMode, isOtpPreviewDemo } from '@/lib/otp';
 
 const RESEND_COOLDOWN_MS = 30 * 1000;
 
@@ -92,11 +92,11 @@ export async function POST(req: NextRequest) {
     await deliverOtp(phone, code);
 
     // SECURITY (V10 - account enumeration): the public response shape is
-    // identical whether or not the account exists. `devOtp` is echoed only in
-    // the explicitly-enabled, non-production dev mode (see lib/otp.ts); on any
+    // identical whether or not the account exists. `devOtp` is echoed only
+    // behind the explicit non-production gates (see lib/otp.ts); on any
     // production build this response is `{ ok: true }` and nothing more.
     const body: Record<string, unknown> = { ok: true };
-    if (isOtpDemoMode()) {
+    if (isOtpDemoMode() || isOtpPreviewDemo()) {
       body.demo = true;
       body.devOtp = code;
     }
