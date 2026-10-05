@@ -1270,3 +1270,28 @@ export interface AdminMarketplaceOrder {
     deliveredAt: string | null;
   } | null;
 }
+
+// PHASE 10 — server-side cart / favourites (dual-write mirror).
+// The GET payload mirrors the LOCAL cart line shape exactly so the client
+// merge can treat both sides interchangeably. `price` here is a DISPLAY
+// preview hydrated server-side from CraftProduct (+ variant adjustment);
+// checkout still recomputes every number from the DB, as before.
+export interface CraftCartServerLine {
+  productId: string;
+  variantId: string | null;
+  nameAr: string;
+  price: number;
+  image: string | null;
+  qty: number;
+}
+
+export interface CraftCartServer {
+  items: CraftCartServerLine[];
+  couponCode: string | null;
+}
+
+// Favourites sync returns BARE product ids only — never a product payload,
+// so it can never surface a moderated (hidden) product's data.
+export interface FavoritesSync {
+  productIds: string[];
+}

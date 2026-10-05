@@ -108,6 +108,10 @@ interface CraftCartState {
   removeItem: (productId: string, variantId?: string | null) => void;
   setCouponCode: (code: string | null) => void;
   clear: () => void;
+  // PHASE 10: wholesale replace used ONLY by the login merge in
+  // src/lib/cart-sync.ts (union of local + server lines). Additive action —
+  // the persisted shape ({ items, couponCode }) and key are unchanged.
+  setAll: (items: CraftCartItem[], couponCode: string | null) => void;
 }
 
 // Same key the checkout API deduplicates on: variant-less lines use
@@ -146,7 +150,37 @@ export const useCraftCart = create<CraftCartState>()(
         }),
       setCouponCode: (couponCode) => set({ couponCode }),
       clear: () => set({ items: [], couponCode: null }),
+      setAll: (items, couponCode) => set({ items, couponCode }),
     }),
     { name: 'wassilha-craft-cart' }
+  )
+);
+
+// PHASE 10: persisted FAVOURITES (wishlist hearts). Dual-write: this store is
+// the UX source of truth (instant, works for guests); src/lib/cart-sync.ts
+// mirrors it to /api/craft/favorites whenever a session exists and merges the
+// two lists (union) on login. A separate storage key from the cart — same
+// reasoning as `wassilha-craft-cart` vs `wassilha-store`.
+export interface FavoritesState {
+  productIds: string[];
+  toggle: (productId: string) => void;
+  // Bulk replace used by the login merge (union of local + server ids).
+  setAll: (productIds: string[]) => void;
+}
+
+export const useFavorites = create<FavoritesState>()(
+  persist(
+    (set) => ({
+      productIds: [],
+      toggle: (productId) =>
+        set((s) => ({
+          productIds: s.productIds.includes(productId)
+            ? s.productIds.filter((id) => id !== productId)
+            : [...s.productIds, productId],
+        })),
+      // Defensive dedupe: a malformed merge can never create double hearts.
+      setAll: (productIds) => set({ productIds: [...new Set(productIds)] }),
+    }),
+    { name: 'wassilha-favorites' }
   )
 );

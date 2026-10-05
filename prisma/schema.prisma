@@ -68,6 +68,11 @@ model User {
   // (customer, driver, artisan or admin). Cascade-deleted with its owner so a
   // closed account leaves no orphan rows. See the Notification model below.
   notifications     Notification[]
+  // PHASE 10 (server-side favourites + cart): the server-side mirror of the
+  // client's dual-written wishlist / cart. Both are SCOPED to this account and
+  // cascade-deleted with it — a closed account leaves no orphan rows.
+  favorites         Favorite[]
+  cart              Cart?
 }
 
 /// HIRFA Phase 3 — ProductVariant: a purchasable SKU of a CraftProduct
@@ -917,6 +922,12 @@ model CraftProduct {
   qa            ProductQA[]
   // PHASE 9: reports/flags filed against this product (see MarketplaceReport).
   reports       MarketplaceReport[]
+  // PHASE 10: server-side favourites / cart mirror rows pointing at this
+  // product. Both cascade: deleting the product removes the engagement rows
+  // (the client-side cart keeps its display line until checkout, which
+  // re-validates the product server-side anyway).
+  favorites     Favorite[]
+  cartItems     CartItem[]
 
     @@index([artisanId])
   @@index([artisanId, slug])
@@ -1154,4 +1165,73 @@ model MarketplaceReport {
   @@index([productId])
   @@index([artisanId])
   @@index([reporterId])
+}
+
+/// PHASE 10 — server-side FAVOURITE (wishlist) row.
+///
+/// DUAL-WRITE: the client keeps its own persisted heart list (localStorage,
+/// `wassilha-favorites`) as the UX source of truth; this table is the server
+/// mirror that survives a new device / cleared storage. On login the two are
+/// merged (union) — see src/lib/cart-sync.ts.
+///
+/// MODERATION (Phase 9): adding a favourite REQUIRES the product to be
+/// publicly visible (publicProductGate) so the endpoint cannot be used as an
+/// existence oracle for pending/suspended products. Rows favourited while
+/// public stay even if the product is later suspended — GET only ever returns
+/// bare ids (no product payload), so nothing about the hidden product leaks.
+/// Deleting the product or the account cascade-removes the row.
+model Favorite {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   CraftProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  // One heart per user per product — the idempotent POST/DELETE toggles lean
+  // on this instead of racing duplicate rows.
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+}
+
+/// PHASE 10 — server-side CART header (one per account).
+///
+/// DUAL-WRITE: mirrors the localStorage cart (`wassilha-craft-cart`) so a
+/// signed-in buyer keeps their cart across devices. Merge policy on login is
+/// union-by-line with `qty = max(local, server)` (never a sum — the same
+/// physical line on two devices must not double). Display fields are NOT
+/// stored here: GET hydrates nameAr/image/price from CraftProduct, so a
+/// renamed or repriced product can never show a stale snapshot.
+/// `couponCode` is a CODE only; the discount itself is recomputed at
+/// checkout exactly as before (Phase 10 adds no pricing authority).
+model Cart {
+  id         String     @id @default(cuid())
+  userId     String     @unique
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couponCode String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  items      CartItem[]
+}
+
+/// One line of the server-side cart. `variantId` is a plain string (no FK):
+/// the mirror is display-only and the checkout API remains the only place
+/// that validates variants/stock/pricing against the DB. NOTE: the
+/// @@unique([cartId, productId, variantId]) constraint cannot dedupe NULL
+/// variantIds in Postgres (NULLs are distinct), so the PUT handler dedupes
+/// by productId|variantId in application code before writing.
+model CartItem {
+  id        String       @id @default(cuid())
+  cartId    String
+  cart      Cart         @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   CraftProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  quantity  Int          @default(1)
+  createdAt DateTime     @default(now())
+
+  @@unique([cartId, productId, variantId])
+  @@index([cartId])
+  @@index([productId])
 }

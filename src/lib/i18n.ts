@@ -103,6 +103,11 @@ export const translations = {
     madeToOrder: 'حسب الطلب',
     madeToOrderHint: 'يُصنع عند الطلب، الكمية غير محدودة',
     isMadeToOrderLabel: 'هذا المنتج حسب الطلب',
+    // PHASE 10 — favourites (wishlist hearts) sync + toast feedback.
+    addedToFavorites: 'أُضيف إلى المفضلة',
+    removedFromFavorites: 'أُزيل من المفضلة',
+    favoriteNotAvailable: 'تعذر حفظ المفضلة، حاول مجددًا',
+
     noCraftProducts: 'لا توجد منتجات بعد',
     craftedBy: 'بأيدي',
     loadMore: 'المزيد',
@@ -968,6 +973,11 @@ export const translations = {
     categories: 'Catégories',
     featuredProducts: 'Produits en vedette',
     allCategories: 'Tout',
+    // PHASE 10 — favoris (cœurs wishlist) synchronisés + retour toast.
+    addedToFavorites: 'Ajouté aux favoris',
+    removedFromFavorites: 'Retiré des favoris',
+    favoriteNotAvailable: 'Impossible d’enregistrer le favori, réessayez',
+
     addToCart: 'Ajouter au panier',
     addedToCart: 'Ajouté au panier',
     readyToOrder: 'Prêt à commander',

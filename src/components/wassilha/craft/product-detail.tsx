@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import {
-  ArrowLeft, ArrowRight, Check, MapPin, MessageCircle, Play, ShoppingBag,
+  ArrowLeft, ArrowRight, Check, Heart, MapPin, MessageCircle, Play, ShoppingBag,
   Star, Tag, Loader2, Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useT } from '../use-t';
-import { useCraftCart } from '@/lib/store';
+import { useCraftCart, useAppStore } from '@/lib/store';
+import { syncCraftCartToServer } from '@/lib/cart-sync';
 import { api } from '@/lib/api';
+import { useFavoriteToggle } from './use-favorite-toggle';
 import { cn } from '@/lib/utils';
 import { pickTier, unitPriceFor } from '@/lib/craft-pricing';
 import type {
@@ -29,6 +31,8 @@ export function ProductDetail({
 }) {
   const { t, isAr } = useT();
   const addItem = useCraftCart((s) => s.addItem);
+  const { isFavorite, toggleFavorite } = useFavoriteToggle();
+  const fav = isFavorite(product.id);
   const [imgIdx, setImgIdx] = useState(0);
   const [added, setAdded] = useState(false);
   // HIRFA Phase 3: quantity drives the graduated tier preview.
@@ -104,6 +108,10 @@ export function ProductDetail({
     );
     setAdded(true);
     toast.success(t.addedToCart);
+    // PHASE 10: fire-and-forget mirror to /api/craft/cart (PUT the whole
+    // local cart). No-op for guests (the server answers 401 and the sync
+    // swallows it); silent on any other failure.
+    if (useAppStore.getState().user) void syncCraftCartToServer();
     setTimeout(() => setAdded(false), 1500);
   };
 
@@ -203,9 +211,30 @@ export function ProductDetail({
         </div>
       ) : null}
 
-      {/* Title + price */}
+      {/* Title + price + favourite heart (PHASE 10 dual-write toggle). */}
       <div>
-        <h1 className="text-lg font-extrabold text-foreground">{name}</h1>
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="text-lg font-extrabold text-foreground">{name}</h1>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleFavorite(product.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleFavorite(product.id);
+              }
+            }}
+            aria-label={fav ? t.removedFromFavorites : t.addedToFavorites}
+            aria-pressed={fav}
+            className={cn(
+              'flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-card transition-colors',
+              fav ? 'text-rose-500' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Heart size={18} fill={fav ? 'currentColor' : 'none'} />
+          </span>
+        </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <p className="text-xl font-black text-primary">
             {/* HIRFA Phase 3: with graduated pricing, show "ابتداءً من" (the

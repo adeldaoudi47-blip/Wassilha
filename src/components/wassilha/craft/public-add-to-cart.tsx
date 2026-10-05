@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Check } from 'lucide-react';
 import { useCraftCart } from '@/lib/store';
+import { syncCraftCartToServer } from '@/lib/cart-sync';
 import { getMarketplaceT } from '@/lib/marketplace-i18n';
 import type { Lang } from '@/lib/types';
 
@@ -55,6 +56,10 @@ export function PublicAddToCart({
       },
       qty
     );
+    // PHASE 10: fire-and-forget mirror of the cart to /api/craft/cart —
+    // silent for guests (401 ignored), silent on failure; local state stays
+    // the UX source of truth.
+    void syncCraftCartToServer();
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };

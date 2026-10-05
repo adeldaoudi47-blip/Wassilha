@@ -1,15 +1,16 @@
 'use client';
 
-import { useState } from 'react';
 import { Hammer, Heart, Store } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { getStoreUrl } from '@/lib/craft-urls';
 import { useT } from '../use-t';
+import { useFavoriteToggle } from './use-favorite-toggle';
 import type { CraftProductPublic } from '@/lib/types';
 
-// HIRFA product card (P3). The favourite heart is a local visual toggle
-// for now - persisted favourites land in a later HIRFA phase.
+// HIRFA product card (P3). PHASE 10: the favourite heart is now a real,
+// persisted toggle — dual-write to the zustand store (instant) and the
+// server mirror (/api/craft/favorites, fire-and-forget).
 export function ProductCard({
   product,
   onOpen,
@@ -18,7 +19,8 @@ export function ProductCard({
   onOpen: (p: CraftProductPublic) => void;
 }) {
   const { t, isAr } = useT();
-  const [fav, setFav] = useState(false);
+  const { isFavorite, toggleFavorite } = useFavoriteToggle();
+  const fav = isFavorite(product.id);
   const name = isAr ? product.nameAr : product.nameFr || product.nameAr;
   // "حسب الطلب": explicitly crafted on demand — stock is irrelevant for it.
   // A stock-tracked product at 0 is OUT OF STOCK, not made-to-order: the old
@@ -51,8 +53,9 @@ export function ProductCard({
           tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
-            setFav((v) => !v);
+            toggleFavorite(product.id);
           }}
+          aria-label={fav ? t.removedFromFavorites : t.addedToFavorites}
           className={cn(
             'absolute top-2 end-2 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 backdrop-blur transition-colors',
             fav ? "text-rose-500" : "text-muted-foreground"

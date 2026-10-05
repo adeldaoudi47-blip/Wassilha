@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useT } from '../use-t';
 import { useCraftCart } from '@/lib/store';
+import { syncCraftCartToServer } from '@/lib/cart-sync';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
@@ -74,6 +75,8 @@ export function CraftCart() {
         newQty
       );
     }
+    // PHASE 10: mirror the (mutated) local cart to the server — fire-and-forget.
+    syncCraftCartToServer();
   };
 
   // HIRFA Phase 3: cart subtotal. `item.price` is the PREVIEW unit price the
@@ -113,12 +116,16 @@ export function CraftCart() {
     const code = codeInput.trim().toUpperCase();
     if (code.length < 2) return;
     setCouponCode(code);
+    // PHASE 10: the coupon CODE (never a price) is part of the server mirror.
+    syncCraftCartToServer();
   };
 
   const removeCoupon = () => {
     setCouponCode(null);
     setCodeInput('');
     setPreview(null);
+    // PHASE 10: keep the mirror in step with the local removal.
+    syncCraftCartToServer();
   };
 
   // Map a coupon sentinel from either the preview or the order error to a
@@ -166,6 +173,9 @@ export function CraftCart() {
         couponCode: couponCode || null,
       });
       clear();
+      // PHASE 10: the order was placed — drop the server mirror too so a
+      // reload does not resurrect the bought lines from /api/craft/cart.
+      void api.clearCraftCart().catch(() => { /* silent — mirror only */ });
       // Phase 2B: the server splits a multi-store cart into one order per store.
       const n = res.orders?.length ?? 1;
       toast.success(t.orderPlaced, {

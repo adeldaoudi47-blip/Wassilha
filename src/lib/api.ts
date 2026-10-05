@@ -44,6 +44,9 @@ import type {
   ReportReason,
   ReportTargetType,
   ReportResolutionStatus,
+  // PHASE 10: server-side cart / favourites sync payloads.
+  CraftCartServer,
+  FavoritesSync,
 } from './types';
 // `ModerationAction` is needed here to type the action argument; the transition
 // RULES themselves stay in the UI component (imported from this same module) so
@@ -858,4 +861,39 @@ export const api = {
   // Marks every unread notification of the caller as read ("Mark all read").
   markAllNotificationsRead: () =>
     req<{ ok: boolean; updated: number }>('/api/notifications/read-all', { method: 'POST' }),
+
+  // PHASE 10 — server-side cart mirror (dual-write: localStorage stays the
+  // UX source of truth, these endpoints mirror it per session). The write
+  // payload carries ids + qty + a coupon CODE only — never a price/total.
+  getCraftCart: () => req<CraftCartServer>('/api/craft/cart'),
+  putCraftCart: (data: {
+    items: { productId: string; variantId?: string | null; qty: number }[];
+    couponCode?: string | null;
+  }) =>
+    req<{ ok: boolean }>('/api/craft/cart', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  clearCraftCart: () =>
+    req<{ ok: boolean }>('/api/craft/cart', { method: 'DELETE' }),
+
+  // PHASE 10 — favourites mirror. GET/PUT work on bare product-id lists
+  // (merge-on-login); POST/DELETE operate on one product at a time.
+  // The server never returns product payloads here — ids only.
+  getFavorites: () => req<FavoritesSync>('/api/craft/favorites'),
+  putFavorites: (productIds: string[]) =>
+    req<{ ok: boolean }>('/api/craft/favorites', {
+      method: 'PUT',
+      body: JSON.stringify({ productIds }),
+    }),
+  addFavorite: (productId: string) =>
+    req<{ ok: boolean; productId: string }>(
+      `/api/craft/favorites/${encodeURIComponent(productId)}`,
+      { method: 'POST' }
+    ),
+  removeFavorite: (productId: string) =>
+    req<{ ok: boolean; productId: string }>(
+      `/api/craft/favorites/${encodeURIComponent(productId)}`,
+      { method: 'DELETE' }
+    ),
 };

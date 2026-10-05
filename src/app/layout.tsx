@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { PushPermissionBootstrap } from "@/components/wassilha/push-permission-bootstrap";
 import { ForceUpdateGate } from "@/components/wassilha/force-update-gate";
+import { CraftSyncBootstrap } from "@/lib/cart-sync";
 import { SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
@@ -141,6 +142,10 @@ export default function RootLayout({
             can only be dismissed by downloading the new APK. Skipped on the
             web, where the served bundle is always the newest. */}
         <ForceUpdateGate />
+        {/* PHASE 10 — craft cart / favourites server mirror: merges the
+            localStorage state with the per-session server copies on boot and
+            whenever the signed-in user changes. Silent, best-effort. */}
+        <CraftSyncBootstrap />
       </body>
     </html>
   );
