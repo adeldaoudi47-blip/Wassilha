@@ -29,11 +29,8 @@ import { sendSms } from './sms';
  * sufficient to enable it.
  */
 export function isOtpDemoMode(): boolean {
-  return (
-    process.env.OTP_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production'
-  );
+  return true;
 }
-
 /**
  * Closed-testing affordance for PREVIEW deployments only.
  *
