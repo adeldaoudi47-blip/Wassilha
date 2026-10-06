@@ -1036,6 +1036,15 @@ export type NotificationType =
   // `data.i18n` keys, so no migration is needed to add a new outcome later.
   | 'product_moderation'
   | 'store_moderation'
+  // NOTIFICATION TYPES (Phase 11): finer-grained surfaces so the notification
+  // center can badge/filter by event kind. Stored as a plain String column,
+  // so these need no migration — they are additive to the union above and
+  // every old row keeps rendering exactly as before.
+  | 'new_product'
+  | 'service_reminder'
+  | 'order_accepted'
+  | 'new_delivery_request'
+  | 'new_craft_order'
   | 'system';
 
 // Optional deep-link payload stored alongside a notification. `i18n` holds the

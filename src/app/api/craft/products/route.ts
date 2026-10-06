@@ -6,6 +6,7 @@ import { publicCraftProductSelect } from '@/lib/dto';
 import { publicProductGate } from '@/lib/marketplace-moderation';
 import { allocateProductSlug } from '@/lib/slug-allocate';
 import { rateLimit } from '@/lib/rate-limit';
+import { notifyFollowersNewProduct } from '@/lib/notifications';
 
 // GET /api/craft/products
 // Public browse endpoint for the HIRFA marketplace.
@@ -222,6 +223,33 @@ export async function POST(req: NextRequest) {
     // this store, and never regenerated on rename (URL stability).
     const slug = await allocateProductSlug(parsed.data.nameAr, gate.artisanId, product.id);
     await db.craftProduct.update({ where: { id: product.id }, data: { slug } });
+
+    // NOTIFICATIONS (Phase 11) — "new product" fan-out to the store's followers.
+    //
+    // Everyone who favourited ANY product of this artisan follows the store:
+    // the Favorite model is product-scoped, so the set of distinct users who
+    // hearts the shop is derived from its products. Best-effort and
+    // fire-and-forget: a notification outage must never fail a product
+    // creation that already committed.
+    //
+    // SCOPE: the fan-out is intentionally delayed until the product is
+    // admin-approved (moderationStatus = 'approved'), which is the moment the
+    // product actually becomes browsable — notifying followers about a product
+    // they cannot open yet would be a dead link. The admin approval endpoint
+    // is the natural later trigger; here we only fan out when the product was
+    // created pre-approved (auto-approved path), which is why the check reads
+    // the row we just wrote.
+    if (product.moderationStatus === 'approved') {
+      void notifyFollowersNewProduct(
+        gate.artisanId,
+        product.id,
+        product.nameAr,
+      ).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn('[craft/products] follower notification failed:', e);
+      });
+    }
+
     return NextResponse.json({ ...product, slug }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });

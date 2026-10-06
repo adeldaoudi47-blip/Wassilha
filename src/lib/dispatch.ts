@@ -166,11 +166,15 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
   // the request on next app open. Written one-by-one through the single
   // write path so the row shape stays uniform; a partial failure here is
   // non-fatal (the push above already went out).
+  //
+  // NOTIFICATIONS (Phase 11): typed as 'new_delivery_request' with the flat
+  // i18n keys, so the center can badge driver requests distinctly from
+  // order-status updates.
   for (const userId of driverUserIds) {
     try {
       await createNotification({
         userId,
-        type: 'order',
+        type: 'new_delivery_request',
         title,
         body,
         // PHASE 6: no per-driver `notification:new` trigger here. This loop can
@@ -181,14 +185,15 @@ export async function fanOutNewOrder(order: DispatchableOrder): Promise<{
         data: {
           orderId: order.id,
           code: order.code,
+          serviceType: serviceCategoryFor(order.cargoType),
           // Keys for a future French re-render client-side. These are the
           // FLAT keys from the translation table (the center looks them up
           // directly, not through a dotted path), and both the key and the
           // body must exist in src/lib/i18n.ts or the French render silently
           // falls back to the stored Arabic text.
           i18n: {
-            titleKey: 'newOrder',
-            bodyKey: 'newOrderBody',
+            titleKey: 'newDeliveryRequestTitle',
+            bodyKey: 'newDeliveryRequestBody',
             params: { code: order.code, pickup: order.pickup, dropoff: order.dropoff },
           },
         },

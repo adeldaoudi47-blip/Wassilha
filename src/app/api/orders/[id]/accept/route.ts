@@ -201,14 +201,17 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     // contract as the push above): the customer still sees "order accepted"
     // in their bell even when FCM is unavailable or the user opted out of
     // push. `data.i18n` lets the center re-render this in French.
+    // NOTIFICATIONS (Phase 11): typed as 'order_accepted' with the driver's
+    // name in `data.driverName` so the center can surface WHO accepted.
     void createNotification({
       userId: updated.customerId,
-      type: 'order',
+      type: 'order_accepted',
       title,
       body: bodyText,
       data: {
         orderId: updated.id,
         code: updated.code,
+        ...(driverName ? { driverName } : {}),
         // The named body is used when the driver's name is known; the center
         // falls back to `driverOnTheWay` when `params.driver` is absent.
         i18n: {

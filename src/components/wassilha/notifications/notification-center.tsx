@@ -58,6 +58,33 @@ const TYPE_META: Record<string, { icon: LucideIcon; className: string }> = {
     icon: Bell,
     className: 'bg-primary/10 text-primary',
   },
+  // NOTIFICATIONS (Phase 11) — the five new surface types. Same Record shape
+  // as above; anything missing still renders through DEFAULT_TYPE_META, but
+  // each of these now gets a distinct icon/color so the bell can be scanned
+  // at a glance.
+  new_product: {
+    icon: Package,
+    className:
+      'bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-300',
+  },
+  service_reminder: {
+    icon: Bell,
+    className: 'bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-300',
+  },
+  order_accepted: {
+    icon: CheckCheck,
+    className: 'bg-teal-100 text-teal-600 dark:bg-teal-950/60 dark:text-teal-300',
+  },
+  new_delivery_request: {
+    icon: Bike,
+    className:
+      'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300',
+  },
+  new_craft_order: {
+    icon: ShoppingBag,
+    className:
+      'bg-violet-100 text-violet-600 dark:bg-violet-950/60 dark:text-violet-300',
+  },
 };
 
 const DEFAULT_TYPE_META: { icon: LucideIcon; className: string } = {

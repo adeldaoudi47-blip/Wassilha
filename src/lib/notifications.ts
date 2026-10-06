@@ -73,3 +73,76 @@ export async function createNotification(input: CreateNotificationInput) {
 
   return notification;
 }
+
+// ---------------------------------------------------------------------------
+// PHASE 11 — "new product" fan-out to a store's followers.
+//
+// Shared by BOTH triggers of the product lifecycle:
+//   * POST /api/craft/products  — only when a product is created pre-approved
+//     (auto-approve path; today products enter moderation as 'pending', so the
+//     create-time call is a no-op until such a path exists).
+//   * PATCH /api/admin/craft/products/:id/moderate on `approve` — the moment
+//     the product actually becomes browsable. Notifying followers about a
+//     product they cannot open yet would be a dead link.
+//
+// Everyone who favourited ANY product of the artisan follows the store: the
+// Favorite model is product-scoped, so the follower set is derived with a
+// single distinct query. Fire-and-forget by contract — a notification outage
+// must never fail the product write or the moderation decision.
+// ---------------------------------------------------------------------------
+export async function notifyFollowersNewProduct(
+  artisanId: string,
+  productId: string,
+  productName: string,
+): Promise<void> {
+  try {
+    const artisan = await db.artisanProfile.findUnique({
+      where: { id: artisanId },
+      select: { displayName: true, userId: true, status: true },
+    });
+    if (!artisan || artisan.status !== 'active') return;
+
+    // Distinct followers: anyone who favourited any product of this store.
+    // Excludes the shop owner themself — an artisan never notifies themself.
+    const followers = await db.favorite.findMany({
+      where: { product: { artisanId } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    const targets = followers.map((f) => f.userId).filter((id) => id !== artisan.userId);
+    if (targets.length === 0) return;
+
+    const title = 'منتج جديد من متجر تتابعه';
+    const body = `أضاف ${artisan.displayName} منتجاً جديداً: ${productName}. تصفحه الآن!`;
+
+    for (const userId of targets) {
+      try {
+        await createNotification({
+          userId,
+          type: 'new_product',
+          title,
+          body,
+          // Mass fan-out: one durable row per follower, but no per-row Pusher
+          // trigger — same reasoning as dispatch.fanOutNewOrder.
+          realtime: false,
+          data: {
+            productId,
+            artisanId,
+            i18n: {
+              titleKey: 'newProductTitle',
+              bodyKey: 'newProductBody',
+              params: { shop: artisan.displayName, product: productName },
+            },
+          },
+        });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[notifications] follower row failed:', e);
+      }
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[notifications] follower fan-out failed:', e);
+  }
+}
+

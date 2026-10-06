@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { publicCraftOrderSelect, publicOrderSelect, aliasDelivery } from '@/lib/dto';
 import { emitOrderStatus } from '@/lib/pusher-server';
+import { createNotification } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -130,6 +131,22 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       return NextResponse.json(current ? aliasDelivery(current) : current);
     }
 
+    // NOTIFICATIONS (Phase 11) — ORDER ACCEPTED for craft orders.
+    //
+    // When the ARTISAN confirms the order (pending -> confirmed), the customer
+    // gets the same "your order was accepted" surface the taxi/cargo flow
+    // delivers at /api/orders/:id/accept: one in-app row typed
+    // 'order_accepted' carrying the artisan's display name, so the bell names
+    // WHO confirmed. Fire-and-forget AFTER the transition committed: a
+    // notification outage must never fail (or duplicate) the status change —
+    // the updateMany above is the single source of truth.
+    if (newStatus === 'confirmed' && roleForCheck === 'artisan') {
+      void notifyCustomerOrderAccepted(order.customerId, order.id).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn('[craft/status] order-accepted notification failed:', e);
+      });
+    }
+
     // PHASE 7A — CANCEL PROPAGATION.
     // Cancelling a marketplace order must also cancel its Wassilha delivery
     // leg, otherwise the transport Order stays `searching` and keeps
@@ -188,5 +205,48 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     return NextResponse.json(result ? aliasDelivery(result) : result);
   } catch (e) {
     return NextResponse.json({ error: 'serverError', detail: String(e) }, { status: 500 });
+  }
+}
+
+// Fire-and-forget "order accepted" row for the craft customer (Phase 11).
+// Resolves the confirming artisan's display name (falling back to a generic
+// copy when none exists) and writes one notification through the single
+// createNotification() write path. Never throws.
+async function notifyCustomerOrderAccepted(
+  customerId: string,
+  orderId: string,
+): Promise<void> {
+  try {
+    const order = await db.craftOrder.findUnique({
+      where: { id: orderId },
+      select: { code: true, artisan: { select: { displayName: true } } },
+    });
+    if (!order) return;
+
+    const providerName = order.artisan?.displayName ?? '';
+    const title = 'تم قبول طلبك!';
+    const body = providerName
+      ? `تم قبول طلبك من قبل ${providerName}. جارٍ تجهيز طلبك الآن.`
+      : 'تم قبول طلبك. جارٍ تجهيز طلبك الآن.';
+
+    await createNotification({
+      userId: customerId,
+      type: 'order_accepted',
+      title,
+      body,
+      data: {
+        orderId,
+        code: order.code,
+        ...(providerName ? { artisanName: providerName } : {}),
+        i18n: {
+          titleKey: 'orderAcceptedTitle',
+          bodyKey: 'orderAcceptedBody',
+          ...(providerName ? { params: { provider: providerName } } : {}),
+        },
+      },
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[craft/status] order-accepted row failed:', e);
   }
 }

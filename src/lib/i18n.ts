@@ -646,6 +646,20 @@ export const translations = {
     // Kept as flat keys with {{params}} so notification-center's resolveText
     // can re-render them in French from `data.i18n.params`.
     newCraftOrderProductBody: 'لديك طلب جديد على "{{product}}" من {{customer}}.',
+    // === New notification types (Phase 11) ==============================
+    // Flat keys with {{params}} so the notification center's resolveText can
+    // re-render them in French from `data.i18n.params`. The stored Arabic text
+    // below is verbatim what createNotification() persists.
+    newProductTitle: 'منتج جديد من متجر تتابعه',
+    newProductBody: 'أضاف {{shop}} منتجاً جديداً: {{product}}. تصفحه الآن!',
+    serviceReminderTitle: 'نحن هنا لخدمتك',
+    serviceReminderBody: 'هل تحتاج إلى توصيل بضائع أو سيارة أجرة اليوم؟ وصّلها دائماً في خدمتك!',
+    orderAcceptedTitle: 'تم قبول طلبك!',
+    orderAcceptedBody: 'تم قبول طلبك من قبل {{provider}}. جارٍ تجهيز طلبك الآن.',
+    newDeliveryRequestTitle: 'طلب توصيل جديد',
+    newDeliveryRequestBody: 'هناك طلب جديد متاح لك. اضغط للتفاصيل والقبول.',
+    newCraftOrderTitle: 'طلب جديد على منتجاتك',
+    newCraftOrderBody2: 'لديك طلب جديد على {{product}} من {{customer}}. يرجى التأكيد.',
     // === Realtime connection status (Phase 6) ==========================
     // Shown by the connection chip. Deliberately short: this lives in a header
     // and must never read as an error banner on mobile (Part 20).
@@ -1508,6 +1522,17 @@ export const translations = {
     newCraftOrder: 'Nouvelle commande',
     newCraftOrderBody: 'Consultez votre boutique',
     newCraftOrderProductBody: 'Vous avez une nouvelle commande pour « {{product}} » de la part de {{customer}}.',
+    // === New notification types (Phase 11) - French mirrors =============
+    newProductTitle: 'Nouveau produit d\'une boutique que vous suivez',
+    newProductBody: '{{shop}} a ajouté un nouveau produit : {{product}}. Découvrez-le maintenant !',
+    serviceReminderTitle: 'Nous sommes là pour vous',
+    serviceReminderBody: 'Besoin d\'une livraison de marchandises ou d\'un taxi aujourd\'hui ? Wassilha est toujours à votre service !',
+    orderAcceptedTitle: 'Votre commande a été acceptée !',
+    orderAcceptedBody: 'Votre commande a été acceptée par {{provider}}. Elle est en cours de préparation.',
+    newDeliveryRequestTitle: 'Nouvelle demande de livraison',
+    newDeliveryRequestBody: 'Une nouvelle demande est disponible pour vous. Appuyez pour les détails et accepter.',
+    newCraftOrderTitle: 'Nouvelle commande sur vos produits',
+    newCraftOrderBody2: 'Nouvelle commande pour {{product}} de la part de {{customer}}. Veuillez confirmer.',
     // === Realtime connection status (Phase 6) - French mirrors ===========
     realtimeLive: 'En direct',
     realtimeConnected: 'Connexion temps réel active',

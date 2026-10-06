@@ -485,22 +485,26 @@ async function notifyArtisanNewOrder(
     const customerName = order.customer?.name ?? '';
     const named = productName && customerName;
 
-    const title = 'لديك طلب جديد';
+    const title = 'طلب جديد على منتجاتك';
     const body = named
-      ? `لديك طلب جديد على "${productName}" من ${customerName}.`
+      ? `لديك طلب جديد على ${productName} من ${customerName}. يرجى التأكيد.`
       : 'تحقق من متجرك';
 
     await createNotification({
       userId,
-      type: 'craft_order',
+      // NOTIFICATIONS (Phase 11): typed as 'new_craft_order' so the artisan's
+      // bell can badge incoming marketplace orders distinctly.
+      type: 'new_craft_order',
       title,
       body,
       data: {
         orderId: order.id,
         code: order.code,
+        productId: first?.product?.id ?? undefined,
+        customerId: order.customer?.id ?? undefined,
         i18n: {
-          titleKey: 'newCraftOrder',
-          bodyKey: named ? 'newCraftOrderProductBody' : 'newCraftOrderBody',
+          titleKey: 'newCraftOrderTitle',
+          bodyKey: named ? 'newCraftOrderBody2' : 'newCraftOrderBody',
           ...(named
             ? { params: { product: productName, customer: customerName, code: order.code } }
             : {}),

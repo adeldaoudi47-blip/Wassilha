@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requirePrivilegedAdmin } from '@/lib/auth';
-import { createNotification } from '@/lib/notifications';
+import { createNotification, notifyFollowersNewProduct } from '@/lib/notifications';
 import { sendPushNotification } from '@/lib/firebase-admin';
 import {
   canModerate,
@@ -54,6 +54,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       select: {
         id: true,
         nameAr: true,
+        // PHASE 11: the artisan's PROFILE id (not userId) — the follower
+        // fan-out derives the store's followers from Favorite rows.
+        artisanId: true,
         moderationStatus: true,
         artisan: { select: { userId: true } },
       },
@@ -92,6 +95,26 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       action,
       reason,
     });
+
+    // NOTIFICATIONS (Phase 11) — "new product" fan-out to the store's
+    // followers. Approval is the moment the product becomes browsable, so
+    // THIS is the natural trigger (the create-time hook in
+    // POST /api/craft/products only covers a future auto-approved path —
+    // today every product enters moderation as 'pending'). `restore` is
+    // deliberately excluded: the copy announces a NEW product, and a
+    // restored one is a re-publication, not an addition. Fire-and-forget,
+    // same contract as the seller notification above: an outage must never
+    // undo the moderation action the admin just performed.
+    if (action === 'approve') {
+      void notifyFollowersNewProduct(
+        product.artisanId,
+        product.id,
+        product.nameAr,
+      ).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn('[moderation] follower fan-out failed:', e);
+      });
+    }
 
     return NextResponse.json({ ok: true, id, from, status: next });
   } catch (e) {
