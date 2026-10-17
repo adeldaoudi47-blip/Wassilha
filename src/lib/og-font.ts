@@ -66,14 +66,21 @@ async function readViaFs(file: string): Promise<ArrayBuffer> {
 async function loadOnce(origin: string): Promise<FontDef[]> {
   const fonts: FontDef[] = [];
   for (const { weight, file } of FONT_FILES) {
-    let data: ArrayBuffer;
+    let data: ArrayBuffer | null = null;
     try {
       data = await readViaHttp(origin, file);
     } catch {
       // Self-hosted / tracing-free environments: fall back to the filesystem.
-      data = await readViaFs(file);
+      try {
+        data = await readViaFs(file);
+      } catch {
+        // Font unavailable in this runtime (e.g. Vercel serverless where
+        // public/ is served via CDN, not node:fs). Render with default font
+        // instead of throwing — "loadCairoFonts" never rejects.
+        return [];
+      }
     }
-    fonts.push({ name: 'Cairo', data, weight, style: 'normal' });
+    if (data) fonts.push({ name: 'Cairo', data, weight, style: 'normal' });
   }
   return fonts;
 }
